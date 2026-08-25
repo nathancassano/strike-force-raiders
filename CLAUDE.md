@@ -121,6 +121,11 @@ Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a mu
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
+Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
+(`src/muni.r65`). OAM order follows the plan's importance rule: the helicopter takes slots 0-1
+and munitions in flight take the slots straight after, with anything outside the visible 256 px
+culled rather than parked off-screen.
+
 The ground parallax is 8 HDMA bands of 7 scanlines. `gnd_table_build` computes
 `d = camera_x >> GND_SHIFT` once then accumulates - one shift, seven adds, no multiplies.
 `GND_SHIFT` is the depth knob; raising it narrows the spread and shrinks band seams.

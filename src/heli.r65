@@ -21,7 +21,7 @@ const HELI_H:     u16 = 16;
 // Vertical limits in 8.8. The HUD strip owns the top two tile rows, and the
 // ground starts at y=168, so the airframe has to stop 16 px short of it.
 const HELI_Y_MIN: u16 = 16 << 8;
-const HELI_Y_MAX: u16 = (168 - 16) << 8;
+const HELI_Y_MAX: u16 = (GROUND_Y - HELI_H) << 8;
 
 // ------------------------------------------------------------- handling ---
 // Armor Alley's mouse-seeking becomes d-pad acceleration toward a target
@@ -43,12 +43,28 @@ const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 const OAM_HELI_L: u8 = 0;
 const OAM_HELI_R: u8 = 1;
 
+// -------------------------------------------------------------- weapons ---
+// The plan's loadout. Ammo is the real bottleneck by design - roughly 21 s to
+// refill from empty once the landing pad arrives - so these are not knobs to
+// loosen without re-reading the economy section.
+const HELI_GUN_MAX:  u8 = 64;
+const HELI_BOMB_MAX: u8 = 10;
+const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
+
+// Where a round leaves the airframe: the nose when facing right, the tail
+// end of the same box when facing left, and level with the cabin.
+const HELI_MUZZLE_Y: u16 = 7;
+
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut heli_x_px:  u16;     // world pixel, 0..WORLD_W-HELI_W
 #[lowram] static mut heli_x_sub: u8;      // 1/256 px
 #[lowram] static mut heli_y:     u16;     // 8.8 screen pixels
 #[lowram] static mut heli_vx:    Q10;
 #[lowram] static mut heli_vy:    Q10;
+#[lowram] static mut heli_gun:   u8;      // rounds remaining
+#[lowram] static mut heli_bombs: u8;
+#[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
+#[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
@@ -58,6 +74,49 @@ far fn heli_init() {
     heli_y = 96 << 8;
     heli_vx = Q10(0);
     heli_vy = Q10(0);
+    heli_gun = HELI_GUN_MAX;
+    heli_bombs = HELI_BOMB_MAX;
+    heli_gun_cd = 0;
+    heli_face_left = 0;
+}
+
+// heli_fire - gunfire while B is held, one bomb per press of A.
+//
+// The gun points where the nose points. Facing follows the last commanded
+// direction rather than the current velocity, so it does not flip back to
+// neutral while the airframe coasts to a stop.
+far fn heli_fire(held: u16, trig: u16) {
+    if heli_gun_cd > 0 {
+        heli_gun_cd = heli_gun_cd - 1;
+    }
+
+    if (held & JOY_B) != 0 {
+        if heli_gun_cd == 0 {
+            if heli_gun > 0 {
+                heli_gun = heli_gun - 1;
+                heli_gun_cd = HELI_GUN_RATE;
+                let mut mx: u16 = heli_x_px + HELI_W;
+                let mut v: Q10 = BULLET_SPEED;
+                if heli_face_left != 0 {
+                    mx = heli_x_px;
+                    v = Q10(0) - BULLET_SPEED;
+                }
+                muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
+                           v, Q10(0), BULLET_LIFE);
+            }
+        }
+    }
+
+    if (trig & JOY_A) != 0 {
+        if heli_bombs > 0 {
+            heli_bombs = heli_bombs - 1;
+            // A bomb keeps the airframe's horizontal speed and starts at
+            // rest vertically, so a fast pass throws it forward.
+            // A bomb has no timer: it lives until it reaches the ground.
+            muni_spawn(MUNI_BOMB, heli_x_px + (HELI_W >> 1),
+                       heli_y + (HELI_H << 8), heli_vx, Q10(0), 0);
+        }
+    }
 }
 
 // approach - step `cur` toward `target` by at most `step`.
@@ -142,8 +201,8 @@ far fn heli_move_y(v: Q10) {
 // heli_update - one tick of input, physics and world clamping.
 far fn heli_update(held: u16) {
     let mut tx: Q10 = Q10(0);
-    if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; }
-    if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; }
+    if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; heli_face_left = 0; }
+    if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; heli_face_left = 1; }
 
     let mut ty: Q10 = Q10(0);
     if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
@@ -174,9 +233,19 @@ far fn heli_draw() {
     let sx: u16 = (heli_x_px - camera_x) & 0x01FF;
     let sy: u8 = (heli_y >> 8) as u8;
 
-    oam.set_full!(OAM_HELI_L, sx, sy, (tile as u16) | HELI_ATTR);
+    // Facing left mirrors the airframe. Both cells take the hflip bit and
+    // swap places, otherwise the nose half would render on the tail side.
+    let mut attr: u16 = HELI_ATTR;
+    let mut near: u8 = tile;
+    let mut far_: u8 = tile + 2;
+    if heli_face_left != 0 {
+        attr = HELI_ATTR | 0x4000;        // OAM hflip
+        near = tile + 2;
+        far_ = tile;
+    }
+
+    oam.set_full!(OAM_HELI_L, sx, sy, (near as u16) | attr);
     oam.set_size!(OAM_HELI_L, 1);
-    oam.set_full!(OAM_HELI_R, (sx + 16) & 0x01FF, sy,
-                  ((tile + 2) as u16) | HELI_ATTR);
+    oam.set_full!(OAM_HELI_R, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
     oam.set_size!(OAM_HELI_R, 1);
 }

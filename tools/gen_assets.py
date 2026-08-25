@@ -275,6 +275,31 @@ def heli_frame(tilt):
     return g
 
 
+# Munitions are 8x8 (the plan's sprite table), so they use OBSEL's small size
+# and one tile each. The helicopter's three 32x16 frames occupy tiles 0-11 and
+# 16-27, leaving 12-15 and 28-31.
+T_OBJ_BULLET = 12
+T_OBJ_BOMB = 13
+
+
+def bullet_tile():
+    g = grid(8, 8)
+    rect(g, 1, 3, 6, 4, 3)       # bright core, drawn long to read as a tracer
+    rect(g, 0, 3, 0, 4, 1)
+    rect(g, 7, 3, 7, 4, 5)
+    return g
+
+
+def bomb_tile():
+    g = grid(8, 8)
+    rect(g, 3, 0, 4, 1, 1)       # nose
+    rect(g, 2, 2, 5, 5, 2)       # body
+    rect(g, 3, 2, 3, 5, 3)       # highlight down one side
+    rect(g, 2, 6, 5, 6, 1)       # fins
+    rect(g, 1, 7, 6, 7, 6)
+    return g
+
+
 def obj_tiles():
     """Three 32x16 frames laid into a 16-wide OBJ tile sheet, two rows deep.
 
@@ -287,6 +312,8 @@ def obj_tiles():
             for px in range(HELI_W):
                 t = (py // 8) * OBJ_COLS + k * 4 + (px // 8)
                 sheet[t][py % 8][px % 8] = g[py][px]
+    sheet[T_OBJ_BULLET] = bullet_tile()
+    sheet[T_OBJ_BOMB] = bomb_tile()
     return b''.join(tile4(t) for t in sheet)
 
 

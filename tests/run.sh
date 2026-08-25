@@ -152,10 +152,60 @@ else
 
     # Tilt is cosmetic and derived from vX: OAM sprite 0's tile selects the
     # frame (4 level, 8 leaning right, 0 leaning left).
+    #
+    # Phase 4 added facing. Flying left mirrors the airframe, which swaps the
+    # two cells as well as setting hflip - so sprite 0 then holds the frame's
+    # *far* tile (+2) and its attribute byte gains $40. Asserting both is what
+    # tells a correct mirror from a frame picked at random.
     TILT=$(printf '%04X' $((0x$OAMB + 2)))
-    run_case heli_tilt_level "shot"                          --check-mem 0x$TILT=0x04
-    run_case heli_tilt_right "wait20,right60,shot"           --check-mem 0x$TILT=0x08
-    run_case heli_tilt_left  "wait20,right120,left60,shot"   --check-mem 0x$TILT=0x00
+    ATTR=$(printf '%04X' $((0x$OAMB + 3)))
+    run_case heli_tilt_level "shot"                --check-mem 0x$TILT=0x04 \
+                                                   --check-mem 0x$ATTR=0x30
+    run_case heli_tilt_right "wait20,right60,shot" --check-mem 0x$TILT=0x08 \
+                                                   --check-mem 0x$ATTR=0x30
+    run_case heli_tilt_left  "wait20,right120,left60,shot" \
+                                                   --check-mem 0x$TILT=0x02 \
+                                                   --check-mem 0x$ATTR=0x70
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 4 - weapons and munitions.
+#
+# Gunfire and bombs share one pool with a rotating free cursor; slot 0 is the
+# first one a cold pool hands out, so a single shot always lands there.
+# Kinds: 0 free, 1 bullet, 2 bomb.
+# ---------------------------------------------------------------------------
+GUN=$(ramaddr heli_gun)
+BOMBS=$(ramaddr heli_bombs)
+FACE=$(ramaddr heli_face_left)
+KIND=$(ramaddr muni_kind)
+if [ -z "$GUN" ] || [ -z "$BOMBS" ] || [ -z "$FACE" ] || [ -z "$KIND" ]; then
+    echo "FAIL muni:addr (weapon symbols not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # The plan's loadout: 64 rounds, 10 bombs.
+    run_case ammo_rest  "shot"              --check-mem 0x$GUN=0x40 \
+                                            --check-mem 0x$BOMBS=0x0A
+    # HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds.
+    run_case ammo_burst "wait10,b30,shot"   --check-mem 0x$GUN=0x3B
+    # Bombs are edge-triggered: holding A must not empty the rack.
+    run_case ammo_bomb  "wait10,a1,shot"    --check-mem 0x$BOMBS=0x09
+    run_case ammo_bomb2 "wait10,a1,wait5,a1,shot" --check-mem 0x$BOMBS=0x08
+    # Firing past empty must stop at zero, not wrap to 255.
+    run_case ammo_empty "wait10,b400,shot"  --check-mem 0x$GUN=0x00
+
+    # The gun points where the nose points, and the nose follows the last
+    # commanded direction rather than the coasting velocity.
+    run_case ammo_face  "wait10,left20,shot" --check-mem 0x$FACE=0x01
+
+    # Pool lifecycle. A bomb falls from the airframe to the ground in ~25
+    # frames and retires on contact; a round retires on BULLET_LIFE instead,
+    # which is what stops sustained fire from starving the pool.
+    run_case muni_bomb_live   "wait10,a1,shot"          --check-mem 0x$KIND=0x02
+    run_case muni_bomb_fall   "wait10,a1,wait10,shot"   --check-mem 0x$KIND=0x02
+    run_case muni_bomb_ground "wait10,a1,wait40,shot"   --check-mem 0x$KIND=0x00
+    run_case muni_gun_live    "wait10,b1,shot"          --check-mem 0x$KIND=0x01
+    run_case muni_gun_range   "wait10,b1,wait45,shot"   --check-mem 0x$KIND=0x00
 fi
 
 # ---------------------------------------------------------------------------

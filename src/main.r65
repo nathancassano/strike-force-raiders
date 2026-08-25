@@ -17,6 +17,7 @@ include!("lib/Q10.r65")
 include!("assets.r65")
 include!("input.r65")
 include!("video.r65")
+include!("muni.r65")
 include!("heli.r65")
 
 // Bank 0 - Main code
@@ -48,6 +49,7 @@ fn boot_load() {
 
     pad_init();
     heli_init();
+    muni_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
     enable_autojoy!();
@@ -79,8 +81,11 @@ fn main() -> ! {
         let trig: u16 = pad_poll_trigger();
 
         heli_update(held);
+        heli_fire(held, trig);
+        muni_update();
         camera_update();
         heli_draw();
+        muni_draw();
 
         if (trig & JOY_SELECT) != 0 {
             snapshot_point();

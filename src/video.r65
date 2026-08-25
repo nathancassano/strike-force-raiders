@@ -65,6 +65,11 @@ const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed
 // multiplies. Raising SHIFT narrows the spread and shrinks the seam between
 // adjacent bands; lowering it exaggerates the depth.
 const GND_SHIFT: u8  = 5;                 // 1.000x .. 1.219x across the band
+// Top of the ground band, in screen pixels. Everything that can hit the
+// ground measures against this: the airframe's floor, and every munition's
+// collision test.
+const GROUND_Y:  u16 = 168;
+
 // An HDMA line count maxes out at 127, so the run above the ground needs two
 // entries.
 const GND_TOP_A: u8  = 127;               // scanlines above the ground, part 1
