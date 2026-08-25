@@ -34,9 +34,13 @@ const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 
 // Tilt frames in the OBJ sheet. A 16x16 sprite at tile t covers t, t+1,
 // t+16, t+17, so a 32x16 frame is two cells four tiles apart.
-const HELI_TILE_LEFT:  u8 = 0;            // frame 0: leaning left
-const HELI_TILE_LEVEL: u8 = 4;
-const HELI_TILE_RIGHT: u8 = 8;
+// Named for the nose, not for a screen direction. The frames are drawn
+// nose-right and facing-left renders them hflipped, so a screen-relative
+// name invites picking the mirrored frame - which is exactly the bug this
+// naming replaced.
+const HELI_TILE_NOSE_DOWN: u8 = 0;        // gen_assets heli_frame(-1)
+const HELI_TILE_LEVEL:     u8 = 4;        // heli_frame(0)
+const HELI_TILE_NOSE_UP:   u8 = 8;        // heli_frame(+1)
 const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 
 // OAM slots. The helicopter is the highest-priority object in the game.
@@ -224,9 +228,16 @@ far fn heli_update(held: u16) {
 // so both cells go through set_full!, which writes the 9th X bit. set! would
 // leave a stale high bit and render the sprite 256 px away.
 far fn heli_draw() {
+    // Tilt comes from speed along the nose, not from the sign of vx.
+    // Facing left sets the hflip bit, which already mirrors the lean, so
+    // feeding the signed velocity straight in would flip it a second time
+    // and pitch the nose UP under forward acceleration.
+    let mut fwd: Q10 = heli_vx;
+    if heli_face_left != 0 { fwd = Q10(0) - heli_vx; }
+
     let mut tile: u8 = HELI_TILE_LEVEL;
-    if heli_vx > HELI_TILT_ON  { tile = HELI_TILE_RIGHT; }
-    if heli_vx < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_LEFT; }
+    if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
+    if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
 
     // Camera-relative, wrapped into the 9-bit OAM X field. A sprite left of
     // the screen shows up at $1FF-ish, which OAM reads as off-screen.

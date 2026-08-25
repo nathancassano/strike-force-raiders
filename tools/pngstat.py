@@ -5,6 +5,8 @@ Report the dominant colours of a screenshot, or assert one is present.
   pngstat.py shot.png                    list the top colours
   pngstat.py shot.png --expect 21,31,73  fail unless that colour covers
                                          >= --min-pct of the frame (default 50)
+  pngstat.py shot.png --expect 4,6,14 --snes    same, but the colour is given
+                                         as 5-bit BGR555 components
 
 Colours are 8-bit RGB hex or 'r,g,b'. Used by tests/run.sh to check that a
 frame actually rendered rather than trusting a non-zero exit code.
@@ -41,11 +43,23 @@ def read_rgb(path):
     return w, h, counts
 
 
-def parse_colour(s):
+def snes8(v):
+    """5-bit SNES component -> 8-bit as the PPU expands it.
+
+    Bit replication, NOT round(v / 31 * 255): the two disagree by one on
+    most values, which is enough to make an exact-match colour search miss
+    every sprite pixel on screen.
+    """
+    return (v << 3) | (v >> 2)
+
+
+def parse_colour(s, snes=False):
     s = s.strip().lstrip('#')
     if ',' in s:
-        return tuple(int(p) for p in s.split(','))
-    return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+        c = tuple(int(p) for p in s.split(','))
+    else:
+        c = tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+    return tuple(snes8(v) for v in c) if snes else c
 
 
 def main():
@@ -55,7 +69,9 @@ def main():
     total = w * h
 
     if '--expect' in args:
-        want = parse_colour(args[args.index('--expect') + 1])
+        # --snes reads the value as 5-bit BGR555 components, so palette
+        # numbers from tools/gen_assets.py can be pasted in directly.
+        want = parse_colour(args[args.index('--expect') + 1], '--snes' in args)
         min_pct = 50.0
         if '--min-pct' in args:
             min_pct = float(args[args.index('--min-pct') + 1])

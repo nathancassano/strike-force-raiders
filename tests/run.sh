@@ -58,6 +58,25 @@ expect_colour() {
     fi
 }
 
+# expect_snes NAME R,G,B MIN_PCT - assert a 5-bit BGR555 palette colour is
+#   actually on screen. The PPU expands 5->8 bits by replication, not by
+#   scaling, so --snes does the conversion; comparing against round(v/31*255)
+#   misses every pixel by one. This is the only kind of check that catches a
+#   sprite which failed to render at all - RAM assertions cannot.
+expect_snes() {
+    local name="$1" colour="$2" pct="$3"
+    if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then return; fi
+    if python3 "$PROJ/tools/pngstat.py" "$SHOTS/$name.png" --expect "$colour" \
+            --snes --min-pct "$pct" >/dev/null 2>&1; then
+        echo "PASS $name:snes $colour"; pass=$((pass+1))
+    else
+        echo "FAIL $name:snes $colour"
+        python3 "$PROJ/tools/pngstat.py" "$SHOTS/$name.png" --expect "$colour" \
+            --snes --min-pct "$pct"
+        fail=$((fail+1))
+    fi
+}
+
 # parallax NAME BASE_ACTIONS MOVED_ACTIONS BANDS
 #   Capture two frames at different camera positions and assert that each
 #   layer moved at its own rate and the ground shows the expected number of
@@ -150,8 +169,10 @@ else
     run_case heli_ceil  "wait20,up30,shot"    --check-mem16 0x$HY=0x1000
     run_case heli_floor "wait20,down60,shot"  --check-mem16 0x$HY=0x9800
 
-    # Tilt is cosmetic and derived from vX: OAM sprite 0's tile selects the
-    # frame (4 level, 8 leaning right, 0 leaning left).
+    # Tilt is cosmetic and derived from velocity ALONG THE NOSE: OAM sprite
+    # 0's tile selects the frame (0 nose-down, 4 level, 8 nose-up). Using the
+    # raw sign of vx instead double-flips against hflip and pitches the nose
+    # up under forward acceleration - verified on screen, not just in RAM.
     #
     # Phase 4 added facing. Flying left mirrors the airframe, which swaps the
     # two cells as well as setting hflip - so sprite 0 then holds the frame's
@@ -161,11 +182,24 @@ else
     ATTR=$(printf '%04X' $((0x$OAMB + 3)))
     run_case heli_tilt_level "shot"                --check-mem 0x$TILT=0x04 \
                                                    --check-mem 0x$ATTR=0x30
-    run_case heli_tilt_right "wait20,right60,shot" --check-mem 0x$TILT=0x08 \
+    run_case heli_tilt_right "wait20,right60,shot" --check-mem 0x$TILT=0x00 \
                                                    --check-mem 0x$ATTR=0x30
     run_case heli_tilt_left  "wait20,right120,left60,shot" \
                                                    --check-mem 0x$TILT=0x02 \
                                                    --check-mem 0x$ATTR=0x70
+    # Reversing flips facing while vx is still positive, so the airframe is
+    # briefly moving backwards along its own nose: it flares nose-up.
+    # vx decays 16/frame from 320, so 10 frames leaves +160 against a -96
+    # threshold. This is the only case that reaches the nose-up frame.
+    run_case heli_tilt_flare "wait20,right120,left10,shot" \
+                                                   --check-mem 0x$TILT=0x0A \
+                                                   --check-mem 0x$ATTR=0x70
+
+    # The airframe is actually drawn, not just positioned. Canopy and rotor
+    # are the two OBJ colours that appear nowhere else on screen, so finding
+    # them proves the OBJ CHR reached VRAM and the palette reached CGRAM 128.
+    expect_snes heli_tilt_right "14,22,28" 0.02      # canopy
+    expect_snes heli_tilt_right "21,22,24" 0.05      # rotor disc
 fi
 
 # ---------------------------------------------------------------------------
