@@ -28,6 +28,16 @@ This includes `let lo @ A = ...; let hi @ B = ...` (B is A's high byte), the idi
 `astroids/src/input.r65`, which is why `src/input.r65` here does not use it. Compose through
 plain locals instead: `let v: u16 = ((JOY1H as u16) << 8) | (JOY1L as u16);`
 
+**The PPU expands 5-bit colour to 8-bit by bit replication** - `(v<<3)|(v>>2)`, not
+`round(v/31*255)`. The two disagree by one on most values, which is enough for an exact-match
+colour search to miss every sprite pixel in a screenshot. `tools/pngstat.py --snes` does it
+correctly; use that rather than converting by hand.
+
+**Name sprite frames for the subject, not the screen.** Facing-left renders hflipped, so a
+frame called `LEFT` is ambiguous about whether it means the art or the result. Tilt frames are
+`NOSE_DOWN`/`NOSE_UP`, and tilt is selected from velocity *along the nose* - using signed vX
+double-flips against hflip.
+
 **BG4HOFS is $2113.** `$210F` is BG2HOFS. Getting this wrong in an HDMA `BBAD` silently
 drives the wrong layer and presents as "HDMA is not working".
 
@@ -116,6 +126,12 @@ so there is **no column refill anywhere**. Everything world-specific is a sprite
 
 Shared 2bpp tileset at $0000. Mode 0 gives each layer its own 32-colour CGRAM block
 (BG1 0-31, BG2 32-63, BG3 64-95, BG4 96-127); sprites get 128-255.
+
+All art is indexed BMP in `assets/src`, converted by `r65x bmp2chr` via `make assets`, which
+also regenerates `src/assets.r65`. Nothing generates graphics from code. **bg2/3/4 are stored
+folded** - 32 tiles wide by 64 tall, right-hand screen below the left - because a 64x32 SNES
+tilemap is two 32x32 screens and bmp2chr emits row-major at bitmap width. Each BG layer has its
+own de-duplicated tileset and its own CGRAM block; only sub-palette 0 (4 colours) is used.
 
 Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a munition 8x8.
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the

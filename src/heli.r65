@@ -38,9 +38,9 @@ const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 // nose-right and facing-left renders them hflipped, so a screen-relative
 // name invites picking the mirrored frame - which is exactly the bug this
 // naming replaced.
-const HELI_TILE_NOSE_DOWN: u8 = 0;        // gen_assets heli_frame(-1)
-const HELI_TILE_LEVEL:     u8 = 4;        // heli_frame(0)
-const HELI_TILE_NOSE_UP:   u8 = 8;        // heli_frame(+1)
+const HELI_TILE_NOSE_DOWN: u8 = 0;        // assets/src/obj.bmp, frame 0
+const HELI_TILE_LEVEL:     u8 = 4;        // ... frame 1
+const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
 const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 
 // OAM slots. The helicopter is the highest-priority object in the game.
