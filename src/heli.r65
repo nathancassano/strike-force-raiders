@@ -59,6 +59,23 @@ const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 // end of the same box when facing left, and level with the cabin.
 const HELI_MUZZLE_Y: u16 = 7;
 
+// ----------------------------------------------------------- fuel & pad ---
+// Fuel is a 0-100 gauge; the plan's AI reads "fuel < 30" as its low mark.
+// One unit per 64 frames is a little over 100 s of flight.
+const HELI_FUEL_MAX:   u8 = 100;
+const HELI_FUEL_DRAIN: u8 = 64;           // frames per unit burned aloft
+const HELI_FUEL_FILL:  u8 = 4;            // frames per unit on the deck
+
+// Reload rates from the plan. These are the gating mechanism, not tuning
+// knobs: 64 rounds at 20 frames is the ~21 s from empty that makes ammo the
+// real bottleneck. The plan calls these "modulus timers"; countdowns do the
+// same job without a modulus, which for 20 and 10 would mean a mod8 call.
+const HELI_GUN_RELOAD:  u8 = 20;
+const HELI_BOMB_RELOAD: u8 = 10;
+
+// Dead-stick descent once the tank is dry.
+const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
+
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut heli_x_px:  u16;     // world pixel, 0..WORLD_W-HELI_W
 #[lowram] static mut heli_x_sub: u8;      // 1/256 px
@@ -69,6 +86,11 @@ const HELI_MUZZLE_Y: u16 = 7;
 #[lowram] static mut heli_bombs: u8;
 #[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
 #[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
+#[lowram] static mut heli_fuel:   u8;     // 0..HELI_FUEL_MAX
+#[lowram] static mut heli_landed: u8;     // 1 while resting on a deck
+#[lowram] static mut heli_fuel_t: u8;     // countdown to the next fuel unit
+#[lowram] static mut heli_gun_t:  u8;     // ... and to the next round
+#[lowram] static mut heli_bomb_t: u8;
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
@@ -82,6 +104,47 @@ far fn heli_init() {
     heli_bombs = HELI_BOMB_MAX;
     heli_gun_cd = 0;
     heli_face_left = 0;
+    heli_fuel = HELI_FUEL_MAX;
+    heli_landed = 0;
+    heli_fuel_t = HELI_FUEL_DRAIN;
+    heli_gun_t = HELI_GUN_RELOAD;
+    heli_bomb_t = HELI_BOMB_RELOAD;
+}
+
+// heli_rearm - one tick on the deck. Fuel, rounds and bombs each refill on
+// their own countdown, so a short stop tops up fuel long before ammo.
+far fn heli_rearm() {
+    if heli_fuel_t > 0 {
+        heli_fuel_t = heli_fuel_t - 1;
+    } else {
+        heli_fuel_t = HELI_FUEL_FILL;
+        if heli_fuel < HELI_FUEL_MAX { heli_fuel = heli_fuel + 1; }
+    }
+
+    if heli_gun_t > 0 {
+        heli_gun_t = heli_gun_t - 1;
+    } else {
+        heli_gun_t = HELI_GUN_RELOAD;
+        if heli_gun < HELI_GUN_MAX { heli_gun = heli_gun + 1; }
+    }
+
+    if heli_bomb_t > 0 {
+        heli_bomb_t = heli_bomb_t - 1;
+    } else {
+        heli_bomb_t = HELI_BOMB_RELOAD;
+        if heli_bombs < HELI_BOMB_MAX { heli_bombs = heli_bombs + 1; }
+    }
+}
+
+// heli_burn - one tick aloft. Men are not restored by the pad, so nothing
+// else is on a timer up here.
+far fn heli_burn() {
+    if heli_fuel_t > 0 {
+        heli_fuel_t = heli_fuel_t - 1;
+    } else {
+        heli_fuel_t = HELI_FUEL_DRAIN;
+        if heli_fuel > 0 { heli_fuel = heli_fuel - 1; }
+    }
 }
 
 // heli_fire - gunfire while B is held, one bomb per press of A.
@@ -204,19 +267,61 @@ far fn heli_move_y(v: Q10) {
 
 // heli_update - one tick of input, physics and world clamping.
 far fn heli_update(held: u16) {
-    let mut tx: Q10 = Q10(0);
-    if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; heli_face_left = 0; }
-    if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; heli_face_left = 1; }
+    if heli_landed != 0 {
+        // On the deck: no motion, and the timers do the work. Up lifts off,
+        // but only with fuel to lift off on.
+        heli_vx = Q10(0);
+        heli_vy = Q10(0);
+        heli_rearm();
+        if (held & JOY_UP) != 0 {
+            if heli_fuel > 0 { heli_landed = 0; }
+        }
+    } else {
+        heli_burn();
 
-    let mut ty: Q10 = Q10(0);
-    if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
-    if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
+        if heli_fuel == 0 {
+            // Dead stick. The plan allows gravity in exactly two places -
+            // an empty tank and an ejection - and this is the first.
+            heli_vx = approach(heli_vx, Q10(0), HELI_ACC);
+            let v: Q10 = heli_vy + HELI_GRAVITY;
+            if v > HELI_VY_MAX {
+                heli_vy = HELI_VY_MAX;
+            } else {
+                heli_vy = v;
+            }
+        } else {
+            let mut tx: Q10 = Q10(0);
+            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; heli_face_left = 0; }
+            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; heli_face_left = 1; }
 
-    heli_vx = approach(heli_vx, tx, HELI_ACC);
-    heli_vy = approach(heli_vy, ty, HELI_ACC);
+            let mut ty: Q10 = Q10(0);
+            if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
+            if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
 
-    heli_move_x(heli_vx);
-    heli_move_y(heli_vy);
+            heli_vx = approach(heli_vx, tx, HELI_ACC);
+            heli_vy = approach(heli_vy, ty, HELI_ACC);
+        }
+
+        // Whether the airframe is descending has to be read before the move:
+        // heli_move_y zeroes vy the moment it touches the floor, so asking
+        // afterwards would always say no.
+        let mut descending: u8 = 0;
+        if heli_vy > Q10(0) { descending = 1; }
+
+        heli_move_x(heli_vx);
+        heli_move_y(heli_vy);
+
+        // "Land only while descending" - drifting sideways into the deck at
+        // zero vertical speed does not count, which is what stops a pad from
+        // catching an airframe that is merely passing over it at floor level.
+        if heli_y == HELI_Y_MAX {
+            if descending != 0 {
+                if pad_at(heli_x_px + (HELI_W >> 1)) < PAD_COUNT {
+                    heli_landed = 1;
+                }
+            }
+        }
+    }
 
     // The camera follows the airframe's centre, not its left edge.
     focus_x = heli_x_px + (HELI_W >> 1);

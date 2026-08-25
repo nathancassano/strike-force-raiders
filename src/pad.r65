@@ -1,0 +1,78 @@
+// pad - landing pads: the only place the helicopter refuels and rearms.
+//
+// Two of them, one per side, placed per the plan's match layout:
+//   bank -> base -> landing pad -> open field -> enemy pad -> base -> bank
+//
+// A pad is scenery with one rule attached - "land only while descending" -
+// so it needs no per-frame simulation, only a draw and an overlap test.
+// Structures proper arrive in phase 8; this stays deliberately small.
+
+#[bank(0)]
+
+const PAD_COUNT: u16 = 2;
+const PAD_W:     u16 = 48;
+const PAD_H:     u16 = 8;
+
+// The deck sits on the ground line, so an airframe resting on it is at the
+// same height as one resting on open ground.
+const PAD_Y:     u16 = GROUND_Y;
+
+// OBJ tiles: three 16x16 cells, two tiles apart, from the sheet's third row.
+const PAD_TILE:  u8  = 32;
+const PAD_ATTR:  u16 = 0x3000;            // priority 3, OBJ palette 0
+
+// OAM slots. Structures rank below the helicopter and munitions in the
+// plan's importance order, so they take the slots after the munition pool.
+const OAM_PAD_BASE: u8 = 18;
+// Three 16x16 cells per deck. Spelled out rather than PAD_COUNT * 3 because
+// `*` only takes power-of-two constants.
+const PAD_CELLS:    u16 = 3;
+const PAD_SLOTS:    u16 = 6;              // PAD_COUNT decks x PAD_CELLS
+
+// Left edges, in world pixels. The player's pad sits a few screens in from
+// the west bank; the enemy's mirrors it at the far end.
+static PAD_X: [u16; 2] = [512, 3536];
+
+// pad_at - the pad a point is over, or PAD_COUNT for none.
+//
+// Takes the centre rather than a left edge so this file needs to know
+// nothing about the airframe; the caller decides what its centre is.
+// Overlap is generous by design: a 32 wide airframe against a 48 wide deck
+// gives 40 px of usable approach instead of demanding a 16 px alignment.
+far fn pad_at(centre: u16) -> u16 {
+    for i in 0..PAD_COUNT {
+        let left: u16 = PAD_X[i];
+        if centre >= left {
+            if centre < left + PAD_W {
+                return i;
+            }
+        }
+    }
+    return PAD_COUNT;
+}
+
+// pad_draw - place the decks that fall inside the camera window.
+//
+// Both pads are drawn from the same three tiles; only the OAM X changes.
+far fn pad_draw() {
+    let mut slot: u8 = OAM_PAD_BASE;
+    for i in 0..PAD_COUNT {
+        let sx: u16 = PAD_X[i] - camera_x;
+        // One unsigned compare culls both directions: a pad west of the
+        // camera underflows to a very large number.
+        if sx < 256 {
+            for cell in 0..PAD_CELLS {
+                let cx: u16 = (sx + (cell << 4)) & 0x01FF;
+                oam.set_full!(slot, cx, PAD_Y as u8,
+                              ((PAD_TILE + ((cell as u8) << 1)) as u16) | PAD_ATTR);
+                oam.set_size!(slot, 1);       // 16x16
+                slot = slot + 1;
+            }
+        }
+    }
+
+    while (slot as u16) < (OAM_PAD_BASE as u16) + PAD_SLOTS {
+        oam.hide!(slot);
+        slot = slot + 1;
+    }
+}

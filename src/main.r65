@@ -17,6 +17,7 @@ include!("lib/Q10.r65")
 include!("assets.r65")
 include!("input.r65")
 include!("video.r65")
+include!("pad.r65")
 include!("muni.r65")
 include!("heli.r65")
 
@@ -86,6 +87,7 @@ fn main() -> ! {
         camera_update();
         heli_draw();
         muni_draw();
+        pad_draw();
 
         if (trig & JOY_SELECT) != 0 {
             snapshot_point();

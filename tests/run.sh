@@ -243,6 +243,49 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 5 - landing pad and rearm.
+#
+# The player's deck spans world x 512..559, so the airframe's centre has to
+# be inside that window - x 496..543 - at the moment it touches the floor.
+# ---------------------------------------------------------------------------
+LAND=$(ramaddr heli_landed)
+FUEL=$(ramaddr heli_fuel)
+if [ -z "$LAND" ] || [ -z "$FUEL" ]; then
+    echo "FAIL pad:addr (heli_landed/heli_fuel not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # Descending onto the deck lands; stopping short or overshooting does not.
+    run_case pad_land      "wait20,right90,down80,shot"  --check-mem 0x$LAND=0x01
+    run_case pad_short     "wait20,right80,down80,shot"  --check-mem 0x$LAND=0x00
+    run_case pad_over      "wait20,right100,down80,shot" --check-mem 0x$LAND=0x00
+
+    # "Land only while descending." Reaching the floor first and then sliding
+    # sideways onto the deck arrives with vy already zeroed by the clamp, so
+    # it must not count - this is the case a naive overlap test gets wrong.
+    run_case pad_slide     "wait20,down80,right90,shot"  --check-mem 0x$LAND=0x00
+
+    run_case pad_takeoff   "wait20,right90,down80,up20,shot" --check-mem 0x$LAND=0x00
+
+    # Full rearm: fuel back to 100, and the reload countdowns give back rounds
+    # at 20 frames each and bombs at 10 while the airframe sits.
+    run_case pad_rearm "wait20,b60,a1,right90,down80,wait120,shot" \
+                                             --check-mem 0x$LAND=0x01 \
+                                             --check-mem 0x$FUEL=0x64 \
+                                             --check-mem 0x$GUN=0x3E \
+                                             --check-mem 0x$BOMBS=0x0A
+
+    # One unit per 64 frames aloft.
+    run_case fuel_burn "wait20,right240,shot" --check-mem 0x$FUEL=0x60
+
+    # Dry tank: gravity is allowed in exactly two places in the plan and this
+    # is one. The airframe sinks to the floor with no input at all, and open
+    # ground is not a deck, so it must not read as landed. ~6600 frames.
+    run_case fuel_dry "wait6600,shot" --check-mem 0x$FUEL=0x00 \
+                                      --check-mem16 0x$HY=0x9800 \
+                                      --check-mem 0x$LAND=0x00
+fi
+
+# ---------------------------------------------------------------------------
 echo "---"
 echo "$pass passed, $fail failed$([ $skipped -gt 0 ] && echo ", $skipped skipped")"
 [ "$fail" -eq 0 ]
