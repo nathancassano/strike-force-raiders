@@ -1,0 +1,2240 @@
+// ============================================================================
+// SNES Hardware Library for R65
+// ============================================================================
+// Comprehensive library for accessing all SNES hardware registers,
+// with macros and helper functions for common operations.
+// ============================================================================
+
+// ============================================================================
+// PPU REGISTERS ($2100-$213F)
+// ============================================================================
+
+// Screen Display Register
+// Bit 7: Force blank (1=screen off)
+// Bits 0-3: Master brightness (0=black, 15=full)
+#[hw(0x2100)]
+static mut INIDISP: u8;
+
+// Object Size and Character Address
+// Bits 5-7: Object size selection
+// Bits 3-4: Name select (gap between obj char blocks)
+// Bits 0-2: Name base address (in 16KB steps)
+#[hw(0x2101)]
+static mut OBSEL: u8;
+
+
+// OAM Address (16-bit)
+#[hw(0x2102)]
+static mut OAMADD: u16;
+
+// OAM Address (low byte)
+#[hw(0x2102)]
+static mut OAMADDL: u8;
+
+// OAM Address (high byte) and Priority Rotation
+// Bit 7: OAM priority rotation
+// Bit 0: OAM address bit 9 (table select)
+#[hw(0x2103)]
+static mut OAMADDH: u8;
+
+// OAM Data Write (write twice for each entry)
+#[hw(0x2104)]
+static mut OAMDATA: u8;
+
+// BG Mode and Character Size
+// Bit 7: BG4 tile size (0=8x8, 1=16x16)
+// Bit 6: BG3 tile size
+// Bit 5: BG2 tile size
+// Bit 4: BG1 tile size
+// Bit 3: BG3 priority in Mode 1
+// Bits 0-2: BG mode (0-7)
+#[hw(0x2105)]
+static mut BGMODE: u8;
+
+// Screen Pixelation (Mosaic)
+// Bits 4-7: Mosaic size (0=1x1, 15=16x16)
+// Bits 0-3: Enable mosaic for BG1-4
+#[hw(0x2106)]
+static mut MOSAIC: u8;
+
+// BG1 Tilemap Address and Size
+// Bits 2-7: Tilemap base address (in 2KB steps)
+// Bit 1: Tilemap horizontal mirror (0=32, 1=64 tiles)
+// Bit 0: Tilemap vertical mirror (0=32, 1=64 tiles)
+#[hw(0x2107)]
+static mut BG1SC: u8;
+
+#[hw(0x2108)]
+static mut BG2SC: u8;
+
+#[hw(0x2109)]
+static mut BG3SC: u8;
+
+#[hw(0x210A)]
+static mut BG4SC: u8;
+
+// BG1/BG2 Character Data Address
+// Bits 4-7: BG2 base address (in 8KB steps)
+// Bits 0-3: BG1 base address (in 8KB steps)
+#[hw(0x210B)]
+static mut BG12NBA: u8;
+
+// BG3/BG4 Character Data Address
+#[hw(0x210C)]
+static mut BG34NBA: u8;
+
+// BG1 Horizontal Scroll (write twice: low then high)
+#[hw(0x210D)]
+static mut BG1HOFS: u8;
+
+// BG1 Vertical Scroll (write twice: low then high)
+#[hw(0x210E)]
+static mut BG1VOFS: u8;
+
+// BG2 Scroll Registers
+#[hw(0x210F)]
+static mut BG2HOFS: u8;
+
+#[hw(0x2110)]
+static mut BG2VOFS: u8;
+
+// BG3 Scroll Registers
+#[hw(0x2111)]
+static mut BG3HOFS: u8;
+
+#[hw(0x2112)]
+static mut BG3VOFS: u8;
+
+// BG4 Scroll Registers
+#[hw(0x2113)]
+static mut BG4HOFS: u8;
+
+#[hw(0x2114)]
+static mut BG4VOFS: u8;
+
+// VRAM Address Increment Mode
+// Bit 7: Increment after high/low byte (0=low, 1=high)
+// Bits 2-3: Address translation (0=none, 1-3=various)
+// Bits 0-1: Increment amount (0=1, 1=32, 2=128, 3=128)
+#[hw(0x2115)]
+static mut VMAIN: u8;
+
+// VRAM Address (16-bit)
+#[hw(0x2116)]
+static mut VMADD: u16;
+
+// VRAM Address (low byte)
+#[hw(0x2116)]
+static mut VMADDL: u8;
+
+// VRAM Address (high byte)
+#[hw(0x2117)]
+static mut VMADDH: u8;
+
+// VRAM Data Write (16-bit)
+#[hw(0x2118)]
+static mut VMDATA: u16;
+
+// VRAM Data Write (low byte)
+#[hw(0x2118)]
+static mut VMDATAL: u8;
+
+// VRAM Data Write (high byte)
+#[hw(0x2119)]
+static mut VMDATAH: u8;
+
+// Mode 7 Settings
+// Bit 7: Playfield size (0=wrap, 1=clip/fill)
+// Bit 6: Fill with tile 0 or transparent
+// Bit 1: Vertical flip
+// Bit 0: Horizontal flip
+#[hw(0x211A)]
+static mut M7SEL: u8;
+
+// Mode 7 Matrix Parameters (write twice each)
+#[hw(0x211B)]
+static mut M7A: u8;
+
+#[hw(0x211C)]
+static mut M7B: u8;
+
+#[hw(0x211D)]
+static mut M7C: u8;
+
+#[hw(0x211E)]
+static mut M7D: u8;
+
+// Mode 7 Center Coordinates
+#[hw(0x211F)]
+static mut M7X: u8;
+
+#[hw(0x2120)]
+static mut M7Y: u8;
+
+// CGRAM Address (palette)
+#[hw(0x2121)]
+static mut CGADD: u8;
+
+// CGRAM Data Write (write twice: low then high)
+#[hw(0x2122)]
+static mut CGDATA: u8;
+
+// Window 1 Left Position
+#[hw(0x2126)]
+static mut WH0: u8;
+
+// Window 1 Right Position
+#[hw(0x2127)]
+static mut WH1: u8;
+
+// Window 2 Left Position
+#[hw(0x2128)]
+static mut WH2: u8;
+
+// Window 2 Right Position
+#[hw(0x2129)]
+static mut WH3: u8;
+
+// Window Mask Settings for BG1/BG2
+#[hw(0x2123)]
+static mut W12SEL: u8;
+
+// Window Mask Settings for BG3/BG4
+#[hw(0x2124)]
+static mut W34SEL: u8;
+
+// Window Mask Settings for OBJ and Color Window
+#[hw(0x2125)]
+static mut WOBJSEL: u8;
+
+// Window Mask Logic for BG
+#[hw(0x212A)]
+static mut WBGLOG: u8;
+
+// Window Mask Logic for OBJ and Color
+#[hw(0x212B)]
+static mut WOBJLOG: u8;
+
+// Main Screen Designation
+// Bit 4: OBJ on main screen
+// Bits 0-3: BG1-4 on main screen
+#[hw(0x212C)]
+static mut TM: u8;
+
+// Sub Screen Designation
+#[hw(0x212D)]
+static mut TS: u8;
+
+// Window Mask Main Screen
+#[hw(0x212E)]
+static mut TMW: u8;
+
+// Window Mask Sub Screen
+#[hw(0x212F)]
+static mut TSW: u8;
+
+// Color Addition Select
+// Bit 7: Add/subtract mode (0=add, 1=subtract)
+// Bit 6: Half color math
+// Bits 0-5: Enable color math for BG1-4, OBJ, backdrop
+#[hw(0x2130)]
+static mut CGWSEL: u8;
+
+// Color Math Designation
+#[hw(0x2131)]
+static mut CGADSUB: u8;
+
+// Fixed Color Data
+// Bits 5-7: Color plane select (BGR)
+// Bits 0-4: Color intensity
+#[hw(0x2132)]
+static mut COLDATA: u8;
+
+// Screen Mode/Video Select
+// Bit 7: External sync
+// Bit 6: Extbg mode
+// Bit 5: Pseudo-hires
+// Bit 4: Overscan (0=224, 1=239 lines)
+// Bit 3: OBJ interlace
+// Bit 2: Screen interlace
+// Bits 0-1: Field size
+#[hw(0x2133)]
+static mut SETINI: u8;
+
+// PPU Status Registers (read-only)
+#[hw(0x2134)]
+static mut MPYL: u8;    // Mode 7 multiply result (low)
+
+#[hw(0x2135)]
+static mut MPYM: u8;    // Mode 7 multiply result (mid)
+
+#[hw(0x2136)]
+static mut MPYH: u8;    // Mode 7 multiply result (high)
+
+#[hw(0x2137)]
+static mut SLHV: u8;    // Latch H/V counters
+
+#[hw(0x2138)]
+static mut OAMDATAREAD: u8;  // OAM Data Read
+
+#[hw(0x2139)]
+static mut VMDATALREAD: u8;  // VRAM Data Read (low)
+
+#[hw(0x213A)]
+static mut VMDATAHREAD: u8;  // VRAM Data Read (high)
+
+#[hw(0x213B)]
+static mut CGDATAREAD: u8;   // CGRAM Data Read
+
+#[hw(0x213C)]
+static mut OPHCT: u8;   // Horizontal Counter Latch
+
+#[hw(0x213D)]
+static mut OPVCT: u8;   // Vertical Counter Latch
+
+#[hw(0x213E)]
+static mut STAT77: u8;  // PPU1 Status
+
+#[hw(0x213F)]
+static mut STAT78: u8;  // PPU2 Status
+
+
+// ============================================================================
+// APU REGISTERS ($2140-$2143)
+// ============================================================================
+
+// APU I/O Ports (directly connected to SPC700)
+#[hw(0x2140)]
+static mut APUIO0: u8;
+
+#[hw(0x2141)]
+static mut APUIO1: u8;
+
+#[hw(0x2142)]
+static mut APUIO2: u8;
+
+#[hw(0x2143)]
+static mut APUIO3: u8;
+
+
+// ============================================================================
+// WRAM ACCESS REGISTERS ($2180-$2183)
+// ============================================================================
+
+// WRAM Data Read/Write
+#[hw(0x2180)]
+static mut WMDATA: u8;
+
+// WRAM Address (low byte)
+#[hw(0x2181)]
+static mut WMADDL: u8;
+
+// WRAM Address (middle byte)
+#[hw(0x2182)]
+static mut WMADDM: u8;
+
+// WRAM Address (high byte - bit 0 only)
+#[hw(0x2183)]
+static mut WMADDH: u8;
+
+
+// ============================================================================
+// CPU REGISTERS ($4200-$421F)
+// ============================================================================
+
+// Interrupt Enable
+// Bit 7: NMI enable
+// Bit 5: V-blank IRQ enable
+// Bit 4: H-blank IRQ enable
+// Bit 0: Auto joypad read enable
+#[hw(0x4200)]
+static mut NMITIMEN: u8;
+
+// Programmable I/O Port (directly accessible)
+#[hw(0x4201)]
+static mut WRIO: u8;
+
+// Multiplicand A
+#[hw(0x4202)]
+static mut WRMPYA: u8;
+
+// Multiplicand B
+#[hw(0x4203)]
+static mut WRMPYB: u8;
+
+// Dividend (16-bit access — single STA writes both $4204 and $4205)
+#[hw(0x4204)]
+static mut WRDIV: u16;
+
+// Dividend (low byte)
+#[hw(0x4204)]
+static mut WRDIVL: u8;
+
+// Dividend (high byte)
+#[hw(0x4205)]
+static mut WRDIVH: u8;
+
+// Divisor
+#[hw(0x4206)]
+static mut WRDIVB: u8;
+
+// H-Count Timer (16-bit)
+#[hw(0x4207)]
+static mut HTIME: u16;
+
+// H-Count Timer (low byte)
+#[hw(0x4207)]
+static mut HTIMEL: u8;
+
+// H-Count Timer (high byte)
+#[hw(0x4208)]
+static mut HTIMEH: u8;
+
+// V-Count Timer (16-bit)
+#[hw(0x4209)]
+static mut VTIME: u16;
+
+// V-Count Timer (low byte)
+#[hw(0x4209)]
+static mut VTIMEL: u8;
+
+// V-Count Timer (high byte)
+#[hw(0x420A)]
+static mut VTIMEH: u8;
+
+// DMA Enable
+#[hw(0x420B)]
+static mut MDMAEN: u8;
+
+// HDMA Enable
+#[hw(0x420C)]
+static mut HDMAEN: u8;
+
+// ROM Speed (0=slow, 1=fast)
+#[hw(0x420D)]
+static mut MEMSEL: u8;
+
+// NMI Flag and CPU Version (read-only)
+// Bit 7: NMI flag (cleared on read)
+// Bits 0-3: CPU version
+#[hw(0x4210)]
+static mut RDNMI: u8;
+
+// IRQ Flag and Status (read-only)
+// Bit 7: IRQ flag
+// Bit 6: Auto joypad read in progress
+#[hw(0x4211)]
+static mut TIMEUP: u8;
+
+// PPU Status (read-only)
+// Bit 7: V-blank flag
+// Bit 6: H-blank flag
+// Bit 0: Auto joypad read status
+#[hw(0x4212)]
+static mut HVBJOY: u8;
+
+// Programmable I/O Port (read-only)
+#[hw(0x4213)]
+static mut RDIO: u8;
+
+// Division Result
+#[hw(0x4214)]
+static mut RDDIV: u16;
+
+// Division Result (quotient, low byte)
+#[hw(0x4214)]
+static mut RDDIVL: u8;
+
+// Division Result (quotient, high byte)
+#[hw(0x4215)]
+static mut RDDIVH: u8;
+
+// Multiplication Result / Division Remainder
+#[hw(0x4216)]
+static mut RDMPY: u16;
+
+// Multiplication Result / Division Remainder (low byte)
+#[hw(0x4216)]
+static mut RDMPYL: u8;
+
+// Multiplication Result / Division Remainder (high byte)
+#[hw(0x4217)]
+static mut RDMPYH: u8;
+
+
+// ============================================================================
+// JOYPAD REGISTERS ($4218-$421F)
+// ============================================================================
+
+// Controller 1 Data (directly accessed, active low bits)
+#[hw(0x4218)]
+static mut JOY1L: u8;
+
+#[hw(0x4219)]
+static mut JOY1H: u8;
+
+// Controller 2 Data
+#[hw(0x421A)]
+static mut JOY2L: u8;
+
+#[hw(0x421B)]
+static mut JOY2H: u8;
+
+// Controller 3 Data (directly accessed via controller port extension)
+#[hw(0x421C)]
+static mut JOY3L: u8;
+
+#[hw(0x421D)]
+static mut JOY3H: u8;
+
+// Controller 4 Data
+#[hw(0x421E)]
+static mut JOY4L: u8;
+
+#[hw(0x421F)]
+static mut JOY4H: u8;
+
+
+// ============================================================================
+// DMA REGISTERS ($4300-$437F) - Channel 0
+// ============================================================================
+
+// DMA Control (Channel 0)
+// Bit 7: Transfer direction (0=A->B, 1=B->A)
+// Bit 6: HDMA indirect addressing
+// Bit 5: Unused
+// Bit 4: HDMA address mode (0=increment, 1=fixed)
+// Bit 3: A-Bus increment (0=increment, 1=decrement)
+// Bits 0-2: Transfer mode
+#[hw(0x4300)]
+static mut DMAP0: u8;
+
+// DMA Destination Register (Channel 0)
+// B-Bus address (added to $2100)
+#[hw(0x4301)]
+static mut BBAD0: u8;
+
+// DMA Source Address (Channel 0, 16-bit)
+#[hw(0x4302)]
+static mut A1T0: u16;
+
+#[hw(0x4302)]
+static mut A1T0L: u8;
+
+#[hw(0x4303)]
+static mut A1T0H: u8;
+
+#[hw(0x4304)]
+static mut A1B0: u8;
+
+// DMA Size / HDMA Indirect Address (Channel 0, 16-bit)
+#[hw(0x4305)]
+static mut DAS0: u16;
+
+#[hw(0x4305)]
+static mut DAS0L: u8;
+
+#[hw(0x4306)]
+static mut DAS0H: u8;
+
+// HDMA Indirect Bank (Channel 0)
+#[hw(0x4307)]
+static mut DASB0: u8;
+
+// HDMA Table Address (Channel 0, 16-bit)
+#[hw(0x4308)]
+static mut A2A0: u16;
+
+#[hw(0x4308)]
+static mut A2A0L: u8;
+
+#[hw(0x4309)]
+static mut A2A0H: u8;
+
+// HDMA Line Counter (Channel 0)
+#[hw(0x430A)]
+static mut NTRL0: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 1
+// ============================================================================
+
+#[hw(0x4310)]
+static mut DMAP1: u8;
+
+#[hw(0x4311)]
+static mut BBAD1: u8;
+
+#[hw(0x4312)]
+static mut A1T1: u16;
+
+#[hw(0x4312)]
+static mut A1T1L: u8;
+
+#[hw(0x4313)]
+static mut A1T1H: u8;
+
+#[hw(0x4314)]
+static mut A1B1: u8;
+
+#[hw(0x4315)]
+static mut DAS1: u16;
+
+#[hw(0x4315)]
+static mut DAS1L: u8;
+
+#[hw(0x4316)]
+static mut DAS1H: u8;
+
+#[hw(0x4317)]
+static mut DASB1: u8;
+
+#[hw(0x4318)]
+static mut A2A1: u16;
+
+#[hw(0x4318)]
+static mut A2A1L: u8;
+
+#[hw(0x4319)]
+static mut A2A1H: u8;
+
+#[hw(0x431A)]
+static mut NTRL1: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 2
+// ============================================================================
+
+#[hw(0x4320)]
+static mut DMAP2: u8;
+
+#[hw(0x4321)]
+static mut BBAD2: u8;
+
+#[hw(0x4322)]
+static mut A1T2: u16;
+
+#[hw(0x4322)]
+static mut A1T2L: u8;
+
+#[hw(0x4323)]
+static mut A1T2H: u8;
+
+#[hw(0x4324)]
+static mut A1B2: u8;
+
+#[hw(0x4325)]
+static mut DAS2: u16;
+
+#[hw(0x4325)]
+static mut DAS2L: u8;
+
+#[hw(0x4326)]
+static mut DAS2H: u8;
+
+#[hw(0x4327)]
+static mut DASB2: u8;
+
+#[hw(0x4328)]
+static mut A2A2: u16;
+
+#[hw(0x4328)]
+static mut A2A2L: u8;
+
+#[hw(0x4329)]
+static mut A2A2H: u8;
+
+#[hw(0x432A)]
+static mut NTRL2: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 3
+// ============================================================================
+
+#[hw(0x4330)]
+static mut DMAP3: u8;
+
+#[hw(0x4331)]
+static mut BBAD3: u8;
+
+#[hw(0x4332)]
+static mut A1T3: u16;
+
+#[hw(0x4332)]
+static mut A1T3L: u8;
+
+#[hw(0x4333)]
+static mut A1T3H: u8;
+
+#[hw(0x4334)]
+static mut A1B3: u8;
+
+#[hw(0x4335)]
+static mut DAS3: u16;
+
+#[hw(0x4335)]
+static mut DAS3L: u8;
+
+#[hw(0x4336)]
+static mut DAS3H: u8;
+
+#[hw(0x4337)]
+static mut DASB3: u8;
+
+#[hw(0x4338)]
+static mut A2A3: u16;
+
+#[hw(0x4338)]
+static mut A2A3L: u8;
+
+#[hw(0x4339)]
+static mut A2A3H: u8;
+
+#[hw(0x433A)]
+static mut NTRL3: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 4
+// ============================================================================
+
+#[hw(0x4340)]
+static mut DMAP4: u8;
+
+#[hw(0x4341)]
+static mut BBAD4: u8;
+
+#[hw(0x4342)]
+static mut A1T4: u16;
+
+#[hw(0x4342)]
+static mut A1T4L: u8;
+
+#[hw(0x4343)]
+static mut A1T4H: u8;
+
+#[hw(0x4344)]
+static mut A1B4: u8;
+
+#[hw(0x4345)]
+static mut DAS4: u16;
+
+#[hw(0x4345)]
+static mut DAS4L: u8;
+
+#[hw(0x4346)]
+static mut DAS4H: u8;
+
+#[hw(0x4347)]
+static mut DASB4: u8;
+
+#[hw(0x4348)]
+static mut A2A4: u16;
+
+#[hw(0x4348)]
+static mut A2A4L: u8;
+
+#[hw(0x4349)]
+static mut A2A4H: u8;
+
+#[hw(0x434A)]
+static mut NTRL4: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 5
+// ============================================================================
+
+#[hw(0x4350)]
+static mut DMAP5: u8;
+
+#[hw(0x4351)]
+static mut BBAD5: u8;
+
+#[hw(0x4352)]
+static mut A1T5: u16;
+
+#[hw(0x4352)]
+static mut A1T5L: u8;
+
+#[hw(0x4353)]
+static mut A1T5H: u8;
+
+#[hw(0x4354)]
+static mut A1B5: u8;
+
+#[hw(0x4355)]
+static mut DAS5: u16;
+
+#[hw(0x4355)]
+static mut DAS5L: u8;
+
+#[hw(0x4356)]
+static mut DAS5H: u8;
+
+#[hw(0x4357)]
+static mut DASB5: u8;
+
+#[hw(0x4358)]
+static mut A2A5: u16;
+
+#[hw(0x4358)]
+static mut A2A5L: u8;
+
+#[hw(0x4359)]
+static mut A2A5H: u8;
+
+#[hw(0x435A)]
+static mut NTRL5: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 6
+// ============================================================================
+
+#[hw(0x4360)]
+static mut DMAP6: u8;
+
+#[hw(0x4361)]
+static mut BBAD6: u8;
+
+#[hw(0x4362)]
+static mut A1T6: u16;
+
+#[hw(0x4362)]
+static mut A1T6L: u8;
+
+#[hw(0x4363)]
+static mut A1T6H: u8;
+
+#[hw(0x4364)]
+static mut A1B6: u8;
+
+#[hw(0x4365)]
+static mut DAS6: u16;
+
+#[hw(0x4365)]
+static mut DAS6L: u8;
+
+#[hw(0x4366)]
+static mut DAS6H: u8;
+
+#[hw(0x4367)]
+static mut DASB6: u8;
+
+#[hw(0x4368)]
+static mut A2A6: u16;
+
+#[hw(0x4368)]
+static mut A2A6L: u8;
+
+#[hw(0x4369)]
+static mut A2A6H: u8;
+
+#[hw(0x436A)]
+static mut NTRL6: u8;
+
+
+// ============================================================================
+// DMA REGISTERS - Channel 7
+// ============================================================================
+
+#[hw(0x4370)]
+static mut DMAP7: u8;
+
+#[hw(0x4371)]
+static mut BBAD7: u8;
+
+#[hw(0x4372)]
+static mut A1T7: u16;
+
+#[hw(0x4372)]
+static mut A1T7L: u8;
+
+#[hw(0x4373)]
+static mut A1T7H: u8;
+
+#[hw(0x4374)]
+static mut A1B7: u8;
+
+#[hw(0x4375)]
+static mut DAS7: u16;
+
+#[hw(0x4375)]
+static mut DAS7L: u8;
+
+#[hw(0x4376)]
+static mut DAS7H: u8;
+
+#[hw(0x4377)]
+static mut DASB7: u8;
+
+#[hw(0x4378)]
+static mut A2A7: u16;
+
+#[hw(0x4378)]
+static mut A2A7L: u8;
+
+#[hw(0x4379)]
+static mut A2A7H: u8;
+
+#[hw(0x437A)]
+static mut NTRL7: u8;
+
+
+// ============================================================================
+// CONSTANTS - Screen Dimensions
+// ============================================================================
+
+const SCREEN_WIDTH: u16 = 256;
+const SCREEN_HEIGHT_NORMAL: u16 = 224;
+const SCREEN_HEIGHT_OVERSCAN: u16 = 239;
+
+const TILES_PER_ROW: u8 = 32;
+const TILES_PER_COL_NORMAL: u8 = 28;
+const TILES_PER_COL_OVERSCAN: u8 = 30;
+
+
+// ============================================================================
+// CONSTANTS - Tile/Sprite Sizes
+// ============================================================================
+
+const TILE_SIZE_8: u8 = 8;
+const TILE_SIZE_16: u8 = 16;
+
+enum TileSize { Bpp2 = 16, Bpp4 = 32, Bpp8 = 64 }
+
+
+// ============================================================================
+// CONSTANTS - INIDISP Values
+// ============================================================================
+
+enum Brightness { Off = 0x00, Full = 0x0F }
+const FORCE_BLANK: u8 = 0x80;
+
+
+// ============================================================================
+// ENUMS - BgMode Values
+// ============================================================================
+
+enum BG {
+    Mode0 = 0x00,  // 4 layers, 4 colors each
+    Mode1 = 0x01,  // 2 layers 16 colors, 1 layer 4 colors
+    Mode2 = 0x02,  // 2 layers 16 colors, offset-per-tile
+    Mode3 = 0x03,  // 1 layer 256 colors, 1 layer 16 colors
+    Mode4 = 0x04,  // 1 layer 256 colors, 1 layer 4 colors, OPT
+    Mode5 = 0x05,  // 1 layer 16 colors, 1 layer 4 colors, hires
+    Mode6 = 0x06,  // 1 layer 16 colors, OPT, hires
+    Mode7 = 0x07   // 1 layer 256 colors, rotation/scaling
+}
+
+enum BgTileSize {
+     BG1_16x16 = 0x10,
+     BG2_16x16 = 0x20,
+     BG3_16x16 = 0x40, 
+     BG4_16x16 = 0x80 
+}
+
+
+// ============================================================================
+// ENUMS - ObjSize Object Sizes
+// ============================================================================
+
+enum ObjSize {
+    T8x8_16x16   = 0x00,
+    T8x8_32x32   = 0x20,
+    T8x8_64x64   = 0x40,
+    T16x16_32x32 = 0x60,
+    T16x16_64x64 = 0x80,
+    T32x32_64x64 = 0xA0,
+    T16x32_32x64 = 0xC0,
+    T16x32_32x32 = 0xE0
+}
+
+
+// ============================================================================
+// CONSTANTS - VMAIN Increment Modes
+// ============================================================================
+
+enum VmainTrigger { Low = 0x00, High = 0x80 }    // Increment after low/high byte write
+enum VmainStep { By1 = 0x00, By32 = 0x01, By128 = 0x02 }  // Increment step size
+
+
+// ============================================================================
+// ENUMS - DMA Transfer Modes
+// ============================================================================
+
+enum DmaTransferMode {
+    OneReg   = 0x00,  // 1 register, write once
+    TwoReg   = 0x01,  // 2 registers, write once each (L,H)
+    OneRegX2 = 0x02,  // 1 register, write twice
+    TwoRegX2 = 0x03,  // 2 registers, write twice each (L,L,H,H)
+    FourReg  = 0x04   // 4 registers, write once each
+}
+
+enum DmaDirection { ToPPU = 0x00, ToCPU = 0x80 }
+enum DmaAddress { Increment = 0x00, Decrement = 0x10, Fixed = 0x08 }
+
+
+// ============================================================================
+// CONSTANTS - NMITIMEN Interrupt Flags
+// ============================================================================
+
+enum Interrupt { Nmi = 0x80, IrqV = 0x20, IrqHV = 0x30, AutoJoy = 0x01 }
+
+
+// ============================================================================
+// CONSTANTS - TM/TS Main/Sub Screen Enables
+// ============================================================================
+
+enum Screen { BG1 = 0x01, BG2 = 0x02, BG3 = 0x04, BG4 = 0x08, Obj = 0x10 }
+
+
+// ============================================================================
+// CONSTANTS - Joypad Button Masks
+// ============================================================================
+
+// u16 button-mask constants. Usable directly in bitwise tests against
+// pad_poll() results without an `as u16` cast.
+const JOY_B: u16      = 0x8000;
+const JOY_Y: u16      = 0x4000;
+const JOY_SELECT: u16 = 0x2000;
+const JOY_START: u16  = 0x1000;
+const JOY_UP: u16     = 0x0800;
+const JOY_DOWN: u16   = 0x0400;
+const JOY_LEFT: u16   = 0x0200;
+const JOY_RIGHT: u16  = 0x0100;
+const JOY_A: u16      = 0x0080;
+const JOY_X: u16      = 0x0040;
+const JOY_L: u16      = 0x0020;
+const JOY_R: u16      = 0x0010;
+
+
+// ============================================================================
+// CONSTANTS - Color Math
+// ============================================================================
+
+enum ColorMath {
+    Add      = 0x00,
+    Sub      = 0x80,
+    Half     = 0x40,
+    BG1      = 0x01,
+    BG2      = 0x02,
+    BG3      = 0x04,
+    BG4      = 0x08,
+    Obj      = 0x10,
+    Backdrop = 0x20
+}
+
+enum ColorChannel { Red = 0x20, Green = 0x40, Blue = 0x80 }
+
+
+// ============================================================================
+// CONSTANTS - VRAM Addresses (word addresses)
+// ============================================================================
+
+const VRAM_BG1_TILES: u16 = 0x0000;
+const VRAM_BG2_TILES: u16 = 0x4000;
+const VRAM_BG1_MAP: u16 = 0x7000;
+const VRAM_BG2_MAP: u16 = 0x7400;
+const VRAM_OBJ_TILES: u16 = 0x6000;
+
+// OAM sprite entry (4 bytes, packed)
+// attr byte: V H PP PPP N
+//   Bit 7: vertical flip, Bit 6: horizontal flip
+//   Bits 5-4: priority (0-3), Bits 3-1: palette (0-7), Bit 0: name table
+struct OamEntry {
+    x: u8,
+    y: u8,
+    tile: u8,
+    attr: u8
+}
+
+// OAM attribute enums
+enum OamFlip { V = 0x80, H = 0x40, VH = 0xC0 }
+
+enum OamPriority {
+    Behind  = 0x00,
+    Low     = 0x10,
+    High    = 0x20,
+    InFront = 0x30
+}
+
+enum OamPalette {
+    Palette0 = 0x00,
+    Palette1 = 0x02,
+    Palette2 = 0x04,
+    Palette3 = 0x06,
+    Palette4 = 0x08,
+    Palette5 = 0x0A,
+    Palette6 = 0x0C,
+    Palette7 = 0x0E
+}
+
+// OAM entry helper macros
+impl OamEntry {
+    // Set position, tile, and clear attributes
+    // Usage: sprite.set!(x, y, tile);
+    macro_rules! set($x:expr, $y:expr, $tile:expr) {
+        self.x = $x;
+        self.y = $y;
+        self.tile = $tile;
+        self.attr = 0;
+    }
+
+    // Set position, tile, and attributes in one call
+    // Usage: sprite.set_all!(x, y, tile, OamPriority::High as u8 | OamPalette::Palette1 as u8);
+    macro_rules! set_all($x:expr, $y:expr, $tile:expr, $attr:expr) {
+        self.x = $x;
+        self.y = $y;
+        self.tile = $tile;
+        self.attr = $attr;
+    }
+
+    // Set priority (clears old priority bits, preserves others)
+    // Usage: sprite.set_priority!(OamPriority::High);
+    macro_rules! set_priority($pri:expr) {
+        self.attr = (self.attr & 0xCF) | ($pri as u8);
+    }
+
+    // Set palette (clears old palette bits, preserves others)
+    // Usage: sprite.set_palette!(OamPalette::Palette3);
+    macro_rules! set_palette($pal:expr) {
+        self.attr = (self.attr & 0xF1) | ($pal as u8);
+    }
+
+    // Set horizontal flip
+    // Usage: sprite.flip_h!();
+    macro_rules! flip_h() {
+        self.attr = self.attr | OamFlip::H as u8;
+    }
+
+    // Set vertical flip
+    // Usage: sprite.flip_v!();
+    macro_rules! flip_v() {
+        self.attr = self.attr | OamFlip::V as u8;
+    }
+
+    // Set vertical flip
+    // Usage: sprite.flip_hv!();
+    macro_rules! flip_hv() {
+        self.attr = self.attr | OamFlip::H as u8 | OamFlip::V as u8;
+    }
+
+    // Clear all flip flags
+    // Usage: sprite.clear_flip!();
+    macro_rules! clear_flip() {
+        self.attr = self.attr & 0x3F;
+    }
+
+    // Use second name table (tile numbers 256-511)
+    // Usage: sprite.name_table_1!();
+    macro_rules! name_table_1() {
+        self.attr = self.attr | 0x01;
+    }
+
+    // Hide sprite (move Y off-screen)
+    // Usage: sprite.hide!();
+    macro_rules! hide() {
+        self.y = 240;
+    }
+
+    // Write this entry to OAM hardware at sprite index N (0-127).
+    // Sets OAMADD to N*2 then writes 4 bytes via OAMDATA.
+    // Usage: sprite.write_oam!(0);   // Write to sprite slot 0
+    macro_rules! write_oam($index:expr) {
+        OAMADD = ($index as u16) * 2;
+        OAMDATA = self.x;
+        OAMDATA = self.y;
+        OAMDATA = self.tile;
+        OAMDATA = self.attr;
+    }
+}
+
+
+// ============================================================================
+// OAM BUFFER - 128 sprite entries + 32-byte extended OAM (X-high & size bits)
+// ============================================================================
+
+// 544-byte SNES OAM buffer (DMA'd to PPU during VBlank). Layout matches the
+// hardware shadow: 128 OamEntry sprites followed by the 32-byte extended table
+// where each byte packs (X-high, size) bits for 4 sprites (2 bits per sprite,
+// X-high on even bit, size on odd bit).
+struct OamBuffer {
+    sprites: [OamEntry; 128],
+    ext: [u8; 32]
+}
+
+// Bit-mask lookup so the macros don't need a runtime variable-shift.
+static OAM_BIT_MASKS: [u8; 8] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80];
+
+// Per-sprite operations are macros (inlined at the call site) for speed —
+// each call expands to ~16-20 cycles of direct STAs instead of a ~70-cycle
+// JSL into a shared body. `clear()` stays a real method because its body
+// is a 128-entry loop where JSL overhead is negligible.
+//
+// set_full!/set_size! wrap their `let` bindings in `{ ... }` so multiple
+// invocations in the same scope don't collide on the local name.
+impl OamBuffer {
+    // Fast write — sprite X is 8-bit, `chr` packs (tile | attr << 8).
+    // Usage: oam_buffer.set!(OAM_PLAYER, sx, sy, tile | ATR);
+    macro_rules! set($idx:expr, $sx:expr, $sy:expr, $chr:expr) {
+        self.sprites[$idx].x = $sx;
+        self.sprites[$idx].y = $sy;
+        self.sprites[$idx].tile = ($chr) as u8;
+        self.sprites[$idx].attr = (($chr) >> 8) as u8;
+    }
+
+    // Full write — sprite X is 9-bit (u16); also updates the X-high bit
+    // in `ext`. Usage: oam_buffer.set_full!(OAM_KONG, sx_u16, sy, tile | ATR);
+    macro_rules! set_full($idx:expr, $sx:expr, $sy:expr, $chr:expr) {
+        self.sprites[$idx].x = ($sx) as u8;
+        self.sprites[$idx].y = $sy;
+        self.sprites[$idx].tile = ($chr) as u8;
+        self.sprites[$idx].attr = (($chr) >> 8) as u8;
+        {
+            let ext_idx: u16 = ($idx as u16) >> 2;
+            let mask: u8 = OAM_BIT_MASKS[(($idx as u8) & 3) << 1];
+            if ((($sx) as u16) >> 8) & 1 != 0 {
+                self.ext[ext_idx] = self.ext[ext_idx] | mask;
+            } else {
+                self.ext[ext_idx] = self.ext[ext_idx] & ~mask;
+            }
+        }
+    }
+
+    // Set the per-sprite size bit (0 = small, 1 = large per OBSEL).
+    // Usage: oam_buffer.set_size!(idx, 1);
+    macro_rules! set_size($idx:expr, $sz:expr) {
+        {
+            let ext_idx: u16 = ($idx as u16) >> 2;
+            let mask: u8 = OAM_BIT_MASKS[((($idx as u8) & 3) << 1) + 1];
+            if ($sz) != 0 {
+                self.ext[ext_idx] = self.ext[ext_idx] | mask;
+            } else {
+                self.ext[ext_idx] = self.ext[ext_idx] & ~mask;
+            }
+        }
+    }
+
+    // Hide one sprite (Y off-screen, leaves tile/attr alone).
+    // Usage: oam_buffer.hide!(OAM_HAMMER);
+    macro_rules! hide($idx:expr) {
+        self.sprites[$idx].y = 240;
+    }
+
+    // DMA the whole buffer to OAM on the given channel. Size folds to
+    // sizeof OamBuffer (544) at compile time via size_of().
+    // Usage: oam_buffer.dma_copy!(7);
+    macro_rules! dma_copy($channel:literal) {
+        dma_copy_oam_const!($channel, self, size_of(OamBuffer));
+    }
+
+    // Clear all sprites (Y=240) and zero the extended OAM bytes.
+    // Kept as `far fn` — body is a 128-iteration loop; inlining at the
+    // 8 call sites would add ~480 bytes for zero per-call benefit.
+    far fn clear(*self) {
+        let mut p: *OamEntry = &self.sprites[0];
+        for n in 0..128 {
+            (*p).x = 0;
+            (*p).y = 240;
+            (*p).tile = 0;
+            (*p).attr = 0;
+            p = p + 1;
+        }
+        let mut e: *u8 = &self.ext[0];
+        for i in 0..32 {
+            *e = 0;
+            e = e + 1;
+        }
+    }
+}
+
+// SPC700 transfer states
+const SPC_READY: u8 = 0xAA;
+const SPC_BEGIN: u8 = 0xCC;
+
+
+// ============================================================================
+// COLOR - 15-bit BGR
+// ============================================================================
+
+const R_MASK: u16 = 0x001F;  // Red component (bits 0-4)
+const G_MASK: u16 = 0x03E0;  // Green component (bits 5-9)
+const B_MASK: u16 = 0x7C00;  // Blue component (bits 10-14)
+
+// A 15-bit BGR color, laid out the way CGRAM stores it: 0BBBBBGG GGGRRRRR.
+//
+// A newtype over u16, so it is a distinct type at compile time and an ordinary
+// 16-bit value at runtime. A raw u16 still flows in -- write_color!(0x7FFF)
+// keeps working -- but a Color will not flow back out without '.0' or 'as',
+// which is what stops one being handed to something that wants a different
+// kind of 16-bit number.
+struct Color(u16);
+
+impl Color {
+    const BLACK: Color = 0x0000;
+    const WHITE: Color = 0x7FFF;
+
+    // Build a Color from three components, each 0-31.
+    // Usage: let red = Color::rgb!(31, 0, 0);
+    //
+    // A macro rather than a function so the expression folds: constant
+    // components cost nothing at all, and a call with all three constant
+    // becomes a single LDA. Only the runtime components survive to the
+    // generated code.
+    macro_rules! rgb($r:expr, $g:expr, $b:expr) {
+        { Color(((($b) & 0x1F) << 10) | ((($g) & 0x1F) << 5) | (($r) & 0x1F)) }
+    }
+
+    // Component accessors, each 0-31.
+    // Usage: let r: u8 = backdrop.red!();
+    //
+    // Method macros rather than methods: each expands in place to a mask and a
+    // shift, where a by-value method would cost a call and a stack frame. Each
+    // body names 'self' once, so the receiver is evaluated once.
+    macro_rules! red()   { { (self.0 & R_MASK) as u8 } }
+    macro_rules! green() { { ((self.0 & G_MASK) >> 5) as u8 } }
+    macro_rules! blue()  { { ((self.0 & B_MASK) >> 10) as u8 } }
+}
+
+// ============================================================================
+// CONSTANTS - Background Tile Attribute Flags (for tilemap entries)
+// ============================================================================
+
+enum BgAttr { HFlip = 0x4000, VFlip = 0x8000, Priority = 0x2000 }
+
+enum BgPalette {
+    Palette0 = 0x0000, // Palette 0
+    Palette1 = 0x0400, // Palette 1
+    Palette2 = 0x0800, // Palette 2
+    Palette3 = 0x0C00, // Palette 3
+    Palette4 = 0x1000, // Palette 4
+    Palette5 = 0x1400, // Palette 5
+    Palette6 = 0x1800, // Palette 6
+    Palette7 = 0x1C00  // Palette 7
+}
+
+// ============================================================================
+// MACROS - Screen Control
+// ============================================================================
+
+// Set screen brightness (0-15), disables force blank
+// Usage: set_brightness!(15);
+macro_rules! set_brightness($brightness:expr) {
+    INIDISP = $brightness & 0x0F;
+}
+
+// Turn screen off (force blank)
+// Usage: set_screen_off!();
+macro_rules! set_screen_off() {
+    INIDISP = FORCE_BLANK;
+}
+
+// ============================================================================
+// MACROS - VRAM Access
+// ============================================================================
+
+// Set VRAM address for writing
+// Usage: set_vram_addr!(0x0000);
+macro_rules! set_vram_addr($addr:expr) {
+    VMADD = $addr as u16;
+}
+
+// Set VRAM increment mode
+// Usage: set_vram_inc!(VmainTrigger::High);
+macro_rules! set_vram_inc($mode:expr) {
+    VMAIN = $mode as u8;
+}
+
+// Write word to VRAM
+// Usage: write_vram!(0x1234);
+macro_rules! write_vram($data:expr) {
+    VMDATA = $data as u16;
+}
+
+// ============================================================================
+// MACROS - CGRAM (Palette) Access
+// ============================================================================
+
+// Set CGRAM address (color index 0-255)
+// Usage: set_cgram_addr!(0);
+macro_rules! set_cgram_addr($index:expr) {
+    CGADD = $index as u8;
+}
+
+// Write 15-bit color to CGRAM
+// Usage: write_color!(0x7FFF);                  // White
+//        write_color!(Color::WHITE);            // same, named
+//        write_color!(Color::rgb!(31, 0, 0));   // red, by component
+macro_rules! write_color($color:expr) {
+    A = $color as u16;
+    CGDATA = A as u8;
+    CGDATA = B;
+}
+
+// Write RGB color to CGRAM (each component 0-31)
+// Usage: write_rgb!(31, 0, 0);  // Red
+macro_rules! write_rgb($r:literal, $g:literal, $b:literal) {
+    CGDATA = (($g & 0x07) << 5) | ($r & 0x1F);
+    CGDATA = (($b & 0x1F) << 2) | (($g >> 3) & 0x03);
+}
+
+// Set backdrop (color 0) color
+// Usage: set_backdrop!(0x001F);                  // Red backdrop
+//        set_backdrop!(Color::rgb!(31, 0, 0));   // same, by component
+macro_rules! set_backdrop($color:expr) {
+    CGADD = 0;
+    A = $color as u16;
+    CGDATA = A as u8;
+    CGDATA = B;
+}
+
+
+// ============================================================================
+// MACROS - OAM Access
+// ============================================================================
+
+// Set OAM address
+// Usage: set_oam_addr!(0);
+macro_rules! set_oam_addr($addr:expr) {
+    OAMADD = $addr as u16;
+}
+
+// Write sprite entry to OAM (4 bytes)
+// Usage: write_oam_entry!(x, y, tile, attr);
+macro_rules! write_oam_entry($x:expr, $y:expr, $tile:expr, $attr:expr) {
+    OAMDATA = $x;
+    OAMDATA = $y;
+    OAMDATA = $tile;
+    OAMDATA = $attr;
+}
+
+
+// ============================================================================
+// MACROS - Background Setup
+// ============================================================================
+
+// Set BG mode (0-7) with optional tile size flags
+// Usage: set_bgmode!(BG::Mode1, BgTileSize::BG1_16x16);
+macro_rules! set_bgmode($mode:expr, $sizes:expr) {
+    BGMODE = ($mode as u8 & 0x07) | $sizes;
+}
+
+// Set BG1 tilemap address and size
+// addr: tilemap address in 2KB-byte / $400-word units (0-31)
+// size: 0=32x32, 1=64x32, 2=32x64, 3=64x64
+// Usage: set_bg1_map!(0x1C, 0);  // $7000 word addr, 32x32
+macro_rules! set_bg1_map($addr:expr, $size:expr) {
+    BG1SC = ($addr << 2) | ($size & 0x03);
+}
+
+macro_rules! set_bg2_map($addr:expr, $size:expr) {
+    BG2SC = ($addr << 2) | ($size & 0x03);
+}
+
+macro_rules! set_bg3_map($addr:expr, $size:expr) {
+    BG3SC = ($addr << 2) | ($size & 0x03);
+}
+
+macro_rules! set_bg4_map($addr:expr, $size:expr) {
+    BG4SC = ($addr << 2) | ($size & 0x03);
+}
+
+// Set BG1/BG2 character base addresses (in 8KB units, 0-15)
+// Usage: set_bg12_chr!(0, 4);  // BG1 at $0000, BG2 at $8000
+macro_rules! set_bg12_chr($bg1:expr, $bg2:expr) {
+    BG12NBA = ($bg1 & 0x0F) | (($bg2 & 0x0F) << 4);
+}
+
+macro_rules! set_bg34_chr($bg3:expr, $bg4:expr) {
+    BG34NBA = ($bg3 & 0x0F) | (($bg4 & 0x0F) << 4);
+}
+
+// Set BG scroll position (writes twice for 10-bit value)
+// Usage: set_bg1_scroll!(hscroll, vscroll);
+macro_rules! set_bg1_hscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG1HOFS = A as u8;
+    BG1HOFS = B;
+}
+
+macro_rules! set_bg1_vscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG1VOFS = A as u8;
+    BG1VOFS = B;
+}
+
+macro_rules! set_bg2_hscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG2HOFS = A as u8;
+    BG2HOFS = B;
+}
+
+macro_rules! set_bg2_vscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG2VOFS = A as u8;
+    BG2VOFS = B;
+}
+
+macro_rules! set_bg3_hscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG3HOFS = A as u8;
+    BG3HOFS = B;
+}
+
+macro_rules! set_bg3_vscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG3VOFS = A as u8;
+    BG3VOFS = B;
+}
+
+macro_rules! set_bg4_hscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG4HOFS = A as u8;
+    BG4HOFS = B;
+}
+
+macro_rules! set_bg4_vscroll($scroll:expr) {
+    A = ($scroll) as u16;
+    BG4VOFS = A as u8;
+    BG4VOFS = B;
+}
+
+// ============================================================================
+// MACROS - Screen Layers
+// ============================================================================
+
+// Set layers on main screen
+// Usage: set_main_layers!(Screen::BG1 | Screen::Obj);
+macro_rules! set_main_layers($layers:expr) {
+    TM = $layers;
+}
+
+// Set layers on sub screen
+// Usage: set_sub_layers!(Screen::BG2);
+macro_rules! set_sub_layers($layers:expr) {
+    TS = $layers;
+}
+
+// ============================================================================
+// MACROS - Object/Sprite Settings
+// ============================================================================
+
+// Set object size and name base
+// Usage: set_obj_sel!(ObjSize::T8x8_16x16, 0, 0);
+macro_rules! set_obj_sel($size:expr, $base:expr, $gap:expr) {
+    OBSEL = $size as u8 | ($base & 0x07) | (($gap & 0x03) << 3);
+}
+
+// ============================================================================
+// MACROS - Interrupt Control
+// ============================================================================
+
+// Enable NMI
+// Usage: enable_nmi!();
+macro_rules! enable_nmi() {
+    NMITIMEN |= Interrupt::Nmi as u8;
+}
+
+// Disable NMI
+// Usage: disable_nmi!();
+macro_rules! disable_nmi() {
+    NMITIMEN = NMITIMEN & 0x7F;
+}
+
+// Enable auto-joypad read
+// Usage: enable_autojoy!();
+macro_rules! enable_autojoy() {
+    NMITIMEN |= Interrupt::AutoJoy as u8;
+}
+
+// Set all interrupt flags at once
+// Usage: set_nmitimen!(Interrupt::Nmi | Interrupt::AutoJoy);
+macro_rules! set_nmitimen($flags:expr) {
+    NMITIMEN = $flags;
+}
+
+// Clear pending NMI (read RDNMI)
+// Usage: clear_nmi!();
+macro_rules! clear_nmi() {
+    A = RDNMI;
+}
+
+// ============================================================================
+// MACROS - DMA Helper Macros
+// ============================================================================
+// Low-level helpers for custom DMA configurations.
+// Uses WLA-DX operators: #< (low byte), #> (high byte), #^ (bank byte)
+// ============================================================================
+
+// Set DMA source address from a far pointer/label
+// Usage: dma_set_src!(0, my_graphics_data);
+macro_rules! dma_set_src($channel:literal, $ptr:ident) {
+    const_assert!($channel < 8, "DMA channel must be 0-7");
+    asm!(
+        "LDA #<{PTR}",
+        "STA A1T{CH}L",
+        "LDA #>{PTR}",
+        "STA A1T{CH}H",
+        "LDA #:{PTR}",
+        "STA A1B{CH}",
+        PTR=symbol!($ptr), CH=$channel
+    );
+}
+
+// Set DMA destination with 24-bit address (for WRAM transfers)
+// Combines WRAM address setup (WMADDL/M/H) with DMA mode/BBAD configuration
+// Usage: dma_set_dest!(0, DmaTransferMode::OneReg, 0x7E2000);
+macro_rules! dma_set_dest($channel:literal, $mode:literal, $dest:ident) {
+    const_assert!($channel < 8, "DMA channel must be 0-7");
+    asm!(
+        "LDA #<{DEST}",
+        "STA WMADDL",
+        "LDA #>{DEST}",
+        "STA WMADDM",
+        "LDA #^{DEST}",
+        "STA WMADDH",
+        "LDA #{MODE}",
+        "STA DMAP{CH}",
+        "LDA #$80",
+        "STA BBAD{CH}",
+        DEST=$dest, MODE=stringify!($mode), CH=$channel
+    );
+}
+
+// Set DMA destination for PPU registers (B-bus address) and transfer mode
+// Usage: dma_set_ppu_dest!(0, DmaTransferMode::TwoReg, 0x18);
+macro_rules! dma_set_ppu_dest($channel:literal, $mode:expr, $bbad:literal) {
+    const_assert!($channel < 8, "DMA channel must be 0-7");
+    STATUS.A16 = false;  // Ensure 8-bit A (emits SEP #$20 only if needed)
+    asm!(
+        "LDA #{MODE}",
+        "STA DMAP{CH}",
+        "LDA #{BBAD}",
+        "STA BBAD{CH}",
+        MODE=stringify!($mode), BBAD=$bbad, CH=$channel
+    );
+}
+
+// Set DMA transfer size
+// Usage: dma_set_size!(0, 4096);
+macro_rules! dma_set_size($channel:literal, $size:literal) {
+    const_assert!($channel < 8, "DMA channel must be 0-7");
+    asm!(
+        "LDX #{SIZE}",
+        "STX DAS{CH}",
+        SIZE=$size, CH=$channel
+    );
+}
+
+// Trigger DMA transfer on a channel
+// Usage: dma_trigger!(0);  // Trigger channel 0
+macro_rules! dma_trigger($channel:literal) {
+    const_assert!($channel < 8, "DMA channel must be 0-7");
+    MDMAEN = 1 << $channel;
+}
+
+// ============================================================================
+// MACROS - DMA Operations (Const - Compile-time addresses)
+// ============================================================================
+// These macros use WLA-DX operators (#<, #>, #:) to extract address bytes
+// at assemble time. All parameters must be compile-time constants or labels.
+// For runtime/dynamic addresses, use the function versions below.
+// ============================================================================
+
+// DMA copy to VRAM (const version - compile-time source address)
+// Usage: dma_copy_vram_const!(0, src_label, dest_vram, size);
+// Note: src should be a WLA-DX label (e.g., sprites1_gfx_data), not an R65 variable
+macro_rules! dma_copy_vram_const($channel:literal, $src:ident, $dest:ident, $size:literal) {
+    STATUS.A16 = false;  // Ensure 8-bit A (emits SEP #$20 only if needed)
+    asm!(
+        "LDA #$80",       // VmainTrigger::High
+        "STA VMAIN",      // Store to VMAIN
+        "LDX #{DEST}",
+        "STX VMADD",
+        DEST=$dest
+    );
+    dma_set_src!($channel, $src);
+    dma_set_size!($channel, $size);
+    dma_set_ppu_dest!($channel, 1, 24);  // 1 = DMA_MODE_2REG_1WRITE, 24 = $18 (VMDATAL)
+    dma_trigger!($channel);
+}
+
+// DMA copy to CGRAM (palette) - const version
+// Usage: dma_copy_cgram_const!(0, src_label, start_color, num_colors);
+macro_rules! dma_copy_cgram_const($channel:literal, $src:ident, $start:expr, $count:literal) {
+    STATUS.A16 = false;  // Ensure 8-bit A (emits SEP #$20 only if needed)
+    asm!(
+        "LDA #{START}",
+        "STA CGADD",
+        START=$start
+    );
+    dma_set_src!($channel, $src);
+    asm!(
+        "LDX #({COUNT} * 2)",
+        "STX DAS{CH}",
+        COUNT=$count, CH=$channel
+    );
+    dma_set_ppu_dest!($channel, 2, 34);  // 2 = DMA_MODE_1REG_2WRITE, 34 = $22 (CGDATA)
+    dma_trigger!($channel);
+}
+
+// DMA copy to OAM (sprites) - const version
+// Usage: dma_copy_oam_const!(0, src_label, size);
+macro_rules! dma_copy_oam_const($channel:literal, $src:ident, $size:literal) {
+    OAMADDL = 0;
+    OAMADDH = 0;
+    dma_set_src!($channel, $src);
+    dma_set_size!($channel, $size);
+    dma_set_ppu_dest!($channel, 0, 4);  // 0 = DMA_MODE_1REG_1WRITE, 4 = $04 (OAMDATA)
+    dma_trigger!($channel);
+}
+
+// ============================================================================
+// FUNCTIONS - DMA Operations (Runtime - Dynamic addresses)
+// ============================================================================
+// These functions accept far pointers for runtime/dynamic source addresses.
+// For compile-time known addresses, prefer the const macros for efficiency.
+//
+// Note: Functions use () syntax, macros use !() syntax:
+//   dma_copy_vram_const!(...)  - macro for compile-time addresses
+//   dma_copy_vram(...)         - function for runtime addresses
+// ============================================================================
+
+// Lookup table for DMA channel trigger bits
+static dma_trigger_masks: [u8; 8] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80];
+
+// DMA copy to VRAM (function version - far pointer)
+// Usage: dma_copy_vram(channel, &my_data as far *u8, vram_offset, size);
+// channel: DMA channel (0-7)
+// src: 24-bit far pointer to source data
+// vram_offset: destination VRAM word address
+// size: number of bytes to transfer
+far fn dma_copy_vram(channel: u8, src: far *u8, vram_offset: u16, size: u16) {
+    // Save channel for trigger lookup
+    Y = channel;
+
+    // Compute DMA register base offset (channel * 16)
+    X = channel << 4;
+
+    // VRAM setup
+    VMAIN = 0x80;
+    VMADD = vram_offset;
+
+    // DMA register writes - X-indexed STA requires assembly
+    A = 0x01;
+    asm!("STA $4300,X");  // DMAPn - 2 regs, increment
+    A = 0x18;
+    asm!("STA $4301,X");  // BBADn - VMDATAL
+    A = src as u8;
+    asm!("STA $4302,X");  // src lo
+    A = ((src as u16) >> 8) as u8;
+    asm!("STA $4303,X");  // src hi
+    A = src.bank_byte();
+    asm!("STA $4304,X");  // src bank
+    A = size as u8;
+    asm!("STA $4305,X");  // size lo
+    A = (size >> 8) as u8;
+    asm!("STA $4306,X");  // size hi
+
+    // Trigger DMA
+    MDMAEN = dma_trigger_masks[Y];
+}
+
+// DMA copy to CGRAM (function version - far pointer)
+// Usage: dma_copy_cgram(channel, &palette_data as far *u8, start_color, num_bytes);
+// channel: DMA channel (0-7)
+// src: 24-bit far pointer to source data
+// start_color: starting color index (0-255)
+// num_bytes: number of bytes to transfer (colors * 2)
+far fn dma_copy_cgram(channel: u8, src: far *u8, start_color: u16, num_bytes: u16) {
+    // Save channel for trigger lookup
+    Y = channel;
+
+    // Compute DMA register base offset (channel * 16)
+    X = channel << 4;
+
+    // CGRAM setup
+    CGADD = start_color as u8;
+
+    // DMA register writes - X-indexed STA requires assembly
+    A = 0x02;
+    asm!("STA $4300,X");  // DMAPn - 1 reg, write twice
+    A = 0x22;
+    asm!("STA $4301,X");  // BBADn - CGDATA
+    A = src as u8;
+    asm!("STA $4302,X");  // src lo
+    A = ((src as u16) >> 8) as u8;
+    asm!("STA $4303,X");  // src hi
+    A = src.bank_byte();
+    asm!("STA $4304,X");  // src bank
+    A = num_bytes as u8;
+    asm!("STA $4305,X");  // num_bytes lo
+    A = (num_bytes >> 8) as u8;
+    asm!("STA $4306,X");  // num_bytes hi
+
+    // Trigger DMA
+    MDMAEN = dma_trigger_masks[Y];
+}
+
+// DMA copy to OAM (function version - far pointer)
+// Usage: dma_copy_oam(channel, &oam_data as far *u8, size);
+// channel: DMA channel (0-7)
+// src: 24-bit far pointer to source data
+// size: number of bytes to transfer (usually 544)
+far fn dma_copy_oam(channel: u8, src: far *u8, size: u16) {
+    // Save channel for trigger lookup
+    Y = channel;
+
+    // Compute DMA register base offset (channel * 16)
+    X = channel << 4;
+
+    // OAM setup
+    OAMADD = 0;
+
+    // DMA register writes - X-indexed STA requires assembly
+    A = 0x00;
+    asm!("STA $4300,X");  // DMAPn - 1 reg, write once
+    A = 0x04;
+    asm!("STA $4301,X");  // BBADn - OAMDATA
+    A = src as u8;
+    asm!("STA $4302,X");  // src lo
+    A = ((src as u16) >> 8) as u8;
+    asm!("STA $4303,X");  // src hi
+    A = src.bank_byte();
+    asm!("STA $4304,X");  // src bank
+    A = size as u8;
+    asm!("STA $4305,X");  // size lo
+    A = (size >> 8) as u8;
+    asm!("STA $4306,X");  // size hi
+
+    // Trigger DMA
+    MDMAEN = dma_trigger_masks[Y];
+}
+
+
+// DMA fill VRAM with a value (fixed source address mode)
+// Usage: dma_fill_vram!(0, dest_vram, src, size);
+macro_rules! dma_fill_vram($channel:literal, $dest:ident, $src:ident, $size:literal) {
+    VMAIN = VmainTrigger::High;
+    asm!(
+        "LDX #{DEST}",
+        "STX VMADD",
+        DEST=$dest
+    );
+    dma_set_src!($channel, $src);
+    dma_set_size!($channel, $size);
+    dma_set_ppu_dest!($channel, 9, 24);  // 9 = DMA_MODE_2REG_1WRITE | DMA_FIXED, 24 = $18
+    dma_trigger!($channel);
+}
+
+// DMA copy from VRAM to RAM
+// Usage: dma_copy_from_vram!(0, src_vram, dest_ptr, size);
+macro_rules! dma_copy_from_vram($channel:literal, $src:ident, $dest:ident, $size:literal) {
+    VMAIN = VmainTrigger::High;
+    asm!(
+        "LDX #{SRC}",
+        "STX VMADD",
+        SRC=$src
+    );
+    dma_set_src!($channel, $dest);
+    dma_set_size!($channel, $size);
+    dma_set_ppu_dest!($channel, 129, 57);  // 129 = DMA_MODE_2REG_1WRITE | DMA_DIRECTION_TO_CPU, 57 = $39
+    dma_trigger!($channel);
+}
+
+// DMA copy to WRAM (ROM to RAM or RAM to WRAM)
+// Usage: dma_copy_wram!(0, dest_wram, src, size);
+macro_rules! dma_copy_wram($channel:literal, $dest:ident, $src:ident, $size:literal) {
+    dma_set_src!($channel, $src);
+    dma_set_size!($channel, $size);
+    dma_set_dest!($channel, 0, $dest);  // 0 = DMA_MODE_1REG_1WRITE
+    dma_trigger!($channel);
+}
+
+// ============================================================================
+// MACROS - HDMA Setup
+// ============================================================================
+
+// Enable HDMA channels
+// Usage: enable_hdma!(0x01);  // Channel 0
+macro_rules! dma_set_hdma($channels:expr) {
+    HDMAEN = $channels;
+}
+
+// Disable all HDMA
+// Usage: dma_disable_hdma!();
+macro_rules! dma_disable_hdma() {
+    HDMAEN = 0;
+}
+
+// ============================================================================
+// MACROS - Mode 7
+// ============================================================================
+
+// Set Mode 7 matrix parameter A (cosine for rotation)
+// Usage: set_m7a!(0x0100);  // 1.0 in fixed point
+macro_rules! set_m7a($val:expr) {
+    A = $val as u16;
+    M7A = A as u8;
+    M7A = B;
+}
+
+macro_rules! set_m7b($val:expr) {
+    A = $val as u16;
+    M7B = A as u8;
+    M7B = B;
+}
+
+macro_rules! set_m7c($val:expr) {
+    A = $val as u16;
+    M7C = A as u8;
+    M7C = B;
+}
+
+macro_rules! set_m7d($val:expr) {
+    A = $val as u16;
+    M7D = A as u8;
+    M7D = B;
+}
+
+// Set Mode 7 center point
+// Usage: set_m7_center!(128, 112);
+macro_rules! set_m7_center($x:expr, $y:expr) {
+    A = $x as u16;
+    M7X = A as u8;
+    M7X = B;
+    A = $y as u16;
+    M7Y = A as u8;
+    M7Y = B;
+}
+
+
+// ============================================================================
+// MACROS - Color Math
+// ============================================================================
+
+// Set fixed color for color math
+// Usage: set_fixed_color!(ColorChannel::Red | 15);  // Red = 15
+macro_rules! set_fixed_color($color:expr) {
+    COLDATA = $color;
+}
+
+// Set fixed color RGB (each 0-31)
+// Usage: set_fixed_rgb!(31, 31, 31);  // White
+macro_rules! set_fixed_rgb($r:literal, $g:literal, $b:literal) {
+    COLDATA = ColorChannel::Red | ($r & 0x1F) | ColorChannel::Green | ($g & 0x1F) | ColorChannel::Blue | ($b & 0x1F);
+}
+
+
+// ============================================================================
+// MACROS - Window
+// ============================================================================
+
+// Set Window 1 bounds
+// Usage: set_window1!(32, 224);
+macro_rules! set_window1($left:expr, $right:expr) {
+    WH0 = $left;
+    WH1 = $right;
+}
+
+// Set Window 2 bounds
+// Usage: set_window2!(64, 192);
+macro_rules! set_window2($left:expr, $right:expr) {
+    WH2 = $left;
+    WH3 = $right;
+}
+
+// ============================================================================
+// MACROS - IRQ Timers
+// ============================================================================
+
+// Set H-count IRQ position (0-339)
+// Usage: set_hirq!(128);
+macro_rules! set_hirq($pos:expr) {
+    HTIME = $pos as u16;
+}
+
+// Set V-count IRQ position (0-261 NTSC, 0-311 PAL)
+// Usage: set_virq!(200);
+macro_rules! set_virq($pos:expr) {
+    VTIME = $pos as u16;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS - Loops and Complex Operations
+// ============================================================================
+
+// Wait for VBlank
+macro_rules! wait_nmi() {
+    asm!("WAI");
+}
+
+// Wait for auto-joypad read to complete
+macro_rules! wait_autojoy() {
+    while HVBJOY & 0x01 != 0 {}
+}
+
+// Sync main loop to NMI frame counter with drop-frame tolerance.
+// If the counter has not advanced past last_frame, WAI sleeps until NMI fires.
+// If one or more NMIs already fired during main work, falls through immediately
+// (no extra-frame penalty) and resyncs last_frame to the current count.
+//
+// Requires: frame_count is incremented by the NMI handler; last_frame is a
+// mutable integer owned by main code (persist across calls, do not touch from NMI).
+//
+// Usage:
+//   wait_vblank_sync!(FRAME_COUNTER, LAST_FRAME);
+macro_rules! wait_vblank_sync($frame_count:ident, $last_frame:ident) {
+    if $frame_count == $last_frame {
+        wait_nmi!();
+    }
+    $last_frame = $frame_count;
+}
+
+
+// Clear VRAM (fill with zeros) - slow but thorough
+fn clear_vram() {
+    VMADDL = 0;
+    VMADDH = 0;
+    VMAIN = VmainTrigger::High;
+
+    // 128 * 256 = 32768 words to clear
+    for i in 0..32768 {
+        VMDATAL = 0;
+        VMDATAH = 0;
+    }
+}
+
+// Clear CGRAM (all colors to black)
+fn clear_cgram() {
+    CGADD = 0;
+    // 256 colors * 2 bytes each = 512 bytes
+    for i in 0..512 {
+        CGDATA = 0;
+    }
+}
+
+// Clear OAM (all sprites off-screen)
+fn clear_oam() {
+    OAMADDL = 0;
+    OAMADDH = 0;
+
+    for i in 0..128 {
+        OAMDATA = 0;
+        OAMDATA = 240;  // Y off-screen
+        OAMDATA = 0;
+        OAMDATA = 0;
+    }
+
+    // Extended table
+    for j in 0..32 {
+        OAMDATA = 0;
+    }
+}
+
+// Initialize PPU registers to safe defaults
+fn init_ppu() {
+    INIDISP = FORCE_BLANK;
+    OBSEL = 0;
+    OAMADDL = 0;
+    OAMADDH = 0;
+    BGMODE = 0;
+    MOSAIC = 0;
+    BG1SC = 0;
+    BG2SC = 0;
+    BG3SC = 0;
+    BG4SC = 0;
+    BG12NBA = 0;
+    BG34NBA = 0;
+
+    // BG scroll registers (write-twice each)
+    let mut ptr: *u8 = 0x210D as *u8;
+    for i in 0..16 {
+        ptr[i] = 0;
+    }
+
+    VMAIN = VmainTrigger::High;
+    VMADDL = 0;
+    VMADDH = 0;
+
+    // Mode 7: identity matrix
+    M7SEL = 0;
+    M7A = 1; M7A = 0;
+    M7B = 0; M7B = 0;
+    M7C = 0; M7C = 0;
+    M7D = 1; M7D = 0;
+    M7X = 0; M7X = 0;
+    M7Y = 0; M7Y = 0;
+
+    CGADD = 0;
+    W12SEL = 0;
+    W34SEL = 0;
+    WOBJSEL = 0;
+    WH0 = 0;
+    WH1 = 0;
+    WH2 = 0;
+    WH3 = 0;
+    WBGLOG = 0;
+    WOBJLOG = 0;
+    TM = 0;
+    TS = 0;
+    TMW = 0;
+    TSW = 0;
+    CGWSEL = 0;
+    CGADSUB = 0;
+    COLDATA = ColorChannel::Red;
+    COLDATA = ColorChannel::Green;
+    COLDATA = ColorChannel::Blue;
+    SETINI = 0;
+}
+
+// Initialize CPU registers
+//
+// MEMSEL ($420D) is deliberately not touched here. FastROM is driven by
+// #[snesrom(..., fastrom)], which makes the compiler place code in the
+// $80-$BF mirror and enable MEMSEL in the reset trampoline. Setting it
+// here would either be a no-op (code running from $00-$3F) or disagree
+// with the ROM header's speed bit.
+fn init_cpu() {
+    NMITIMEN = 0;
+    HDMAEN = 0;
+}
+
+// Full SNES initialization
+fn snes_init() {
+    init_cpu();
+    init_ppu();
+    clear_vram();
+    clear_cgram();
+    clear_oam();
+    NMITIMEN = Interrupt::Nmi | Interrupt::AutoJoy;
+}
+
+// Delay for specified number of frames
+// Usage: delay(60);  // Wait ~1 second (NTSC)
+far fn delay(frames: u16) {
+    let mut count: u16 = frames;
+    while count > 0 {
+        wait_nmi!();
+        count--;
+    }
+}
+
+// Check if console is PAL (returns 1) or NTSC (returns 0)
+// Usage: if is_pal() { ... }
+fn is_pal() -> bool {
+    A = STAT78 & 0x10;
+    return !STATUS.Zero;
+}
+
+// Set pixelization/mosaic effect (user-friendly version)
+// level: 0 = off, 1 = min pixelization, 16 = max pixelization
+// bgs: which backgrounds to apply mosaic to (use Screen::BG1, etc.)
+// Usage: set_pixelize(4, Screen::BG1 | Screen::BG2);
+far fn set_pixelize(level: u8, bgs: u16) {
+    if level == 0 {
+        MOSAIC = 0;
+    } else {
+        let mut val: u8 = level;
+        val = val << 4;
+        val = val | (bgs as u8);
+        MOSAIC = val;
+    }
+}
+
+// ============================================================================
+// SPC700 TRANSFER FUNCTIONS
+// ============================================================================
+
+// Wait for SPC700 to be ready
+fn spc_wait_ready() -> u8 {
+    let mut timeout: u8 = 0;
+    loop {
+        A = APUIO0;
+        if A == 0xAA {
+            A = APUIO1;
+            if A == 0xBB {
+                A = 1;
+                return A;
+            }
+        }
+        timeout++;
+        if timeout == 0 {
+            A = 0;
+            return A;
+        }
+    }
+}
+
+// Begin SPC700 transfer to destination address
+fn spc_begin_transfer(dest_low @ A: u8, dest_high: u16) {
+    APUIO2 = dest_low;
+    APUIO3 = dest_high;
+    APUIO1 = 0x01;
+    APUIO0 = 0xCC;
+
+    loop {
+        A = APUIO0;
+        if A == 0xCC {
+            break;
+        }
+    }
+}
+
+// Transfer byte to SPC700
+fn spc_transfer_byte(data @ A: u8, index: u16) {
+    APUIO1 = data;
+    APUIO0 = index;
+
+    loop {
+        A = APUIO0;
+        if A == index {
+            break;
+        }
+    }
+}
+
+// End SPC700 transfer and start execution
+fn spc_end_transfer(exec_low @ A: u8, exec_high: u16) {
+    APUIO2 = exec_low;
+    APUIO3 = exec_high;
+
+    A = APUIO0;
+    A = A + 2;
+    A = A & 0xFE;
+    APUIO1 = 0;
+    APUIO0 = A;
+}
+
+
+// ============================================================================
+// FAST DMA CLEAR FUNCTIONS
+// ============================================================================
+
+// DMA clear VRAM (clears all 64KB)
+// Requires a zero byte somewhere in ROM/RAM for the fill value
+// Usage: dma_clear_vram!(0, zero_byte_ptr);
+macro_rules! dma_clear_vram($channel:literal, $zero_ptr:expr) {
+    VMADD = 0;
+    VMAIN = VmainTrigger::High;
+    dma_set_src!($channel, $zero_ptr);
+    asm!("STZ DAS{CH}", CH=$channel);  // 0 = 64KB
+    dma_set_ppu_dest!($channel, 9, 24);  // 9 = DMA_MODE_2REG_1WRITE | DMA_FIXED, 24 = $18
+    dma_trigger!($channel);
+}
+
+// DMA clear CGRAM (clears all 512 bytes)
+// Usage: dma_clear_cgram!(0, zero_ptr);
+macro_rules! dma_clear_cgram($channel:literal, $zero_ptr:expr) {
+    CGADD = 0;
+    dma_set_src!($channel, $zero_ptr);
+    dma_set_size!($channel, 512);
+    dma_set_ppu_dest!($channel, 10, 34);  // 10 = DMA_MODE_1REG_2WRITE | DMA_FIXED, 34 = $22
+    dma_trigger!($channel);
+}
+

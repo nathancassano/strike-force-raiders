@@ -1,0 +1,508 @@
+// R65 Standard Library - Math Functions
+//
+// Provides multiplication, division, modulo, and variable shift operations.
+//
+// Usage:
+//   include!("lib/sneslib.r65")  // Required: provides hardware registers
+//   include!("lib/math.r65")
+//
+// Hardware registers used (defined in sneslib.r65):
+//   WRMPYA, WRMPYB, RDMPYL, RDMPYH - Multiplication unit
+//   WRDIVL, WRDIVH, WRDIVB, RDDIVL, RDDIVH - Division unit
+
+// ============================================================================
+// Multiplication Functions
+// ============================================================================
+
+// Hardware 8x8 -> 16 unsigned multiply (widening)
+// Uses SNES $4202-$4203 multiplication unit
+// Result: 16-bit widening product
+#[cfg(snes)]
+far fn mul8(multA @ A: u8, multB @ B: u8) -> u16 {
+    // WRMPYA ($4202) and WRMPYB ($4203) are adjacent, and the ABI has already
+    // put multA in A and multB in B -- so the 16-bit accumulator holds exactly
+    // the word those two registers want. One REP + STA writes both, where
+    // `WRMPYA = multA; WRMPYB = multB;` costs an extra store and two XBAs to
+    // reach B and put A back.
+    //
+    // This is inline asm because R65 has no way to name the full 16-bit
+    // accumulator from m8 code: `A` is the low byte, `B` the high one, and
+    // `A as u16` zero-extends -- which kills the very byte we want to store.
+    //
+    // Leaves the CPU in m16, which is what a `-> u16` function returns in
+    // anyway, so callers are unaffected. Do not add anything with an immediate
+    // operand between here and the return: the compiler still believes m8, so
+    // WLA-DX would size it for the wrong width.
+    asm!("REP #$20", "STA $4202");
+
+    // Wait 8 machine cycles for multiplication to complete. The 16-bit store
+    // writes $4203 on its last cycle, so the four NOPs plus the load's own
+    // fetch keep the result read clear of that window.
+    NOP(4);
+
+    // Return 16-bit result (RDMPY is u16, reads $4216-$4217 in m16)
+    return RDMPY;
+}
+
+// Hardware 16x16 -> 16 unsigned multiply
+// Decomposes into three 8x8 partial products using SNES multiplication unit
+// result = A_lo*B_lo + (A_lo*B_hi)<<8 + (A_hi*B_lo)<<8
+// (A_hi*B_hi<<16 overflows 16-bit, skipped)
+// Cycles: ~60
+#[cfg(snes)]
+far fn mul16(multA @ A: u16, multB: u16) -> u16 {
+    // Extract bytes from multA (16-bit) while in m8
+    let _a_lo: u8 = multA as u8;
+    let _a_hi: u8 = B;
+    let _b_lo: u8 = multB as u8;
+    let mut _b_hi: u8;
+    // Get high byte of multB: load u16, shift right 8, truncate
+    A = multB;
+    A >>= 8;
+    _b_hi = A as u8;
+
+    // Partial product 1: A_lo * B_lo -> 16-bit
+    WRMPYA = _a_lo;
+    WRMPYB = _b_lo;
+    NOP(4);
+    // Read full 16-bit result via RDMPY (u16). Mode switch adds two cycles.
+    let mut _result: u16 = RDMPY;
+
+    // Partial product 2: A_lo * B_hi -> add low byte << 8
+    if _b_hi != 0 {
+        WRMPYA = _a_lo;
+        WRMPYB = _b_hi;
+        NOP(4);
+        A = RDMPYL as u16;
+        A <<= 8;
+        _result += A;
+    }
+
+    // Partial product 3: A_hi * B_lo -> add low byte << 8
+    if _a_hi != 0 {
+        WRMPYA = _a_hi;
+        WRMPYB = _b_lo;
+        NOP(4);
+        A = RDMPYL as u16;
+        A <<= 8;
+        _result += A;
+    }
+    A = _result;
+
+    return A;
+}
+
+// Software 8x8 -> 16 unsigned multiply (widening)
+// Uses shift-and-add algorithm with 16-bit accumulation
+// Cycles: ~80-160 depending on operands
+#[cfg(not(snes))]
+far fn mul8(multA @ A: u8, multB @ B: u8) -> u16 {
+    let mut _multiplier: u8 = multB;
+    let mut _multiplicand: u16 = multA as u16;
+    let mut _result: u16 = 0;
+
+    loop {
+        if _multiplier == 0 {
+            break;
+        }
+
+        // Test lowest bit of multiplier
+        A = _multiplier;
+        A &= 0x01;
+        if A != 0 {
+            _result += _multiplicand;
+        }
+
+        // Shift multiplicand left (16-bit, widens naturally)
+        _multiplicand <<= 1;
+
+        // Shift multiplier right
+        _multiplier >>= 1;
+    }
+
+    return _result;
+}
+
+// Software 16x16 -> 16 unsigned multiply
+// Shift-and-add on full 16-bit operands
+// Cycles: ~300-600 depending on operands
+#[cfg(not(snes))]
+far fn mul16(multA @ A: u16, multB: u16) -> u16 {
+    let mut _multiplicand: u16 = multA;
+    let mut _multiplier: u16 = multB;
+    let mut _result: u16 = 0;
+
+    loop {
+        if _multiplier == 0 {
+            break;
+        }
+
+        // Test lowest bit of multiplier
+        A = _multiplier;
+        A &= 1;
+        if A != 0 {
+            A = _result;
+            A += _multiplicand;
+            _result = A;
+        }
+
+        // Shift multiplicand left (double it)
+        A = _multiplicand;
+        A <<= 1;
+        _multiplicand = A;
+
+        // Shift multiplier right (halve it)
+        A = _multiplier;
+        A >>= 1;
+        _multiplier = A;
+    }
+
+    return _result;
+}
+
+
+// Division and modulo functions
+// Provides hardware and software implementations
+
+// Hardware 16/8 -> 16 unsigned division
+// Uses SNES $4204-$4206 division unit
+// Returns: 16-bit quotient
+// Cycles: ~30 (16 wait + overhead)
+#[cfg(snes)]
+far fn div16(dividend @ A: u16, divisor: u8) -> u16 {
+    // Write 16-bit dividend (single 16-bit store covers $4204+$4205)
+    WRDIV = dividend;
+
+    // Switch to 8-bit for hardware register writes
+    STATUS.A16 = false;  // SEP #$20 - switch to 8-bit
+    // Write divisor (starts division)
+    WRDIVB = divisor;
+
+    // The unit needs 16 machine cycles after the WRDIVB write. The REP is 3
+    // of them and five NOPs are 10 more; the last three come from the read's
+    // own operand fetch, which precedes its data cycle. Measured on Mesen:
+    // five is the minimum, four gives wrong quotients.
+    STATUS.A16 = true;  // REP #$20 - switch back to 16-bit
+    NOP(5);
+
+    return RDDIV;
+}
+
+// Hardware 8/8 -> 8 unsigned division (simplified)
+// Extends dividend to 16-bit with zero high byte
+// Returns: 8-bit quotient
+#[cfg(snes)]
+far fn div8(dividend @ A: u8, divisor @ X: u16) -> u8 {
+    // Write dividend with zero high byte
+    WRDIVL = dividend;
+    WRDIVH = 0;
+
+    // Write divisor
+    WRDIVB = divisor;
+
+    // The unit needs 16 machine cycles after the WRDIVB write. Seven NOPs is
+    // 14 of them; the last two come from the read's own operand fetch, which
+    // precedes its data cycle no matter which addressing mode the compiler
+    // picks. Measured on Mesen: seven is the minimum, six gives wrong
+    // quotients, and the threshold does not move between SlowROM and FastROM.
+    NOP(7);
+
+    // Read low byte of quotient only
+    return RDDIVL;
+}
+
+// Hardware 16/8 -> 16 modulo
+// Uses SNES $4204-$4206 division unit, returns remainder
+// Cycles: ~30 (16 wait + overhead)
+#[cfg(snes)]
+far fn mod16(dividend @ A: u16, divisor: u8) -> u16 {
+    // Write 16-bit dividend (single 16-bit store covers $4204+$4205)
+    WRDIV = dividend;
+
+    // Switch to 8-bit for hardware register writes
+    STATUS.A16 = false;  // SEP #$20 - switch to 8-bit
+    // Write divisor (starts division)
+    WRDIVB = divisor;
+
+    // Same 16-cycle accounting as div16 above: REP is 3, five NOPs are 10,
+    // and the read's operand fetch supplies the last three.
+    STATUS.A16 = true;  // REP #$20 - switch back to 16-bit
+    NOP(5);
+
+    return RDMPY;
+}
+
+// Hardware 8/8 -> 8 modulo
+// Performs division and returns remainder
+#[cfg(snes)]
+far fn mod8(dividend @ A: u8, divisor @ X: u16) -> u8 {
+    // Write dividend with zero high byte
+    WRDIVL = dividend;
+    WRDIVH = 0;
+
+    // Write divisor
+    WRDIVB = divisor;
+
+    // The unit needs 16 machine cycles after the WRDIVB write. Seven NOPs is
+    // 14 of them; the last two come from the read's own operand fetch, which
+    // precedes its data cycle no matter which addressing mode the compiler
+    // picks. Measured on Mesen: seven is the minimum, six gives wrong
+    // quotients, and the threshold does not move between SlowROM and FastROM.
+    NOP(7);
+
+    // Read remainder (low byte)
+    return RDMPYL;
+}
+
+// Software 8/8 -> 8 unsigned division
+// Uses restoring division algorithm
+// Returns: quotient
+// Cycles: ~200-400
+#[cfg(not(snes))]
+far fn div8(dividend @ A: u8, divisor @ X: u16) -> u8 {
+    // Handle division by zero - return 0xFF (max value)
+    if divisor == 0 {
+        dividend = 0xFF;
+        return dividend;
+    }
+
+    let mut _dividend: u8 = dividend;
+    let mut _quotient: u8 = 0;
+    let mut _remainder: u8 = 0;
+    let mut _count: u8 = 8;
+
+    loop {
+        // Shift remainder left, bringing in high bit of dividend
+        dividend = _remainder;
+        dividend <<= 1;
+        _remainder = dividend;
+
+        // Get high bit of dividend into remainder
+        dividend = _dividend;
+        dividend &= 0x80;
+        if dividend != 0 {
+            dividend = _remainder;
+            dividend |= 0x01;
+            _remainder = dividend;
+        }
+
+        // Shift dividend left
+        dividend = _dividend;
+        dividend <<= 1;
+        _dividend = dividend;
+
+        // Shift quotient left
+        dividend = _quotient;
+        dividend <<= 1;
+        _quotient = dividend;
+
+        // Try to subtract divisor from remainder
+        dividend = _remainder;
+        if dividend >= divisor {
+            dividend -= divisor;
+            _remainder = dividend;
+            // Set low bit of quotient
+            dividend = _quotient;
+            dividend |= 0x01;
+            _quotient = dividend;
+        }
+
+        _count--;
+        if _count == 0 {
+            break;
+        }
+    }
+
+    dividend = _quotient;
+    return dividend;
+}
+
+// Software 8/8 -> 8 modulo
+// Uses division algorithm, returns remainder
+#[cfg(not(snes))]
+far fn mod_shift(dividend @ A: u8, divisor: u8) -> u8 {
+    // Handle division by zero - return original dividend
+    if divisor == 0 {
+        return dividend;
+    }
+
+    let mut _dividend: u8 = dividend;
+    let mut _remainder: u8 = 0;
+    let mut _count: u8 = 8;
+
+    loop {
+        // Shift remainder left, bringing in high bit of dividend
+        dividend = _remainder;
+        dividend <<= 1;
+        _remainder = dividend;
+
+        // Get high bit of dividend into remainder
+        dividend = _dividend;
+        dividend &= 0x80;
+        if dividend != 0 {
+            dividend = _remainder;
+            dividend |= 0x01;
+            _remainder = dividend;
+        }
+
+        // Shift dividend left
+        dividend = _dividend;
+        dividend <<= 1;
+        _dividend = dividend;
+
+        // Try to subtract divisor from remainder
+        dividend = _remainder;
+        if dividend >= divisor {
+            dividend -= divisor;
+            _remainder = dividend;
+        }
+
+        _count--;
+        if _count == 0 {
+            break;
+        }
+    }
+
+    dividend = _remainder;
+    return dividend;
+}
+
+// Variable shift functions
+// Loop-based implementation for non-constant shift amounts
+
+// Variable left shift: value << amount
+// Cycles: ~10 + 4*amount
+far fn shl8(value @ A: u8, amount @ X: u16) -> u8 {
+    // Handle zero shift
+    if amount == 0 {
+        return value;
+    }
+
+    // Clamp to 8 (shifting by 8+ always gives 0)
+    if amount >= 8 {
+        value = 0;
+        return value;
+    }
+
+    // Loop: shift left amount times
+    loop {
+        value <<= 1;
+        amount--;
+        if amount == 0 {
+            break;
+        }
+    }
+
+    return value;
+}
+
+// Variable right shift (logical): value >> amount
+// Cycles: ~10 + 4*amount
+far fn shr8(value @ A: u8, amount @ X: u16) -> u8 {
+    // Handle zero shift
+    if amount == 0 {
+        return value;
+    }
+
+    // Clamp to 8
+    if amount >= 8 {
+        value = 0;
+        return value;
+    }
+
+    // Loop: shift right amount times
+    loop {
+        value >>= 1;
+        amount--;
+        if amount == 0 {
+            break;
+        }
+    }
+
+    return value;
+}
+
+// Variable arithmetic right shift (preserves sign): value >>> amount
+// For signed values - shifts in sign bit instead of zero
+// Cycles: ~10 + 6*amount
+far fn shri8(value @ A: u8, amount @ X: u16) -> u8 {
+    if amount == 0 {
+        return value;
+    }
+
+    // For 8+ shifts, result is 0x00 (positive) or 0xFF (negative)
+    if amount >= 8 {
+        // Check sign bit
+        if value & 0x80 != 0 {
+            value = 0xFF;
+        } else {
+            value = 0;
+        }
+        return value;
+    }
+
+    // Loop: arithmetic shift right amount times
+    loop {
+        // Check sign bit before shift
+        if value & 0x80 != 0 {
+            // Negative: shift right, then set sign bit
+            value >>= 1;
+            value |= 0x80;
+        } else {
+            // Positive: normal logical shift
+            value >>= 1;
+        }
+        amount--;
+        if amount == 0 {
+            break;
+        }
+    }
+
+    return value;
+}
+
+// 16-bit variable right shift (logical)
+// Cycles: ~15 + 6*amount
+far fn shr16(value @ A: u16, amount @ X: u16) -> u16 {
+    if amount == 0 {
+        return value;
+    }
+
+    if amount >= 16 {
+        value = 0;
+        return value;
+    }
+
+    loop {
+        value >>= 1;
+        amount--;
+        if amount == 0 {
+            break;
+        }
+    }
+
+    return value;
+}
+// 16-bit variable left shift
+// Cycles: ~15 + 6*amount
+far fn shl16(value @ A: u16, amount @ X: u16) -> u16 {
+    if amount == 0 {
+        return value;
+    }
+
+    if amount >= 16 {
+        value = 0;
+        return value;
+    }
+
+    loop {
+        value <<= 1;
+        amount--;
+        if amount == 0 {
+            break;
+        }
+    }
+
+    return value;
+}
+

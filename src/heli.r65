@@ -1,0 +1,182 @@
+// heli - the player helicopter: 8.8 physics, cosmetic tilt, and camera-
+// relative rendering.
+//
+// Types follow the plan's Position representation section:
+//   x   world pixel + 1/256 fraction, because a 4096 px world fits in no
+//       16-bit fixed type (Q8 caps at 255.996, Q10 at +/-511)
+//   y   plain u16 holding 8.8 screen pixels - 0..224 fits the integer byte
+//   v   Q10 (signed 10.6): velocity has to go negative, and a 5 px/frame cap
+//       still leaves 320 steps of resolution
+//
+// Q10 is 1/64 and the position fraction is 1/256, so a per-frame delta is
+// `v.0 << 2`. Q10::mul/div are never called - integration is only +, - and
+// compare, which the newtype inherits from i16.
+
+#[bank(0)]
+
+// ------------------------------------------------------------- geometry ---
+const HELI_W:     u16 = 32;               // two 16x16 OBJ cells
+const HELI_H:     u16 = 16;
+
+// Vertical limits in 8.8. The HUD strip owns the top two tile rows, and the
+// ground starts at y=168, so the airframe has to stop 16 px short of it.
+const HELI_Y_MIN: u16 = 16 << 8;
+const HELI_Y_MAX: u16 = (168 - 16) << 8;
+
+// ------------------------------------------------------------- handling ---
+// Armor Alley's mouse-seeking becomes d-pad acceleration toward a target
+// velocity: the stick picks a speed, the airframe takes a few frames to reach
+// it. No gravity while powered - that only arrives with fuel-out and ejection.
+const HELI_VX_MAX: Q10 = 5 * 64;          // 5 px/frame, the plan's cap
+const HELI_VY_MAX: Q10 = 4 * 64;          // ~4 px/frame
+const HELI_ACC:    Q10 = 16;              // 0.25 px/frame^2 toward the target
+const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
+
+// Tilt frames in the OBJ sheet. A 16x16 sprite at tile t covers t, t+1,
+// t+16, t+17, so a 32x16 frame is two cells four tiles apart.
+const HELI_TILE_LEFT:  u8 = 0;            // frame 0: leaning left
+const HELI_TILE_LEVEL: u8 = 4;
+const HELI_TILE_RIGHT: u8 = 8;
+const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
+
+// OAM slots. The helicopter is the highest-priority object in the game.
+const OAM_HELI_L: u8 = 0;
+const OAM_HELI_R: u8 = 1;
+
+// ---------------------------------------------------------------- state ---
+#[lowram] static mut heli_x_px:  u16;     // world pixel, 0..WORLD_W-HELI_W
+#[lowram] static mut heli_x_sub: u8;      // 1/256 px
+#[lowram] static mut heli_y:     u16;     // 8.8 screen pixels
+#[lowram] static mut heli_vx:    Q10;
+#[lowram] static mut heli_vy:    Q10;
+
+// heli_init - place the airframe. Statics are declared bare because an
+// initializer on a mutable static trips the __init_start MVN/DBR bug.
+far fn heli_init() {
+    heli_x_px = 64;
+    heli_x_sub = 0;
+    heli_y = 96 << 8;
+    heli_vx = Q10(0);
+    heli_vy = Q10(0);
+}
+
+// approach - step `cur` toward `target` by at most `step`.
+// Plain i16 compares; Q10 inherits them from its payload.
+far fn approach(cur: Q10, target: Q10, step: Q10) -> Q10 {
+    if cur < target {
+        let next: Q10 = cur + step;
+        if next > target { return target; }
+        return next;
+    }
+    if cur > target {
+        let next: Q10 = cur - step;
+        if next < target { return target; }
+        return next;
+    }
+    return cur;
+}
+
+// heli_move_x - advance the 16.8 world position by a Q10 velocity.
+//
+// The sign branch is not decoration. `>>` is a logical shift even on signed
+// types (docs/operators.md:438), so the high half of a negative delta cannot
+// be extracted by shifting - the same trap Q10::to_int documents. A single
+// u16 would be exempt, but this position spans two words.
+far fn heli_move_x(v: Q10) {
+    let d: i16 = v.0 << 2;                // 1/64 -> 1/256
+    if d >= 0 {
+        let m: u16 = d as u16;
+        let s: u16 = (heli_x_sub as u16) + (m & 0x00FF);
+        heli_x_sub = s as u8;
+        heli_x_px = heli_x_px + (m >> 8) + (s >> 8);
+        let limit: u16 = WORLD_W - HELI_W;
+        if heli_x_px > limit {
+            heli_x_px = limit;
+            heli_x_sub = 0;
+            heli_vx = Q10(0);
+        }
+    } else {
+        let m: u16 = (0 - d) as u16;
+        let mut whole: u16 = m >> 8;
+        let frac: u16 = m & 0x00FF;
+        if (heli_x_sub as u16) < frac {
+            whole = whole + 1;            // borrow into the pixel word
+        }
+        heli_x_sub = heli_x_sub - (frac as u8);
+        if heli_x_px <= whole {
+            heli_x_px = 0;
+            heli_x_sub = 0;
+            heli_vx = Q10(0);
+        } else {
+            heli_x_px = heli_x_px - whole;
+        }
+    }
+}
+
+// heli_move_y - advance the 8.8 screen position and clamp to the flyable box.
+// One u16 wide, so two's-complement wrap would handle either sign; the branch
+// is here so the clamp can tell a floor hit from a ceiling hit.
+far fn heli_move_y(v: Q10) {
+    let d: i16 = v.0 << 2;
+    if d >= 0 {
+        heli_y = heli_y + (d as u16);
+        if heli_y > HELI_Y_MAX {
+            heli_y = HELI_Y_MAX;
+            heli_vy = Q10(0);
+        }
+    } else {
+        let m: u16 = (0 - d) as u16;
+        if heli_y <= m {
+            heli_y = HELI_Y_MIN;
+            heli_vy = Q10(0);
+        } else {
+            heli_y = heli_y - m;
+            if heli_y < HELI_Y_MIN {
+                heli_y = HELI_Y_MIN;
+                heli_vy = Q10(0);
+            }
+        }
+    }
+}
+
+// heli_update - one tick of input, physics and world clamping.
+far fn heli_update(held: u16) {
+    let mut tx: Q10 = Q10(0);
+    if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; }
+    if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; }
+
+    let mut ty: Q10 = Q10(0);
+    if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
+    if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
+
+    heli_vx = approach(heli_vx, tx, HELI_ACC);
+    heli_vy = approach(heli_vy, ty, HELI_ACC);
+
+    heli_move_x(heli_vx);
+    heli_move_y(heli_vy);
+
+    // The camera follows the airframe's centre, not its left edge.
+    focus_x = heli_x_px + (HELI_W >> 1);
+}
+
+// heli_draw - place the two OBJ cells, camera-relative.
+//
+// Screen X can be negative or past 255 while the airframe straddles an edge,
+// so both cells go through set_full!, which writes the 9th X bit. set! would
+// leave a stale high bit and render the sprite 256 px away.
+far fn heli_draw() {
+    let mut tile: u8 = HELI_TILE_LEVEL;
+    if heli_vx > HELI_TILT_ON  { tile = HELI_TILE_RIGHT; }
+    if heli_vx < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_LEFT; }
+
+    // Camera-relative, wrapped into the 9-bit OAM X field. A sprite left of
+    // the screen shows up at $1FF-ish, which OAM reads as off-screen.
+    let sx: u16 = (heli_x_px - camera_x) & 0x01FF;
+    let sy: u8 = (heli_y >> 8) as u8;
+
+    oam.set_full!(OAM_HELI_L, sx, sy, (tile as u16) | HELI_ATTR);
+    oam.set_size!(OAM_HELI_L, 1);
+    oam.set_full!(OAM_HELI_R, (sx + 16) & 0x01FF, sy,
+                  ((tile + 2) as u16) | HELI_ATTR);
+    oam.set_size!(OAM_HELI_R, 1);
+}

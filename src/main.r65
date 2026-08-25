@@ -1,0 +1,89 @@
+// Rotor Raiders - Main entry point
+// SNES LoROM. A helicopter tug-of-war descended from Rescue Raiders (1984)
+// by way of Armor Alley (1991).
+
+#[snesrom(name="ROTOR_RAIDERS")]
+
+#[stack(0x0100, 0x01FF)]
+
+// Standard libraries
+include!("lib/65816.r65")
+include!("lib/sneslib.r65")
+include!("lib/math.r65")
+include!("lib/rand.r65")
+include!("lib/Q10.r65")
+
+// Subsystems
+include!("assets.r65")
+include!("input.r65")
+include!("video.r65")
+include!("heli.r65")
+
+// Bank 0 - Main code
+#[bank(0)]
+
+// Test-harness hook. tests/ drives the ROM with a scripted input movie and
+// breaks here to screenshot; play.sh finds this symbol in the .sym file.
+// Select is otherwise unused by the game.
+fn snapshot_point() {
+    asm!("NOP");
+}
+
+// Power-on: hardware setup, then hand off to the game loop.
+#[entry]
+fn init_reset() -> ! {
+    snes_init();
+    boot_load();
+    main();
+}
+
+// One-time video setup. Runs entirely inside force-blank.
+fn boot_load() {
+    INIDISP = FORCE_BLANK;
+
+    video_load();
+
+    // Sky. Written after the palette DMA, which overwrites CGRAM 0.
+    set_backdrop!(Color::rgb!(4, 6, 14));
+
+    pad_init();
+    heli_init();
+    __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
+
+    enable_autojoy!();
+    enable_nmi!();
+
+    INIDISP = 0x0F;
+}
+
+// NMI handler - called every VBlank. PPU/DMA traffic goes here.
+#[interrupt(nmi)]
+fn nmi_handler() {
+    clear_nmi!()
+}
+
+// Game loop.
+//
+// Vblank work first, using the camera position settled at the end of the
+// previous frame, then this frame's logic. Keeps the scroll writes and the
+// HDMA table consistent with each other.
+fn main() -> ! {
+    loop {
+        wait_nmi!();
+        scroll_update();
+        gnd_table_build();
+        oam_flush();
+
+        pad_read_ports();
+        let held: u16 = pad_poll();
+        let trig: u16 = pad_poll_trigger();
+
+        heli_update(held);
+        camera_update();
+        heli_draw();
+
+        if (trig & JOY_SELECT) != 0 {
+            snapshot_point();
+        }
+    }
+}

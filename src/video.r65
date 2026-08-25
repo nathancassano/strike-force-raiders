@@ -1,0 +1,216 @@
+// video - Mode 0 four-layer background, HDMA ground parallax, and camera.
+//
+// Layer plan (see the plan's Graphics architecture section):
+//   BG1  HUD strip, top of screen, does not scroll   (highest priority)
+//   BG2  near clouds     camera_x >> 2
+//   BG3  distant hills   camera_x >> 3
+//   BG4  ground band     per-scanline HDMA          (lowest priority, so
+//                                                    sprites sit in front)
+// Every layer is a repeating 512px pattern that wraps in hardware, so there
+// is no column refill anywhere in this game.
+
+#[bank(0)]
+
+// ---------------------------------------------------------------- VRAM ----
+// Word addresses. 2bpp tiles are 8 words each; a 64x32 tilemap is 0x800
+// words (two 32x32 screens), a 32x32 map is 0x400.
+const VRAM_CHR:  u16 = 0x0000;   // shared tileset, all four layers
+const VRAM_BG4:  u16 = 0x6000;   // 0x18 in $400-word units
+const VRAM_BG3:  u16 = 0x6800;   // 0x1A
+const VRAM_BG2:  u16 = 0x7000;   // 0x1C
+const VRAM_BG1:  u16 = 0x7800;   // 0x1E
+
+// -------------------------------------------------------------- sprites ---
+// OBJ tiles sit at word $4000, clear of the BG tileset at $0000 and the four
+// tilemaps at $6000-$7FFF. OBSEL's base field counts 8K-word units.
+const VRAM_OBJ:  u16 = 0x4000;
+const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000
+
+// 128 sprites plus the 32-byte extended table. Kept in lowram, i.e. bank 0,
+// so the DMA source bank can be written as a literal: `#:` returns the wrong
+// bank for WRAM symbols, the same trap gnd_hdma_init works around.
+#[lowram] static mut oam: OamBuffer;
+
+// oam_flush - push the shadow buffer to the PPU. Vblank only.
+// Sets the channel registers directly rather than using dma_copy_oam_const!,
+// which resolves the source bank through `#:`.
+far fn oam_flush() {
+    OAMADDL = 0;
+    OAMADDH = 0;
+    DMAP7 = 0x00;                  // 1 register, 1 write per transfer
+    BBAD7 = 0x04;                  // $2104 OAMDATA
+    A1T7 = &oam as u16;
+    A1B7 = 0;
+    DAS7 = 544;                    // 128 * 4 + 32
+    dma_trigger!(7);
+}
+
+// ---------------------------------------------------------------- world ---
+const WORLD_W:   u16 = 4096;              // 16 screens
+const CAM_MAX:   u16 = 4096 - 256;        // left edge upper bound
+const CAM_MID:   u16 = 128;               // half a screen
+const CAM_DEAD:  u16 = 8;                 // deadzone half-width, px
+const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed
+                                          // the tracked object's top speed or
+                                          // the camera falls behind for good
+
+#[lowram] static mut camera_x: u16;       // left edge of the view, 0..CAM_MAX
+#[lowram] static mut focus_x: u16;        // what the camera follows
+
+// ------------------------------------------------------- ground parallax ---
+// Eight bands over the bottom 56 scanlines - a quarter of the 224-line
+// screen. The band artwork lives in BG4's tilemap from row GND_ROW in
+// tools/gen_assets.py; the two must cover the same scanlines. Band k scrolls at
+// (1 + k/2^SHIFT) x camera_x, built by one shift and seven adds - no
+// multiplies. Raising SHIFT narrows the spread and shrinks the seam between
+// adjacent bands; lowering it exaggerates the depth.
+const GND_SHIFT: u8  = 5;                 // 1.000x .. 1.219x across the band
+// An HDMA line count maxes out at 127, so the run above the ground needs two
+// entries.
+const GND_TOP_A: u8  = 127;               // scanlines above the ground, part 1
+const GND_TOP_B: u8  = 41;                // ... part 2 (127+41 = 168)
+const GND_BAND:  u8  = 7;                 // scanlines per band (8 x 7 = 56)
+
+// HDMA table: [count, lo, hi] per entry, 0 terminates.
+// 2 entries above the ground + 8 bands + terminator = 31 bytes.
+#[lowram] static mut GND_HDMA: [u8; 32];
+
+// gnd_table_init - write the scanline counts once. Only the scroll values
+// change per frame.
+far fn gnd_table_init() {
+    GND_HDMA[0] = GND_TOP_A;
+    GND_HDMA[3] = GND_TOP_B;
+    let mut off: u16 = 6;
+    for i in 0..8 {
+        GND_HDMA[off] = GND_BAND;
+        off = off + 3;
+    }
+    GND_HDMA[30] = 0;      // terminator
+}
+
+// gnd_table_build - refresh the eight scroll values. Call in vblank, before
+// rendering reads the table.
+far fn gnd_table_build() {
+    let cx: u16 = camera_x;
+    let d: u16 = cx >> GND_SHIFT;
+    let mut v: u16 = cx;
+
+    // Both entries above the ground carry band 0's value; BG4's tilemap is
+    // empty up there, so it only has to be defined, not correct.
+    GND_HDMA[1] = v as u8;
+    GND_HDMA[2] = (v >> 8) as u8;
+    GND_HDMA[4] = v as u8;
+    GND_HDMA[5] = (v >> 8) as u8;
+
+    let mut off: u16 = 7;
+    for i in 0..8 {
+        GND_HDMA[off] = v as u8;
+        GND_HDMA[off + 1] = (v >> 8) as u8;
+        v = v + d;
+        off = off + 3;
+    }
+}
+
+// gnd_hdma_init - point channel 6 at the band table.
+// Transfer mode 2 = two bytes written to one register, which is what the
+// write-twice scroll registers need.
+// NOTE: sets A1T/A1B directly rather than using dma_set_src!, whose `#:`
+// bank operator returns the wrong bank for WRAM symbols.
+far fn gnd_hdma_init() {
+    DMAP6 = 0x02;
+    BBAD6 = 0x13;                  // $2113 BG4HOFS ($210F is BG2HOFS)
+    A1T6 = &GND_HDMA as u16;
+    A1B6 = 0;
+    dma_set_hdma!(0x40);           // channel 6
+}
+
+// ---------------------------------------------------------------- setup ---
+// video_load - one-time PPU setup. Must run inside force blank.
+far fn video_load() {
+    dma_copy_cgram(0, &BG_PAL as far *u8, 0, BG_PAL_SIZE);
+
+    dma_copy_vram(0, &BG_TILES as far *u8, VRAM_CHR, BG_TILES_SIZE);
+    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
+    dma_copy_vram(0, &BG2_MAP as far *u8, VRAM_BG2, BG2_MAP_SIZE);
+    dma_copy_vram(0, &BG3_MAP as far *u8, VRAM_BG3, BG3_MAP_SIZE);
+    dma_copy_vram(0, &BG4_MAP as far *u8, VRAM_BG4, BG4_MAP_SIZE);
+    dma_copy_vram(0, &OBJ_TILES as far *u8, VRAM_OBJ, OBJ_TILES_SIZE);
+
+    set_bgmode!(0, 0);             // mode 0, all layers 8x8 tiles
+    set_bg1_map!(0x1E, 0);         // 32x32 - HUD does not scroll
+    set_bg2_map!(0x1C, 1);         // 64x32 - wraps at 512px
+    set_bg3_map!(0x1A, 1);
+    set_bg4_map!(0x18, 1);
+    set_bg12_chr!(0, 0);           // one shared tileset at $0000
+    set_bg34_chr!(0, 0);
+
+    // Scroll registers show line (v+1), so -1 puts tilemap row 0 at the top.
+    set_bg1_vscroll!(0xFFFF);
+    set_bg2_vscroll!(0xFFFF);
+    set_bg3_vscroll!(0xFFFF);
+    set_bg4_vscroll!(0xFFFF);
+    set_bg1_hscroll!(0);
+
+    camera_x = 0;
+    focus_x = CAM_MID;
+
+    gnd_table_init();
+    gnd_table_build();
+    gnd_hdma_init();
+
+    // Small sprites are 8x8 (munitions later), large are 16x16 (the units).
+    set_obj_sel!(ObjSize::T8x8_16x16, OBJ_BASE, 0);
+    oam.clear();
+
+    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::BG4
+                     | Screen::Obj);
+}
+
+// --------------------------------------------------------------- camera ---
+// camera_update - window follow. The camera holds still until the focus
+// point leaves a CAM_DEAD window around screen centre, then closes just far
+// enough to put it back on the window edge, capped at CAM_STEP per frame.
+// Because the step scales with the error rather than being a fixed 1-2px,
+// the camera tracks anything moving slower than CAM_STEP without drifting.
+far fn camera_update() {
+    let centre: u16 = camera_x + CAM_MID;
+    if focus_x > centre {
+        let d: u16 = focus_x - centre;
+        if d > CAM_DEAD {
+            let mut step: u16 = d - CAM_DEAD;
+            if step > CAM_STEP { step = CAM_STEP; }
+            camera_x = camera_x + step;
+            if camera_x > CAM_MAX { camera_x = CAM_MAX; }
+        }
+    } else {
+        let d: u16 = centre - focus_x;
+        if d > CAM_DEAD {
+            let mut step: u16 = d - CAM_DEAD;
+            if step > CAM_STEP { step = CAM_STEP; }
+            if camera_x <= step {
+                camera_x = 0;
+            } else {
+                camera_x = camera_x - step;
+            }
+        }
+    }
+}
+
+// focus_move - nudge the followed point, clamped to the world.
+// Stands in for the helicopter until phase 3.
+far fn focus_move(dx: i16) {
+    let f: i16 = (focus_x as i16) + dx;
+    if f < 0 {
+        focus_x = 0;
+    } else {
+        focus_x = f as u16;
+        if focus_x > WORLD_W { focus_x = WORLD_W; }
+    }
+}
+
+// scroll_update - push this frame's scroll values. Call in vblank.
+// BG4 is driven by the HDMA band table, not written here.
+far fn scroll_update() {
+    set_bg2_hscroll!(camera_x >> 2);
+    set_bg3_hscroll!(camera_x >> 3);
+}

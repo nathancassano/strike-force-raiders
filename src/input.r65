@@ -1,0 +1,48 @@
+// input - Joypad subsystem for Rotor Raiders.
+// Reads controller 0 once per frame, provides held and trigger masks.
+//
+// NOTE: deliberately avoids the `let lo @ A = ...; let hi @ B = ...;` idiom
+// used by astroids/src/input.r65. That miscompiles: an `@ A` alias is not
+// preserved when a later expression loads A, and the compiler emits no
+// diagnostic. This is the composition form classickong.r65 ships with.
+
+#[bank(0)]
+
+#[zeropage(0x10)]
+static mut PAD_STATE: u16;   // current held buttons (active-high mask)
+
+#[zeropage(0x12)]
+static mut PAD_PREV: u16;    // previous frame's mask
+
+#[zeropage(0x14)]
+static mut PAD_TRIG: u16;    // rising edge (new presses this tick)
+
+// pad_read_ports - read controller 0 and derive the edge mask.
+// Call once per game tick.
+far fn pad_read_ports() {
+    wait_autojoy!();
+    let current: u16 = ((JOY1H as u16) << 8) | (JOY1L as u16);
+    let prev: u16 = PAD_PREV;
+    PAD_STATE = current;
+    PAD_PREV = current;
+    PAD_TRIG = (current ^ prev) & current;
+}
+
+// pad_poll - continuous held mask.
+far fn pad_poll() -> u16 {
+    return PAD_STATE;
+}
+
+// pad_poll_trigger - rising-edge mask for this tick.
+far fn pad_poll_trigger() -> u16 {
+    return PAD_TRIG;
+}
+
+// pad_init - zero the pad state. Zero-page statics are declared bare (an
+// initializer on a mutable static trips the __init_start MVN/DBR bug), so
+// they hold power-on garbage until this runs.
+far fn pad_init() {
+    PAD_STATE = 0;
+    PAD_PREV = 0;
+    PAD_TRIG = 0;
+}

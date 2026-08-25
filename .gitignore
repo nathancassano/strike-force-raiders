@@ -1,0 +1,11 @@
+build/
+*.smc
+*.sym
+*.map
+*.o
+linkfile.txt
+
+# Editor
+*.swp
+*.swo
+*~
