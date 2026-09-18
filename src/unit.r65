@@ -56,6 +56,7 @@ const UNIT_TILE_TANK:     u8 = 38;
 const UNIT_TILE_VAN:      u8 = 42;
 const UNIT_TILE_LAUNCHER: u8 = 64;
 const UNIT_TILE_INFANTRY: u8 = 68;
+const UNIT_TILE_INFANTRY_FIRE: u8 = 70;   // rifle levelled, one frame per shot
 const UNIT_TILE_ENGINEER: u8 = 68;        // infantry art until phase 12
 const UNIT_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 // How far mirrored art lands right of its box, from the sheet: a vehicle
@@ -73,6 +74,14 @@ const TANK_SCAN:   u8  = 16;              // frames between target sweeps: a
                                           // sweep is O(pool), and at 8 it was
                                           // an eighth of a full-field frame
 
+// Infantry rifle. No round is spawned: a man's shot lands the frame he
+// fires it, and the firing pose is what shows for it. Short reach, so a
+// column closes before it opens up, and a slower rate than the tank's
+// only looks it - five men fire between them.
+const INF_RANGE:  u16 = 64;
+const INF_RELOAD: u8  = 48;
+const INF_SCAN:   u8  = 16;               // as the tank's: a sweep is O(pool)
+
 // Bomb blast reach, in pixels either side of the impact.
 const BLAST_R: u16 = 20;
 
@@ -89,8 +98,11 @@ const LAUNCHER_RANGE: u16 = 224;
 // used to be a pool-wide `unit_timer[16]` that four kinds out of five
 // never touched; it belongs to Tank now. The kinds with nothing of their
 // own are plain variants.
-#[soa] struct Tank     { reload: u8 }     // frames until the main gun is ready
+#[soa] struct Tank     { reload: u8,      // frames until the main gun is ready
+                         hold:   u8 }     // 1 while a building is under fire
 #[soa] struct Launcher { armed: u8 }      // 1 until its one missile is away
+#[soa] struct Infantry { reload: u8,      // frames until the rifle is ready
+                         pose:   u8 }     // 1 on the frame a shot is fired
 
 // What a unit *is*, and what only that kind carries. `Free` is variant 0, so
 // an empty slot is a zero tag, and the tag plane is stride 1 - "is this slot
@@ -100,7 +112,7 @@ enum UnitType {
     Tank(Tank),
     Van,
     Launcher(Launcher),
-    Infantry,
+    Infantry(Infantry),
     Engineer,
 }
 
@@ -133,22 +145,23 @@ struct UnitStat {
     max_hp:     u8,
     cells:      u8,       // OBJ cells across: 1 for a man, 2 for a vehicle
     bullet_dmg: u8,       // helicopter gunfire; shell and blast do not vary
+    rifle_dmg:  u8,       // infantry gunfire: nothing at all against armour
 }
 
 static unit_stats: [UnitStat; 6] = [
     // Free
-    UnitStat { speed: 0,   width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0 },
+    UnitStat { speed: 0,   width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0, rifle_dmg: 0 },
     // Tank: 0.5 px/frame; armour shrugs off gunfire
-    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_TANK, max_hp: 25, cells: 2, bullet_dmg: 1 },
+    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_TANK, max_hp: 25, cells: 2, bullet_dmg: 1, rifle_dmg: 0 },
     // Van: unarmed - the win condition
-    UnitStat { speed: 192, width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2 },
+    UnitStat { speed: 192, width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
     // Launcher: AA only, once aircraft exist
-    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2 },
+    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
     // Infantry
-    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2 },
+    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
     // Engineer: an infantryman who repairs and claims turrets instead of
-    // capturing bunkers - the same body, a different job
-    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2 },
+    // capturing bunkers - the same body, a different job, and no rifle
+    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
 ];
 
 // ---------------------------------------------------------------- state ---
@@ -237,10 +250,10 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 // loaded; the other kinds carry nothing to initialise. A
                 // helicopter is not a ground unit and never reaches here.
                 match kind {
-                    Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0 }); }
+                    Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0, hold: 0 }); }
                     Order::Van      => { units[i].kind = UnitType::Van; }
                     Order::Launcher => { units[i].kind = UnitType::Launcher(Launcher { armed: 1 }); }
-                    Order::Infantry => { units[i].kind = UnitType::Infantry; }
+                    Order::Infantry => { units[i].kind = UnitType::Infantry(Infantry { reload: 0, pose: 0 }); }
                     Order::Engineer => { units[i].kind = UnitType::Engineer; }
                     Order::Heli     => { return 0; }
                 };
@@ -347,12 +360,12 @@ fn unit_advance(i: u16, step: u16) {
     }
 }
 
-// unit_target - nearest opposing unit within the tank's reach, ahead of it.
-fn unit_target(self_i: u16) -> u16 {
+// unit_target - nearest opposing unit within *range* ahead of unit *self_i*.
+fn unit_target(self_i: u16, range: u16) -> u16 {
     let x: u16 = units[self_i].x_px;
     let mine: u8 = units[self_i].owner;
     let mut best: u16 = UNIT_MAX;
-    let mut best_d: u16 = TANK_RANGE;
+    let mut best_d: u16 = range;
 
     for j in 0..UNIT_MAX {
         match units[j].kind {
@@ -376,16 +389,48 @@ fn unit_target(self_i: u16) -> u16 {
     return best;
 }
 
+// The rifle. A man's shot is not a munition: the sweep that finds a
+// target lands the damage there and then, and the pose flag shows the
+// shot for the one frame it is drawn. The damage is the target kind's
+// rifle_dmg, which is what keeps infantry from scratching a tank.
+impl Infantry {
+    fn fire(self) {
+        self.pose = 0;
+        if self.reload > 0 {
+            self.reload = self.reload - 1;
+        } else {
+            let j: u16 = unit_target(self, INF_RANGE);
+            if j >= UNIT_MAX {
+                self.reload = INF_SCAN;
+            } else {
+                self.reload = INF_RELOAD;
+                self.pose = 1;
+                unit_hit(j, unit_stats[units[j].kind as u16].rifle_dmg);
+            }
+        }
+    }
+}
+
 // unit_fire - the main gun. Only a tank carries one, and the reload timer it
 // counts down is the tank's own payload - so this is a no-op for every other
 // kind without a flag to ask about first.
+//
+// Targets are the other side's units ahead and, since tanks are the one
+// thing that can bring down a turret or a bunker, its standing buildings
+// too. A unit is fought from wherever the front halted; a building holds
+// the tank in place until it falls, as in Armor Alley, or it would drive
+// past after two shells against a bunker's 69 hp. The hold is decided on
+// the same sweep as the shot and folded into the traffic flag by the
+// slice refresh, so it can be a reload stale once the building is down
+// and a few frames late taking effect.
 fn unit_fire(i: u16) {
     match units[i].kind {
         UnitType::Tank(t) => {
             if t.reload > 0 {
                 t.reload = t.reload - 1;
             } else {
-                if unit_target(i) >= UNIT_MAX {
+                t.hold = struct_tank_target(units[i].x_px, units[i].owner, TANK_RANGE);
+                if t.hold == 0 && unit_target(i, TANK_RANGE) >= UNIT_MAX {
                     // Nothing in reach. Wait before sweeping the pool again
                     // rather than paying for a scan on every frame of an
                     // empty field.
@@ -468,8 +513,9 @@ far fn unit_update() {
     for k in 0..UNIT_SLICE {
         let i: u16 = unit_slice;
         match units[i].kind {
-            UnitType::Free => {}
-            _          => { units[i].block = unit_blocked(i); }
+            UnitType::Free    => {}
+            UnitType::Tank(t) => { units[i].block = unit_blocked(i) | t.hold; }
+            _                 => { units[i].block = unit_blocked(i); }
         };
         unit_slice = (unit_slice + 1) & UNIT_MASK;
     }
@@ -478,12 +524,13 @@ far fn unit_update() {
         match units[i].kind {
             UnitType::Free => {}
             _ => {
-                // Only a tank has a gun and only a launcher a missile; the
-                // tag tests here are cheaper than the calls that would
-                // make them.
+                // Only a tank has a gun, a launcher a missile and a man a
+                // rifle; the tag tests here are cheaper than the calls
+                // that would make them.
                 match units[i].kind {
                     UnitType::Tank(_)     => { unit_fire(i); }
                     UnitType::Launcher(l) => { l.launch(); }
+                    UnitType::Infantry(f) => { f.fire(); }
                     _ => {}
                 };
                 if units[i].block == 0 {
@@ -509,8 +556,12 @@ far fn unit_update() {
 fn unit_draw_one(i: u16, sx: u16) {
     let y: u8 = (UNIT_BASE_Y
                  + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
-    let tile: u8 = unit_stats[units[i].kind as u16].tile;
+    let mut tile: u8 = unit_stats[units[i].kind as u16].tile;
     let cells: u8 = unit_stats[units[i].kind as u16].cells;
+    match units[i].kind {
+        UnitType::Infantry(f) => { if f.pose != 0 { tile = UNIT_TILE_INFANTRY_FIRE; } }
+        _ => {}
+    };
 
     // The enemy faces west - hflip - and wears the enemy palette.
     // Mirroring a vehicle also swaps its two cells, or the front half

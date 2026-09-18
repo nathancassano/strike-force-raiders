@@ -150,6 +150,11 @@ every slot live the loop holds 1.00 ticks per vblank (one frame short in 3665). 
 the compiler kept an indexing loop counter in Y and `oam_end` stopped sweeping idle slots;
 `frames_nmi` vs `frames_loop` is the frame-budget probe - the V-counter cannot be used because
 latching it needs a discarded read of $2137 and the compiler eliminates unused hardware reads.
+A tank shells the other side's units ahead and its standing turrets, bunkers and manned super
+bunker (`struct_tank_target`, a walk of the sorted structure pool from the tank's own end),
+holding in place until the building falls. A rifleman's shot is not a munition: the sweep that
+finds a target within `INF_RANGE` lands `rifle_dmg` there and then (0 against a tank) and sets
+the pose for the frame it is drawn. Both sweep every 16 idle frames.
 Traffic control is O(n^2) and re-evaluates 8 units a frame; a freed slot's lane is `UNIT_NO_LANE`
 so the scan's lane compare rejects it without a tag test. Collision rejects a munition against
 the whole pool with one scanline-band test. **The sprite budget is the next ceiling**: eight
@@ -159,9 +164,9 @@ A unit is three declarations. **Unit** is a `#[soa]` struct holding what every u
 position, hp, owner, lane, block, rank - plus its `kind`, so `units[i].hp` is one
 `LDA units__hp,X`. **UnitType** is that `kind`: a tagged enum contributing a tag plane that
 doubles as the free marker (`Free` is variant 0) and a payload plane for what only one kind
-carries - `Tank(Tank)` holds the gun reload that used to be a pool-wide `unit_timer[16]` four
-kinds never touched; `Van`, `Launcher` and `Infantry` have nothing of their own and are plain
-variants. **UnitStat**
+carries - `Tank(Tank)` holds the gun reload and the hold that parks it in front of a building;
+`Infantry(Infantry)` its rifle reload and the one-frame firing pose; `Launcher(Launcher)` its one
+missile; `Van` and `Engineer` have nothing of their own and are plain variants. **UnitStat**
 is what is fixed about a kind: `unit_stats` is a `#[soa]` immutable static, one ROM table per
 column with one entry per variant in tag order. Three rules come out of it:
 

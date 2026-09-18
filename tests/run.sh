@@ -401,10 +401,13 @@ else
     # straddling the left edge drawn at a negative 9-bit X rather than
     # culled, and the bases' van scan of phase 9) cost 178 frames in 3666
     # here - 0.951, accepted as the stress case, and what the pair pins.
+    # The tanks' building sweep (a walk of the sorted structure pool from
+    # the tank's own end, every sixteen idle frames) is another 50, and
+    # the riflemen's sweep and pose 23 more: 0.961.
     # The next cycles are in unit_advance's call and the traffic scan.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0D94
+                                                      --check-mem16 0x$FLOOP=0x0DC4
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -506,6 +509,32 @@ else
     SOWN=$(ramaddr structs__owner)
     run_case bunker_capture "wait12500,shot" --timeout 400000 \
         --check-mem 0x$(at "$SOWN" 9)=0x01
+
+    # Tanks shell the other side's turrets and bunkers, holding in place
+    # until the building falls. The enemy column's tank (its second spawn,
+    # slot 1) reaches the player's bunker at x=2048 (level entry 3) after
+    # ~11200 frames and brings its 69 hp down at 8 a shell, one every 90
+    # frames: by 12600 it is rubble and nobody's. The player's side of the
+    # same rule was checked by planting a bought tank at x=6520 with the
+    # debugger: the enemy turret at 6656 fell in four shells.
+    run_case tank_bunker "wait12600,shot" --timeout 400000 \
+        --check-mem 0x$(at "$SHP" 3)=0x00 --check-mem 0x$(at "$SOWN" 3)=0x02
+
+    # Infantry gunfire: no round, the sweep that finds a target lands the
+    # hit. Five men ordered at once walk east and meet the enemy column's
+    # first launcher (slot 5) around frame 9640 at x~2900 - past the
+    # player's turret's reach, so nothing else can be shooting it - and
+    # four hits of 2 finish its 8 hp. The column's tank (slot 6) arrives
+    # on their heels and is not scratched: rifle_dmg against armour is 0,
+    # and its 25 hp say so while its shells start on the men. A launcher
+    # fires at nothing on the ground, so the men it met are unhurt.
+    run_case rifle_fire "r3,wait3,x3,wait9700,shot" --timeout 400000 \
+        --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(at "$UK" 6)=0x01 \
+        --check-mem 0x$(hp 6)=0x19 --check-mem 0x$(hp 1)=0x05
+    # The super bunker as a tank target was checked with the debugger: a
+    # bought tank planted at x=3968 before the bunker at 4076 given three
+    # enemy men held, put them out one a shell, and moved on once it was
+    # nobody's.
 
     # The enemy base's missiles: an airframe pushed into its 320 px is lost
     # inside two hundred frames and comes back at the start with a life gone.

@@ -21,6 +21,9 @@ Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
     row 14-15  the airframe's turn frames (32x16 each): three-quarter view
                at cols 0-3, head-on at cols 4-7, slight turn at cols 8-11
                (heli.r65 HELI_TILE_TURN_*)
+    row  4-5   col 6: the infantryman firing (tile 70, unit.r65
+               UNIT_TILE_INFANTRY_FIRE) - the standing man with the rifle
+               levelled and a flash at the muzzle
 
 Palette indices: 1 black, 2 dark green, 3 green, 4 light blue, 5 light
 grey, 6 orange, 7 darker green, 8 mid green, 9 charcoal, 10 blue-grey,
@@ -250,6 +253,29 @@ MISSILE_N = [
 ]
 
 
+# The infantryman of tile 68 with his rifle up: same body in columns 2-7,
+# so the facing-left mirror lands where his standing frame does, the
+# barrel out to column 11 and the flash past it.
+INFANTRY_FIRE = [
+    "................",
+    "................",
+    "...kkk..........",
+    "...GGG..........",
+    "...GGG..........",
+    "..kkkkk.........",
+    "..ddddkkkkkkoo..",
+    "..ddddkk....oo..",
+    "..ddddd.........",
+    "..ddddd.........",
+    "..ddddd.........",
+    "..dd.dd.........",
+    "..dd.dd.........",
+    "..dd.dd.........",
+    "..kk.kk.........",
+    "................",
+]
+
+
 def save_bmp4(im, path):
     """Write a 16-colour indexed image as a 4-bit BMP.
 
@@ -297,6 +323,7 @@ def main():
     stamp(px, 0, 112, TURN_34)
     stamp(px, 32, 112, TURN_HEAD)
     stamp(px, 64, 112, TURN_SLIGHT)
+    stamp(px, 48, 32, INFANTRY_FIRE)            # tile 70
     stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
     stamp(px, 104, 8, MISSILE_NE)
     stamp(px, 112, 8, MISSILE_N)

@@ -656,6 +656,59 @@ fn struct_bunker_tick(i: u16) {
     }
 }
 
+// struct_tank_target - is a standing turret, bunker or manned super
+// bunker of the other side within *range* ahead of a tank at *x*?
+// Neutral buildings are left alone: a fallen turret is nobody's and fires
+// at nobody, a neutral bunker is the infantry's job, and an empty super
+// bunker has nobody to shell out of it. The gap is measured between the two
+// boxes, so a bunker and a turret come into reach at the same distance.
+//
+// Eight idle tanks sweep every sixteen frames, so this walks the sorted
+// pool from the tank's own end for the one building nearest ahead and
+// asks only it, rather than asking every turret and bunker. (A `while`
+// run off the end rather than `break`, per the entity-loop rule.)
+far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
+    let mut found: u16 = STRUCT_MAX;
+    let mut gap: u16 = 0;
+    let mut n: u16 = 0;
+    if mine == SIDE_PLAYER {
+        let front: u16 = x + UNIT_W;
+        while n < struct_count {
+            let sx: u16 = structs[n].x;
+            if sx >= front {
+                found = n;
+                gap = sx - front;
+                n = struct_count;
+            } else {
+                n = n + 1;
+            }
+        }
+    } else {
+        // From the east end, so an enemy tank's walk is as short as a
+        // player's: the buildings still ahead of it, plus one.
+        n = struct_count;
+        while n > 0 {
+            n = n - 1;
+            let back: u16 = structs[n].x + structs[n].w;
+            if back <= x {
+                found = n;
+                gap = x - back;
+                n = 0;
+            }
+        }
+    }
+    if found == STRUCT_MAX { return 0; }
+    if gap >= range { return 0; }
+    if structs[found].hp == 0 { return 0; }
+    let owner: u8 = structs[found].owner;
+    if owner == mine || owner == SIDE_NONE { return 0; }
+    let k: u8 = structs[found].kind;
+    if k == StructKind::Turret as u8 || k == StructKind::Bunker as u8 { return 1; }
+    // A manned super bunker is its garrison's; a shell puts a man out.
+    if k == StructKind::Super as u8 { return 1; }
+    return 0;
+}
+
 // struct_balloon_hit - gunfire against the balloon; down at zero.
 fn struct_balloon_hit(i: u16) {
     if structs[i].bal > 1 {
