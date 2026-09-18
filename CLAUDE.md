@@ -197,7 +197,11 @@ run on a stagger of one structure per frame in sixteen - a man covers four pixel
 
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base
 (`struct_base_van`, scanned every 32 frames - a van is in the window ~75 frames) or the
-player's last helicopter (`heli_lost`). `game_state` gates the whole simulation; the draw
+player's last helicopter (`heli_lost`). Any other loss hides the airframe for `HELI_RESPAWN`
+(120) frames while `camera_pan` brings the view home at a pace sized at the loss
+(`camera_x / 120 + 1`, so the far end of the world arrives inside the delay); the next
+airframe appears on the start when the count runs out, and the stick, gun and hit test are
+all off until then. `game_state` gates the whole simulation; the draw
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
 from a letter row (`HUD_LETTER_ROW`, stamped by `tools/hud_glyphs.py` below the visible
 screen like the glyph strip), and Start calls `game_reset`, which re-runs every `*_init`.

@@ -100,6 +100,21 @@ expect_snes() {
     fi
 }
 
+# expect_snes_none NAME R,G,B - the SNES colour is nowhere in the frame
+expect_snes_none() {
+    local name="$1" colour="$2"
+    if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then return; fi
+    if python3 "$PROJ/tools/pngstat.py" "$SHOTS/$name.png" --expect "$colour" \
+            --snes --min-pct 0 --max-pct 0 >/dev/null 2>&1; then
+        echo "PASS $name:snes-none $colour"; pass=$((pass+1))
+    else
+        echo "FAIL $name:snes-none $colour"
+        python3 "$PROJ/tools/pngstat.py" "$SHOTS/$name.png" --expect "$colour" \
+            --snes --min-pct 0 --max-pct 0
+        fail=$((fail+1))
+    fi
+}
+
 # parallax NAME BASE_ACTIONS MOVED_ACTIONS BANDS
 #   Capture two frames at different camera positions and assert that each
 #   layer moved at its own rate and the ground shows the expected number of
@@ -466,11 +481,24 @@ else
         --check-mem 0x$(at "$SHP" 12)=0x2F --check-mem 0x$HHP=0x09
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
-    # on contact: a life gone and the airframe back at the start, ten
-    # frames of held right past it.
+    # on contact, at frame 421 of this climb: a life gone, the airframe
+    # back at the start but hidden for HELI_RESPAWN (120) frames, and the
+    # camera - 1906 at the loss - panning home at 1906/120+1 = 16 px a
+    # frame on top of the follow's 6. Sixty frames on it is 586 and the
+    # canopy colour is nowhere on screen (the screenshot trails the OAM
+    # shadow by two frames, so the kill frame itself still shows it); at
+    # 120 the airframe is back on the start, the view with it, and the
+    # stick works again: ten frames of thrust from rest is 13 px.
     HX=$(ramaddr heli_x_px)
-    run_case balloon_kill "up10,right425,shot" --check-mem 0x$LIVES=0x03 \
-                                              --check-mem16 0x$HX=0x004C
+    DEAD=$(ramaddr heli_dead)
+    run_case balloon_kill "up20,right401,shot" --check-mem 0x$LIVES=0x03 \
+        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x78 --check-mem16 0x$CAM=0x0772
+    run_case balloon_pan "up20,right401,wait60,shot" \
+        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x3C --check-mem16 0x$CAM=0x024A
+    expect_snes_none balloon_pan "14,22,28"                         # canopy
+    run_case balloon_respawn "up20,right401,wait120,right10,shot" \
+        --check-mem16 0x$HX=0x004D --check-mem 0x$DEAD=0x00 --check-mem16 0x$CAM=0x0000
+    expect_snes balloon_respawn "14,22,28" 0.02
 
     # An enemy infantryman walking into the neutral bunker at x=5120 (level
     # entry 9) takes it. He spawns at frame ~270 and covers 2560 px at a

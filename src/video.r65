@@ -278,6 +278,23 @@ far fn camera_update() {
     }
 }
 
+// camera_pan - close on the focus at a set pace, ignoring the deadzone.
+// CAM_STEP is sized for following the airframe; a lost one wants the view
+// home before the next appears, so the caller picks the pace and this
+// puts the focus dead centre rather than on the window edge.
+far fn camera_pan(step: u16) {
+    let mut target: u16 = 0;
+    if focus_x > CAM_MID { target = focus_x - CAM_MID; }
+    if target > CAM_MAX { target = CAM_MAX; }
+    if camera_x > target {
+        let d: u16 = camera_x - target;
+        if d > step { camera_x = camera_x - step; } else { camera_x = target; }
+    } else {
+        let d: u16 = target - camera_x;
+        if d > step { camera_x = camera_x + step; } else { camera_x = target; }
+    }
+}
+
 // focus_move - nudge the followed point, clamped to the world.
 // Stands in for the helicopter until phase 3.
 far fn focus_move(dx: i16) {

@@ -81,6 +81,12 @@ def main():
             for px, n in counts.most_common(3):
                 print(f"     saw rgb{px} {100*n/total:.1f}%")
             return 1
+        # --max-pct asserts absence: a sprite that should not be on screen.
+        if '--max-pct' in args:
+            max_pct = float(args[args.index('--max-pct') + 1])
+            if pct > max_pct:
+                print(f"FAIL {path}: rgb{want} covers {pct:.1f}%, wanted <= {max_pct}%")
+                return 1
         print(f"ok   rgb{want} covers {pct:.1f}%")
         return 0
 

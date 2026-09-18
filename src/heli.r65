@@ -115,12 +115,21 @@ const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 #[lowram] static mut heli_gun_t:  u8;     // ... and to the next round
 #[lowram] static mut heli_bomb_t: u8;
 #[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
+#[lowram] static mut heli_dead:   u8;     // frames until the next airframe; 0 = flying
+#[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized at the loss
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
 // airframe is lost - a life goes (order.r65's heli_lives) and it returns
 // to the start with a full load. The battle-over screen is phase 9's.
 const HELI_HP_MAX: u8 = 20;
 const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
+
+// Losing an airframe is not instant. The sprite goes, the view pans back
+// to the start, and the next airframe appears there once the pan is done.
+// The pan is paced to land inside the delay from wherever the loss was:
+// distance over the delay, rounded up, so the far end of the world takes
+// the whole delay and anywhere nearer arrives with frames to spare.
+const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
@@ -141,6 +150,8 @@ far fn heli_init() {
     heli_gun_t = HELI_GUN_RELOAD;
     heli_bomb_t = HELI_BOMB_RELOAD;
     heli_hp = HELI_HP_MAX;
+    heli_dead = 0;
+    heli_cam_step = 0;
 }
 
 // heli_lost - the airframe is gone. The next one starts from the pad
@@ -151,12 +162,15 @@ far fn heli_lost() {
         game_over(GAME_LOST);
     } else {
         heli_init();
+        heli_dead = HELI_RESPAWN;
+        heli_cam_step = div16(camera_x, HELI_RESPAWN) + 1;
     }
 }
 
 // heli_collide - enemy rounds against the airframe's box, and the
 // barrage balloons, which end it outright.
 far fn heli_collide() {
+    if heli_dead > 0 { return; }          // nothing there to hit
     let hx: u16 = heli_x_px;
     let hy: u16 = heli_y >> 8;
     if struct_balloon_at(hx, hy) != 0 {
@@ -230,6 +244,7 @@ far fn heli_burn() {
 // direction rather than the current velocity, so it does not flip back to
 // neutral while the airframe coasts to a stop.
 far fn heli_fire(held: u16, trig: u16) {
+    if heli_dead > 0 { return; }
     if heli_gun_cd > 0 {
         heli_gun_cd = heli_gun_cd - 1;
     }
@@ -366,6 +381,15 @@ far fn heli_move_y(v: Q10) {
 
 // heli_update - one tick of input, physics and world clamping.
 far fn heli_update(held: u16) {
+    if heli_dead > 0 {
+        // Lost: the stick does nothing, and the view goes home ahead of
+        // the next airframe. heli_init has already put it on the start.
+        heli_dead = heli_dead - 1;
+        focus_x = heli_x_px + (HELI_W >> 1);
+        camera_pan(heli_cam_step);
+        return;
+    }
+
     if heli_landed != 0 {
         // On the deck: no motion, and the timers do the work. Up lifts off,
         // but only with fuel to lift off on.
@@ -439,6 +463,8 @@ far fn heli_update(held: u16) {
 // so both cells go through set_full!, which writes the 9th X bit. set! would
 // leave a stale high bit and render the sprite 256 px away.
 far fn heli_draw() {
+    if heli_dead > 0 { return; }          // no slots taken; oam_end parks them
+
     // Tilt comes from speed along the nose, not from the sign of vx.
     // Facing left sets the hflip bit, which already mirrors the lean, so
     // feeding the signed velocity straight in would flip it a second time
