@@ -49,7 +49,13 @@ const UNIT_TILE_TANK:     u8 = 38;
 const UNIT_TILE_VAN:      u8 = 42;
 const UNIT_TILE_LAUNCHER: u8 = 64;
 const UNIT_TILE_INFANTRY: u8 = 68;
+const UNIT_TILE_ENGINEER: u8 = 68;        // infantry art until phase 12
 const UNIT_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
+// How far mirrored art lands right of its box, from the sheet: a vehicle
+// fills columns 0-23 of its 32-px pair, so mirrored it fills 8-31; a man
+// stands in columns 2-7 of his cell, mirrored 8-13.
+const UNIT_MIRROR_VEH: u16 = 8;
+const UNIT_MIRROR_MAN: u16 = 6;
 
 // Tank main gun.
 const TANK_RANGE:  u16 = 96;
@@ -449,20 +455,40 @@ far fn unit_draw() {
                             let y: u8 = (UNIT_BASE_Y
                                          + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
                             let tile: u8 = unit_stats[units[i].kind as u16].tile;
+                            let cells: u8 = unit_stats[units[i].kind as u16].cells;
+
+                            // The enemy faces west: hflip. Mirroring a
+                            // vehicle also swaps its two cells, or the
+                            // front half renders on the tail side - and it
+                            // moves the art within its box, so the box
+                            // shifts back to keep the sprite over the
+                            // collision extent (`UNIT_MIRROR_*`).
                             let mut attr: u16 = UNIT_ATTR;
-                            if units[i].owner == SIDE_ENEMY { attr = UNIT_ATTR | 0x4000; }
+                            let mut near: u8 = tile;
+                            let mut far_: u8 = tile + 2;
+                            let mut bx: u16 = sx;
+                            if units[i].owner == SIDE_ENEMY {
+                                attr = UNIT_ATTR | 0x4000;
+                                if cells > 1 {
+                                    near = tile + 2;
+                                    far_ = tile;
+                                    bx = (sx - UNIT_MIRROR_VEH) & 0x01FF;
+                                } else {
+                                    bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
+                                }
+                            }
 
                             let a: u16 = oam_take();
                             if a < OAM_SLOTS {
-                                oam.set_full!(a as u8, sx, y, (tile as u16) | attr);
+                                oam.set_full!(a as u8, bx, y, (near as u16) | attr);
                                 oam.set_size!(a as u8, 1);
                             }
                             // A man is one cell; a vehicle needs its second.
-                            if unit_stats[units[i].kind as u16].cells > 1 {
+                            if cells > 1 {
                                 let c: u16 = oam_take();
                                 if c < OAM_SLOTS {
-                                    oam.set_full!(c as u8, (sx + 16) & 0x01FF, y,
-                                                  ((tile + 2) as u16) | attr);
+                                    oam.set_full!(c as u8, (bx + 16) & 0x01FF, y,
+                                                  (far_ as u16) | attr);
                                     oam.set_size!(c as u8, 1);
                                 }
                             }
