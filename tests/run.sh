@@ -265,6 +265,11 @@ else
     run_case muni_bomb_ground "wait10,a1,wait40,shot"   --check-mem 0x$KIND=0x00
     run_case muni_gun_live    "wait10,b1,shot"          --check-mem 0x$KIND=0x01
     run_case muni_gun_range   "wait10,b1,wait45,shot"   --check-mem 0x$KIND=0x00
+    # A round leaves at muzzle height: the airframe's 8.8 y plus 7 px. This
+    # once came out as 0x0200 - a compiler bug restored the argument through
+    # an 8-bit TYA - and every round spawned on the HUD row.
+    MY=$(ramaddr muni_y)
+    run_case muni_gun_muzzle  "wait10,b1,shot"          --check-mem16 0x$MY=0x6700
 fi
 
 # ---------------------------------------------------------------------------
