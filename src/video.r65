@@ -122,7 +122,7 @@ const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed
 // (1 + k/2^SHIFT) x camera_x, built by one shift and seven adds - no
 // multiplies. Raising SHIFT narrows the spread and shrinks the seam between
 // adjacent bands; lowering it exaggerates the depth.
-const GND_SHIFT: u8  = 5;                 // 1.000x .. 1.219x across the band
+const GND_SHIFT: u8  = 3;                 // 1.000x .. 1.875x across the band
 // Top of the ground band, in screen pixels. Everything that can hit the
 // ground measures against this: the airframe's floor, and every munition's
 // collision test.

@@ -158,7 +158,9 @@ else
 fi
 
 # Four layers at four rates, and eight equal HDMA ground bands.
-parallax_case parallax "shot" "wait20,right240,shot" 8
+# A short move: the near band runs at 1.875x, and the tool correlates each
+# row wrapped at the screen width, so a long one leaves it nothing to match.
+parallax_case parallax "shot" "wait20,right40,shot" 8
 
 # ---------------------------------------------------------------------------
 # Phase 3 - helicopter.

@@ -77,8 +77,11 @@ use it to assert on frames instead of trusting a clean exit code.
 `tools/parallax.py BASE.png MOVED.png [--assert-bands N]` cross-correlates two frames row by
 row and reports each layer's horizontal displacement, plus the HDMA ground bands. This is how
 scrolling is verified - pixel-eyeballing a periodic pattern will mislead you, and a
-horizontally uniform row correlates at 100% for *any* shift, so instrumented art must carry
-a positional marker on every row you intend to measure.
+horizontally uniform (or short-period) row correlates at 100% for *any* shift, so every row
+you intend to measure needs a feature with a unique phase. The ground gets that from a
+pseudo-random pebble field painted by `tools/ground_texture.py` (the same field on both
+256 px halves, so the tool's wrap at the screen width stays exact) rather than from marker
+bars, which read as vertical artifacts. The sky's bars are gone too; the hills still carry their posts.
 
 `tests/run.sh` is the regression suite; every completed phase leaves a case behind and the
 whole suite re-runs after each new phase. `./tests/run.sh NAME` filters.
