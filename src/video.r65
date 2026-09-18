@@ -63,14 +63,21 @@ fn oam_take() -> u16 {
     return slot;
 }
 
-// oam_end - park every slot the frame did not claim. Without this a sprite
-// that stopped being drawn stays frozen wherever it last was.
+// oam_end - park the slots the frame did not claim. Without this a sprite
+// that stopped being drawn stays frozen wherever it last was. Only a slot
+// claimed *last* frame can hold one, so the sweep stops at last frame's
+// high-water mark rather than at 128 - which at a hundred idle slots was
+// a fifth of the frame.
+#[lowram] static mut oam_high: u8;
+
 fn oam_end() {
     let mut i: u16 = oam_next as u16;
-    while i < OAM_SLOTS {
+    let top: u16 = oam_high as u16;
+    while i < top {
         oam.hide!(i as u8);
         i = i + 1;
     }
+    oam_high = oam_next;
 }
 
 // oam_flush - push the shadow buffer to the PPU. Vblank only.
@@ -233,7 +240,8 @@ far fn video_load() {
 
     // Small sprites are 8x8 (munitions later), large are 16x16 (the units).
     set_obj_sel!(ObjSize::T8x8_16x16, OBJ_BASE, 0);
-    oam.clear();
+    oam.clear();                    // every slot parked, so nothing to sweep
+    oam_high = 0;
 
     set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::BG4
                      | Screen::Obj);

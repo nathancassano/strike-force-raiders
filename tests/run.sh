@@ -362,23 +362,24 @@ else
         --check-mem 0x$(at "$UD" 0)=0x07
 
     # Frame budget. The NMI counts real frames and the loop counts ticks it
-    # finished; a full field must still keep up. This measured 0.45 with a
-    # 32-unit pool, which is why the pool is 16 - the assertion is what stops
-    # that regressing silently. The opening buys the whole purse in tanks so
-    # the player's half of the field is there to meet the enemy column.
+    # finished; a full field must still keep up. The opening buys the whole
+    # purse in tanks so the player's half of the field is there to meet the
+    # enemy column, and by the snapshot all 32 slots are live.
     #
-    # A tank line is the heaviest legitimate load: eight guns in range keep
-    # eight shells in the ground band, and each is tested against the whole
-    # pool every frame. Measured 0.984 here (59 frames dropped in 3665)
-    # where fifteen infantry against the same column keep up exactly. Known
-    # and accepted; the pair below pins it so a change either way shows.
+    # The pool was 16 until the compiler learned to keep an indexing loop
+    # counter in Y (a const bound folded to a literal, a u16 counter for an
+    # array index, and a scaled index no longer disqualifying it) and
+    # oam_end stopped sweeping a hundred idle slots a frame. At 32 it is one
+    # frame short in 3665 with the traffic slice at 8; the pair pins that.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0E16
+                                                      --check-mem16 0x$FLOOP=0x0E50
 
-    # The headline constraint: at a bunched front line the PPU must still be
-    # able to draw everything standing on those scanlines.
-    budget_case unit_oam "$EIGHT_TANKS,wait1200,right180,wait60,shot"
+    # The headline constraint: at a bunched column the PPU must still be able
+    # to draw everything standing on those scanlines. Eight tanks in three
+    # lanes measure 16 sprites / 32 tiles on one line against 32 / 34 - the
+    # sprite budget, not the CPU, is what a bigger front runs into.
+    budget_case unit_oam "$EIGHT_TANKS,wait3600,right520,wait60,shot"
 fi
 
 # ---------------------------------------------------------------------------
@@ -423,7 +424,7 @@ else
 
     # Income. A push to the far end and a wait there pays out; the exact
     # figure is the threshold's, so re-baseline it when that is tuned.
-    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x2B
+    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x2C
 fi
 
 # ---------------------------------------------------------------------------

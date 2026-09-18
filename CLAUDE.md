@@ -143,11 +143,15 @@ Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a mu
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
-Ground units (`src/unit.r65`) are a 16-slot pool. **16 is a measured limit, not a guess**: at 32
-the frame loop ran at 0.45 ticks per vblank. `frames_nmi` vs `frames_loop` is the frame-budget
-probe - the V-counter cannot be used because latching it needs a discarded read of $2137 and the
-compiler eliminates unused hardware reads. Traffic control is O(n^2) and re-evaluates 4 units a
-frame; collision rejects a munition against the whole pool with one scanline-band test.
+Ground units (`src/unit.r65`) are a 32-slot pool. **32 is a measured limit, not a guess**: with
+every slot live the loop holds 1.00 ticks per vblank (one frame short in 3665). It was 16 until
+the compiler kept an indexing loop counter in Y and `oam_end` stopped sweeping idle slots;
+`frames_nmi` vs `frames_loop` is the frame-budget probe - the V-counter cannot be used because
+latching it needs a discarded read of $2137 and the compiler eliminates unused hardware reads.
+Traffic control is O(n^2) and re-evaluates 8 units a frame; a freed slot's lane is `UNIT_NO_LANE`
+so the scan's lane compare rejects it without a tag test. Collision rejects a munition against
+the whole pool with one scanline-band test. **The sprite budget is the next ceiling**: eight
+vehicles bunched in three lanes put 32 tiles on one scanline against the PPU's 34.
 
 A unit is three declarations. **Unit** is a `#[soa]` struct holding what every unit has -
 position, hp, owner, lane, block, rank - plus its `kind`, so `units[i].hp` is one

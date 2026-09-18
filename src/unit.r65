@@ -19,8 +19,12 @@
 
 #[bank(0)]
 
-const UNIT_MAX:  u16 = 16;
-const UNIT_MASK: u16 = 15;
+// 32 is what the frame holds with the whole pool live (tests/run.sh
+// unit_budget); a bunched column of eight vehicles already puts 32 tiles
+// on one scanline against the PPU's 34, so the sprite budget, not the
+// CPU, is the ceiling from here.
+const UNIT_MAX:  u16 = 32;
+const UNIT_MASK: u16 = 31;
 
 // Geometry. Vehicles are 24x16 drawn across two 16x16 cells; a man is 8
 // wide inside one cell.
@@ -157,24 +161,35 @@ struct Unit {
     kind:  UnitType,
 }
 
-#[lowram] static mut units: [Unit; 16];
+#[lowram] static mut units: [Unit; 32];
 
 #[lowram] static mut unit_cursor: u16;
 #[lowram] static mut unit_slice: u16;         // rolling traffic-control cursor
 #[lowram] static mut unit_lane_rr: u16;       // round-robin lane assignment
 
 // Traffic control is O(n^2) over the pool. Measured on hardware, a full
-// pass every frame costs more than a whole frame: with the pool filled the
-// loop ran at 0.45 ticks per vblank. Re-evaluating a slice instead leaves a
-// unit's flag at most three frames stale, which at 0.5 px/frame is about a
-// pixel and a half of overshoot - invisible, and it buys back the frame.
-const UNIT_SLICE: u16 = 4;
+// pass every frame costs more than a whole frame: with a 16-slot pool
+// filled the loop ran at 0.45 ticks per vblank. Re-evaluating a slice
+// instead leaves a unit's flag at most three frames stale, which at
+// 0.5 px/frame is about a pixel and a half of overshoot - invisible, and
+// it buys back the frame. The slice scales with the pool to keep that.
+const UNIT_SLICE: u16 = 8;
 
 // Neither pool takes an initializer, so both are garbage at power-on and
 // every element must be written before anything matches on it.
+// unit_free - retire a slot. The lane goes to a value no live unit has,
+// so the traffic scan rejects the slot on its lane compare and never has
+// to ask whether it is Free.
+const UNIT_NO_LANE: u8 = 0xFF;
+
+fn unit_free(i: u16) {
+    units[i].kind = UnitType::Free;
+    units[i].lane = UNIT_NO_LANE;
+}
+
 far fn unit_init() {
     for i in 0..UNIT_MAX {
-        units[i].kind = UnitType::Free;
+        unit_free(i);
     }
     unit_cursor = 0;
     unit_slice = 0;
@@ -203,7 +218,7 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                     Order::Launcher => { units[i].kind = UnitType::Launcher; }
                     Order::Infantry => { units[i].kind = UnitType::Infantry; }
                     Order::Engineer => { units[i].kind = UnitType::Engineer; }
-                    Order::Heli     => { units[i].kind = UnitType::Free; }
+                    Order::Heli     => { return 0; }
                 };
                 units[i].owner = owner;
                 units[i].x_px = x_px;
@@ -267,25 +282,22 @@ fn unit_blocked(self_i: u16) -> u8 {
     let mine: u8 = units[self_i].owner;
     let reach: u16 = unit_stats[units[self_i].kind as u16].width + UNIT_GAP;
 
+    // The lane compare is the whole filter: a free slot carries
+    // UNIT_NO_LANE, and a unit is never strictly ahead of itself, so
+    // neither needs a test of its own. This is the hottest loop in the
+    // game - O(n) per unit, UNIT_SLICE units a frame.
     for j in 0..UNIT_MAX {
-        match units[j].kind {
-            UnitType::Free => {}
-            _ => {
-                if j != self_i {
-                    if units[j].lane == lane {
-                        if mine == SIDE_PLAYER {
-                            if units[j].x_px > x {
-                                if units[j].x_px - x < reach { return 1; }
-                            }
-                        } else {
-                            if x > units[j].x_px {
-                                if x - units[j].x_px < reach { return 1; }
-                            }
-                        }
-                    }
+        if units[j].lane == lane {
+            if mine == SIDE_PLAYER {
+                if units[j].x_px > x {
+                    if units[j].x_px - x < reach { return 1; }
+                }
+            } else {
+                if x > units[j].x_px {
+                    if x - units[j].x_px < reach { return 1; }
                 }
             }
-        };
+        }
     }
     return 0;
 }
@@ -296,14 +308,14 @@ fn unit_advance(i: u16, step: u16) {
         let t: u16 = (units[i].x_sub as u16) + (step & 0x00FF);
         units[i].x_sub = t as u8;
         units[i].x_px = units[i].x_px + (step >> 8) + (t >> 8);
-        if units[i].x_px >= WORLD_W { units[i].kind = UnitType::Free; }
+        if units[i].x_px >= WORLD_W { unit_free(i); }
     } else {
         let mut whole: u16 = step >> 8;
         let frac: u16 = step & 0x00FF;
         if (units[i].x_sub as u16) < frac { whole = whole + 1; }
         units[i].x_sub = units[i].x_sub - (frac as u8);
         if units[i].x_px <= whole {
-            units[i].kind = UnitType::Free;
+            unit_free(i);
         } else {
             units[i].x_px = units[i].x_px - whole;
         }
@@ -530,7 +542,7 @@ fn unit_hit(i: u16, dmg: u8) {
         if units[i].hp > dmg {
             units[i].hp = units[i].hp - dmg;
         } else {
-            units[i].kind = UnitType::Free;
+            unit_free(i);
         }
     }
 }
