@@ -38,6 +38,7 @@ include!("muni.r65")
 include!("unit.r65")
 include!("order.r65")
 include!("hud.r65")
+include!("game.r65")
 include!("heli.r65")
 
 // Bank 0 - Main code
@@ -88,6 +89,7 @@ fn boot_load() {
     econ_init();
     order_init();
     hud_init();
+    game_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
     enable_autojoy!();
@@ -120,19 +122,25 @@ fn main() -> ! {
         let held: u16 = pad_poll();
         let trig: u16 = pad_poll_trigger();
 
-        heli_update(held);
-        heli_fire(held, trig);
-        econ_tick();
-        order_input(trig);
-        order_tick();
-        hud_update();
-        muni_update();
-        unit_update();
-        struct_update();
-        unit_collide();
-        struct_collide();
-        heli_collide();
-        camera_update();
+        if game_state == GAME_PLAYING {
+            heli_update(held);
+            heli_fire(held, trig);
+            econ_tick();
+            order_input(trig);
+            order_tick();
+            hud_update();
+            muni_update();
+            unit_update();
+            struct_update();
+            unit_collide();
+            struct_collide();
+            heli_collide();
+            camera_update();
+        } else {
+            // The match is over: everything holds where it stands until
+            // Start begins another.
+            if (trig & JOY_START) != 0 { game_reset(); }
+        }
 
         // Draw order is the OAM drop policy: airframe, munitions in flight,
         // buildings, then ground units from the camera centre outward.

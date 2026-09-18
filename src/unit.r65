@@ -25,6 +25,9 @@
 // CPU, is the ceiling from here.
 const UNIT_MAX:  u16 = 32;
 const UNIT_MASK: u16 = 31;
+// Each side gets half the pool. Without this one side's column could
+// take every slot and the other could not field a unit at all.
+const UNIT_SIDE_MAX: u8 = 16;
 
 // Geometry. Vehicles are 24x16 drawn across two 16x16 cells; a man is 8
 // wide inside one cell.
@@ -73,12 +76,21 @@ const TANK_SCAN:   u8  = 16;              // frames between target sweeps: a
 // Bomb blast reach, in pixels either side of the impact.
 const BLAST_R: u16 = 20;
 
+// Missile launcher: anti-air only. One helicopter of the other side
+// within LAUNCHER_RANGE draws its missile - the base's homing kind - and
+// the launcher is spent in the firing, as the roster has it.
+const LAUNCHER_RANGE: u16 = 224;
+
 // ------------------------------------------------------------ the kinds ---
-// A payload struct carries whatever only that kind has. The gun's reload
-// timer used to be a pool-wide `unit_timer[16]` that four kinds out of five
-// never touched; it belongs to Tank now. The other kinds have nothing of
-// their own, so they are plain variants.
-struct Tank { reload: u8 }                // frames until the main gun is ready
+// A payload struct carries whatever only that kind has, and its methods
+// take the pool index as `self` - the payloads are `#[soa]`, so their
+// fields are planes over the enum's data region and a method reaches
+// them, and the shared planes, by that one index. The gun's reload timer
+// used to be a pool-wide `unit_timer[16]` that four kinds out of five
+// never touched; it belongs to Tank now. The kinds with nothing of their
+// own are plain variants.
+#[soa] struct Tank     { reload: u8 }     // frames until the main gun is ready
+#[soa] struct Launcher { armed: u8 }      // 1 until its one missile is away
 
 // What a unit *is*, and what only that kind carries. `Free` is variant 0, so
 // an empty slot is a zero tag, and the tag plane is stride 1 - "is this slot
@@ -87,7 +99,7 @@ enum UnitType {
     Free,
     Tank(Tank),
     Van,
-    Launcher,
+    Launcher(Launcher),
     Infantry,
     Engineer,
 }
@@ -188,12 +200,19 @@ const UNIT_NO_LANE: u8 = 0xFF;
 fn unit_free(i: u16) {
     units[i].kind = UnitType::Free;
     units[i].lane = UNIT_NO_LANE;
+    unit_side_count[units[i].owner as u16] = unit_side_count[units[i].owner as u16] - 1;
 }
+
+// Live units per side, kept exact by unit_spawn and unit_free.
+#[lowram] static mut unit_side_count: [u8; 2];
 
 far fn unit_init() {
     for i in 0..UNIT_MAX {
-        unit_free(i);
+        units[i].kind = UnitType::Free;
+        units[i].lane = UNIT_NO_LANE;
     }
+    unit_side_count[0] = 0;
+    unit_side_count[1] = 0;
     unit_cursor = 0;
     unit_slice = 0;
     unit_lane_rr = 0;
@@ -202,10 +221,12 @@ far fn unit_init() {
 }
 
 // unit_spawn - put a unit on the field. Returns 1, or 0 with nothing
-// placed when the pool is full, so an order can wait for a slot rather
-// than be lost. Lanes are handed out round-robin so a column of one kind
-// spreads across all three rather than stacking.
+// placed when the pool is full or the side has its UNIT_SIDE_MAX out, so
+// an order can wait for a slot rather than be lost. Lanes are handed out
+// round-robin so a column of one kind spreads across all three rather
+// than stacking.
 far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
+    if unit_side_count[owner as u16] >= UNIT_SIDE_MAX { return 0; }
     let mut i: u16 = unit_cursor;
     let mut n: u16 = 0;
     let mut placed: u8 = 0;
@@ -218,7 +239,7 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 match kind {
                     Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0 }); }
                     Order::Van      => { units[i].kind = UnitType::Van; }
-                    Order::Launcher => { units[i].kind = UnitType::Launcher; }
+                    Order::Launcher => { units[i].kind = UnitType::Launcher(Launcher { armed: 1 }); }
                     Order::Infantry => { units[i].kind = UnitType::Infantry; }
                     Order::Engineer => { units[i].kind = UnitType::Engineer; }
                     Order::Heli     => { return 0; }
@@ -233,6 +254,7 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 unit_lane_rr = unit_lane_rr + 1;
                 if unit_lane_rr >= UNIT_LANES { unit_lane_rr = 0; }
                 unit_cursor = (i + 1) & UNIT_MASK;
+                unit_side_count[owner as u16] = unit_side_count[owner as u16] + 1;
                 placed = 1;
                 n = UNIT_MAX;
             }
@@ -388,6 +410,27 @@ fn unit_fire(i: u16) {
     };
 }
 
+// The launcher's one shot. `self` is the pool index, so the shared planes
+// are `units[self].*` and its own field `self.armed`. The player's
+// airframe is the only helicopter until phase 10, so an enemy launcher
+// watches for it and a player's has nothing to fire at yet.
+impl Launcher {
+    fn launch(self) {
+        if self.armed == 0 { return; }
+        if units[self].owner != SIDE_ENEMY { return; }
+        let lx: u16 = units[self].x_px + (UNIT_W >> 1);
+        let hx: u16 = heli_x_px + (HELI_W >> 1);
+        let mut d: u16 = 0;
+        if hx > lx { d = hx - lx; } else { d = lx - hx; }
+        if d < LAUNCHER_RANGE {
+            self.armed = 0;
+            muni_spawn(MUNI_MISSILE, lx, (UNIT_BASE_Y - 8) << 8, Q10(0),
+                       Q10(0) - MISSILE_SPEED, MISSILE_LIFE, units[self].owner);
+            unit_free(self);
+        }
+    }
+}
+
 // ---------------------------------------------------------------- spawn ---
 // Units come out of each side's base. The player's come from orders
 // (order.r65). The CPU opponent arrives in phase 10; until then the enemy
@@ -396,8 +439,12 @@ const BASE_X_PLAYER: u16 = 512;
 const BASE_X_ENEMY:  u16 = 7680;
 const SPAWN_PERIOD:  u8  = 120;
 
-static SPAWN_ORDER: [Order; 4] = [Order::Tank, Order::Infantry, Order::Van,
-                                  Order::Launcher];
+// TESTING: launcher-heavy - half the column is missile trucks, so the
+// homing missile gets exercised on every approach. The balanced rotation
+// is Tank, Infantry, Van, Launcher; restore it when done.
+static SPAWN_ORDER: [Order; 8] = [Order::Launcher, Order::Tank, Order::Launcher,
+                                  Order::Infantry, Order::Launcher, Order::Van,
+                                  Order::Launcher, Order::Launcher];
 
 #[lowram] static mut spawn_t:   u8;
 #[lowram] static mut spawn_seq: u8;
@@ -407,7 +454,7 @@ far fn unit_spawn_tick() {
         spawn_t = spawn_t - 1;
     } else {
         spawn_t = SPAWN_PERIOD;
-        let k: Order = SPAWN_ORDER[(spawn_seq & 3) as u16];
+        let k: Order = SPAWN_ORDER[(spawn_seq & 7) as u16];
         unit_spawn(k, SIDE_ENEMY, BASE_X_ENEMY);
         spawn_seq = spawn_seq + 1;
     }
@@ -431,9 +478,14 @@ far fn unit_update() {
         match units[i].kind {
             UnitType::Free => {}
             _ => {
-                // Only a tank has a gun; the tag test here is cheaper
-                // than the call that would make it.
-                if units[i].kind as u8 == UnitType::Tank as u8 { unit_fire(i); }
+                // Only a tank has a gun and only a launcher a missile; the
+                // tag tests here are cheaper than the calls that would
+                // make them.
+                match units[i].kind {
+                    UnitType::Tank(_)     => { unit_fire(i); }
+                    UnitType::Launcher(l) => { l.launch(); }
+                    _ => {}
+                };
                 if units[i].block == 0 {
                     unit_advance(i, unit_stats[units[i].kind as u16].speed);
                 }
@@ -599,8 +651,10 @@ far fn unit_collide() {
                 muni_kind[m] = MUNI_FREE;
             } else {
                 // Gunfire can shoot a bomb down. Checked before units so a
-                // round crossing both resolves against the bomb.
-                if mk == MUNI_BULLET {
+                // round crossing both resolves against the bomb - and only
+                // while a bomb is in the air: with a full pool of rounds
+                // this was 256 slot checks a frame, by itself over budget.
+                if mk == MUNI_BULLET && muni_bombs != 0 {
                     for b in 0..MUNI_MAX {
                         if muni_kind[b] == MUNI_BOMB {
                             let bx: u16 = muni_x_px[b];
@@ -611,6 +665,7 @@ far fn unit_collide() {
                             if by > my { dy = by - my; } else { dy = my - by; }
                             if dx < 8 {
                                 if dy < 8 {
+                                    muni_drop_bomb(b);
                                     muni_kind[b] = MUNI_FREE;
                                     muni_kind[m] = MUNI_FREE;
                                 }

@@ -29,7 +29,18 @@ const HELI_Y_MAX: u16 = (GROUND_Y - HELI_H) << 8;
 // it. No gravity while powered - that only arrives with fuel-out and ejection.
 const HELI_VX_MAX: Q10 = 5 * 64;          // 5 px/frame, the plan's cap
 const HELI_VY_MAX: Q10 = 4 * 64;          // ~4 px/frame
-const HELI_ACC:    Q10 = 16;              // 0.25 px/frame^2 toward the target
+// Inertia. Thrust is how fast the stick builds speed; drag is how fast
+// speed bleeds off with the stick released - slower, so the airframe
+// coasts and overshoots rather than stopping where the thumb does.
+// Horizontal: 20 frames to top speed, ~40 to coast down from it (~100 px).
+// Vertical builds more gently - climbing and diving should read as the
+// airframe leaning into it - and bleeds off a little faster than it
+// builds, since the ground and the ceiling are near.
+const HELI_THRUST_X: Q10 = 16;            // 0.25 px/frame^2
+const HELI_DRAG_X:   Q10 = 8;             // 0.125
+const HELI_THRUST_Y: Q10 = 6;            // 0.19: ~21 frames to top climb
+const HELI_DRAG_Y:   Q10 = 8;
+const HELI_ACC:      Q10 = 16;            // dead-stick horizontal decay
 const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 
 // Tilt frames in the OBJ sheet. A 16x16 sprite at tile t covers t, t+1,
@@ -41,6 +52,18 @@ const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 const HELI_TILE_NOSE_DOWN: u8 = 0;        // assets/src/obj.bmp, frame 0
 const HELI_TILE_LEVEL:     u8 = 4;        // ... frame 1
 const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
+// Turning: five drawings - a slight turn and a three-quarter view facing
+// the old way, head-on, then the same two facing the new way - each held
+// HELI_TURN_HOLD frames. The turn only advances while the new direction
+// is held: let go and it stalls where it is, hold the old direction and
+// it swings back. The facing the gun fires along changes when the turn
+// completes, not when it starts. The three pieces of art are on the
+// sheet's last row (tools/struct_art.py).
+const HELI_TILE_TURN_34:     u8 = 224;
+const HELI_TILE_TURN_HEAD:   u8 = 228;
+const HELI_TILE_TURN_SLIGHT: u8 = 232;
+const HELI_TURN_HOLD:        u8 = 3;      // frames per drawing
+const HELI_TURN_STEPS:       u8 = 5 * 3;  // the whole swing
 const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 
 // The helicopter is the highest-priority object in the game, so it draws
@@ -85,6 +108,7 @@ const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 #[lowram] static mut heli_bombs: u8;
 #[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
 #[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
+#[lowram] static mut heli_turn: u8;       // progress through a turn, 0 = none
 #[lowram] static mut heli_fuel:   u8;     // 0..HELI_FUEL_MAX
 #[lowram] static mut heli_landed: u8;     // 1 while resting on a deck
 #[lowram] static mut heli_fuel_t: u8;     // countdown to the next fuel unit
@@ -110,6 +134,7 @@ far fn heli_init() {
     heli_bombs = HELI_BOMB_MAX;
     heli_gun_cd = 0;
     heli_face_left = 0;
+    heli_turn = 0;
     heli_fuel = HELI_FUEL_MAX;
     heli_landed = 0;
     heli_fuel_t = HELI_FUEL_DRAIN;
@@ -118,14 +143,24 @@ far fn heli_init() {
     heli_hp = HELI_HP_MAX;
 }
 
+// heli_lost - the airframe is gone. The next one starts from the pad
+// with a full load; the last one is the match.
+far fn heli_lost() {
+    heli_lives = heli_lives - 1;
+    if heli_lives == 0 {
+        game_over(GAME_LOST);
+    } else {
+        heli_init();
+    }
+}
+
 // heli_collide - enemy rounds against the airframe's box, and the
 // barrage balloons, which end it outright.
 far fn heli_collide() {
     let hx: u16 = heli_x_px;
     let hy: u16 = heli_y >> 8;
     if struct_balloon_at(hx, hy) != 0 {
-        heli_lives = heli_lives - 1;
-        heli_init();
+        heli_lost();
         return;
     }
     for m in 0..MUNI_MAX {
@@ -144,8 +179,7 @@ far fn heli_collide() {
                         if heli_hp > dmg {
                             heli_hp = heli_hp - dmg;
                         } else {
-                            heli_lives = heli_lives - 1;
-                            heli_init();
+                            heli_lost();
                         }
                     }
                 }
@@ -226,6 +260,28 @@ far fn heli_fire(held: u16, trig: u16) {
             muni_spawn(MUNI_BOMB, heli_x_px + (HELI_W >> 1),
                        heli_y + (HELI_H << 8), heli_vx, Q10(0), 0, SIDE_PLAYER);
         }
+    }
+}
+
+// heli_turn_step - advance, wind back or stall the turn for this frame,
+// from the direction held: 0 right, 1 left, 2 none. A turn starts when
+// the held direction is not the one faced; it completes - and the
+// facing changes - when the swing has run its length, and it is called
+// off if it is wound all the way back.
+far fn heli_turn_step(want: u8) {
+    if heli_turn == 0 {
+        if want < 2 && want != heli_face_left { heli_turn = 1; }
+        return;
+    }
+    if want == 2 { return; }                 // stalled
+    if want != heli_face_left {
+        heli_turn = heli_turn + 1;
+        if heli_turn > HELI_TURN_STEPS {
+            heli_face_left = want;
+            heli_turn = 0;
+        }
+    } else {
+        heli_turn = heli_turn - 1;
     }
 }
 
@@ -334,15 +390,22 @@ far fn heli_update(held: u16) {
             }
         } else {
             let mut tx: Q10 = Q10(0);
-            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; heli_face_left = 0; }
-            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; heli_face_left = 1; }
+            // 2 = no direction held; the turn stalls on that.
+            let mut want: u8 = 2;
+            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
+            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
+            heli_turn_step(want);
 
             let mut ty: Q10 = Q10(0);
             if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
             if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
 
-            heli_vx = approach(heli_vx, tx, HELI_ACC);
-            heli_vy = approach(heli_vy, ty, HELI_ACC);
+            let mut ax: Q10 = HELI_THRUST_X;
+            if tx == Q10(0) { ax = HELI_DRAG_X; }
+            let mut ay: Q10 = HELI_THRUST_Y;
+            if ty == Q10(0) { ay = HELI_DRAG_Y; }
+            heli_vx = approach(heli_vx, tx, ax);
+            heli_vy = approach(heli_vy, ty, ay);
         }
 
         // Whether the airframe is descending has to be read before the move:
@@ -387,6 +450,19 @@ far fn heli_draw() {
     if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
     if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
 
+    // Mid-turn the tilt frames give way to the swing: slight and
+    // three-quarter facing the way it still faces, head-on, then
+    // three-quarter and slight facing the way it is going.
+    let mut face: u8 = heli_face_left;
+    if heli_turn > 0 {
+        let step: u8 = div8(heli_turn - 1, HELI_TURN_HOLD as u16);
+        if step == 0 { tile = HELI_TILE_TURN_SLIGHT; }
+        if step == 1 { tile = HELI_TILE_TURN_34; }
+        if step == 2 { tile = HELI_TILE_TURN_HEAD; }
+        if step == 3 { tile = HELI_TILE_TURN_34;     face = 1 - face; }
+        if step == 4 { tile = HELI_TILE_TURN_SLIGHT; face = 1 - face; }
+    }
+
     // Camera-relative, wrapped into the 9-bit OAM X field. A sprite left of
     // the screen shows up at $1FF-ish, which OAM reads as off-screen.
     let sx: u16 = (heli_x_px - camera_x) & 0x01FF;
@@ -397,7 +473,7 @@ far fn heli_draw() {
     let mut attr: u16 = HELI_ATTR;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;
-    if heli_face_left != 0 {
+    if face != 0 {
         attr = HELI_ATTR | 0x4000;        // OAM hflip
         near = tile + 2;
         far_ = tile;

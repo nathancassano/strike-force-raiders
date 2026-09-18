@@ -17,6 +17,10 @@ Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
                bank   (32x24 in 32x32) at cols 10-13
     row 10-13  super bunker (40x24 in 48x32) at cols 0-5
                base (64x32) at cols 6-13
+    row 1      cols 12-14: the missile heading E, NE, N (8x8 tiles 28-30)
+    row 14-15  the airframe's turn frames (32x16 each): three-quarter view
+               at cols 0-3, head-on at cols 4-7, slight turn at cols 8-11
+               (heli.r65 HELI_TILE_TURN_*)
 
 Palette indices: 1 black, 2 dark green, 3 green, 4 light blue, 5 light
 grey, 6 orange, 7 darker green, 8 mid green, 9 charcoal, 10 blue-grey,
@@ -31,7 +35,7 @@ import struct
 from PIL import Image
 
 BMP = 'assets/src/obj.bmp'
-SHEET_W, SHEET_H = 128, 112
+SHEET_W, SHEET_H = 128, 128
 
 K = {'.': 0, 'k': 1, 'D': 2, 'G': 3, 'b': 4, 'w': 5, 'o': 6, 'd': 7,
      'g': 8, 'c': 9, 's': 10, 'r': 11}
@@ -150,6 +154,102 @@ def base():
     return rows
 
 
+# The airframe mid-turn: the level frame foreshortened. Three-quarter
+# view (nose still right, tail swinging toward the viewer), then head-on
+# (tail hidden, canopy centred). Same palette as the flight frames.
+TURN_34 = [
+    "....wwwwwwwwwwwwwwwwwwwwwwww....",
+    "...............kk...............",
+    "...............kk...............",
+    "................................",
+    "........kkkkkkkkkkkkkkkkkkk.....",
+    "....oooooGGGGGGGGGGDDDDDDDDD....",
+    "....ooooooGGGGGGGGGDDbbbbbbD....",
+    "....oooooDDDDDDDDDDDDbbbbbbD....",
+    "....kkkkkDDDDDDDDDDDDbbbbbbD....",
+    "........DDDDDDDDDDDDDDbbbbD.....",
+    "........DDDDDDDDDDDDDDDDDDD.....",
+    "........kkkkkkkkkkkkkkkkkkk.....",
+    "..............k.......k.........",
+    "............kkkkkkkkkkkkk.......",
+    "................................",
+    "................................",
+]
+# Just off the level frame: the tail foreshortened a little, the body a
+# few pixels narrower, the canopy starting to face the viewer.
+TURN_SLIGHT = [
+    "..wwwwwwwwwwwwwwwwwwwwwwwwwwww..",
+    "...............kk...............",
+    "...............kk...............",
+    "................................",
+    "..........kkkkkkkkkkkkkkkkkkkk..",
+    "..ooooooo.GGGGGGGGGGGDDDDDDDDDD.",
+    "..oooooookkGGGGGGGGGGDDbbbbbbbD.",
+    "..ooooooDDDDDDDDDDDDDDDbbbbbbbD.",
+    "..kkkkkkkkDDDDDDDDDDDDDbbbbbbbD.",
+    "..........DDDDDDDDDDDDDDbbbbbD..",
+    "..........DDDDDDDDDDDDDDDDDDDD..",
+    "..........kkkkkkkkkkkkkkkkkkkk..",
+    "...............k.........k......",
+    ".............kkkkkkkkkkkkkkk....",
+    "................................",
+    "................................",
+]
+
+TURN_HEAD = [
+    "..............wwww..............",
+    "...............kk...............",
+    "...............kk...............",
+    "................................",
+    "............kkkkkkkk............",
+    "...........kGGGGGGGGk...........",
+    "...........kGbbbbbbGk...........",
+    "...........kDbbbbbbDk...........",
+    "...........kDbbbbbbDk...........",
+    "...........kDDbbbbDDk...........",
+    "...........kDDDDDDDDk...........",
+    "............kkkkkkkk............",
+    ".............k....k.............",
+    "...........kkkkkkkkkkk..........",
+    "................................",
+    "................................",
+]
+
+
+# The missile, 8x8, heading east, north-east and north; the sprite's
+# flip bits turn those into the other five headings (muni.r65).
+MISSILE_E = [
+    "........",
+    "........",
+    "........",
+    "c.....k.",
+    "ccccccko",
+    "c.....k.",
+    "........",
+    "........",
+]
+MISSILE_NE = [
+    ".......k",
+    "......ko",
+    ".....ck.",
+    "....c...",
+    "...c....",
+    "..c.....",
+    ".c......",
+    "........",
+]
+MISSILE_N = [
+    "....k...",
+    "...kok..",
+    "....c...",
+    "....c...",
+    "....c...",
+    "....c...",
+    "...ccc..",
+    "........",
+]
+
+
 def save_bmp4(im, path):
     """Write a 16-colour indexed image as a 4-bit BMP.
 
@@ -194,6 +294,12 @@ def main():
     stamp(px, 80, 48, [r.ljust(32, '.') for r in bank()])
     stamp(px, 0, 80, [r.ljust(48, '.') for r in super_bunker()])
     stamp(px, 48, 80, base())
+    stamp(px, 0, 112, TURN_34)
+    stamp(px, 32, 112, TURN_HEAD)
+    stamp(px, 64, 112, TURN_SLIGHT)
+    stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
+    stamp(px, 104, 8, MISSILE_NE)
+    stamp(px, 112, 8, MISSILE_N)
     save_bmp4(im, BMP)
     print(f"structures stamped; {BMP} is now {im.size[0]}x{im.size[1]}")
 

@@ -26,8 +26,8 @@ const MUNI_BLAST:  u8 = 4;
 // A base's smart missile: it steers toward the helicopter every frame
 // (see muni_update) and lives MISSILE_LIFE frames.
 const MUNI_MISSILE: u8 = 5;
-const MISSILE_SPEED: Q10 = 6 * 64;        // 6 px/frame along either axis
-const MISSILE_LIFE:  u8  = 90;
+const MISSILE_SPEED: Q10 = 3 * 64;        // 3 px/frame along either axis
+const MISSILE_LIFE:  u8  = 180;           // 3 s: slow enough to dodge, long enough to chase
 
 // Gunfire crosses the screen fast and flat; a bomb inherits the airframe's
 // horizontal speed and accelerates downward from rest.
@@ -61,10 +61,22 @@ const MUNI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 #[lowram] static mut muni_owner: [u8; 16];    // 0 player, 1 enemy - decides
                                               // who a round can hurt
 #[lowram] static mut muni_cursor: u16;
+// Bombs in the air. Kept exactly so gunfire's bomb-interception test can
+// be skipped entirely when there is nothing to intercept - scanning the
+// pool for bombs from every round was, by itself, over the frame budget.
+#[lowram] static mut muni_bombs: u8;
+
+// muni_drop_bomb - a slot that held a bomb is about to hold something
+// else; keep the count honest. Every retirement of a bomb goes through
+// here.
+fn muni_drop_bomb(i: u16) {
+    if muni_kind[i] == MUNI_BOMB { muni_bombs = muni_bombs - 1; }
+}
 
 // muni_init - empty the pool. Arrays are declared bare, so they hold
 // power-on garbage until this runs.
 far fn muni_init() {
+    muni_bombs = 0;
     for i in 0..MUNI_MAX {
         muni_kind[i] = MUNI_FREE;
     }
@@ -91,6 +103,7 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8,
             muni_vy[i] = vy;
             muni_life[i] = life;
             muni_owner[i] = owner;
+            if kind == MUNI_BOMB { muni_bombs = muni_bombs + 1; }
             muni_cursor = (i + 1) & MUNI_MASK;
             n = MUNI_MAX;              // done; no `break` needed either
         } else {
@@ -118,6 +131,7 @@ fn muni_move_x(i: u16, v: Q10) {
         muni_x_sub[i] = muni_x_sub[i] - (frac as u8);
         if muni_x_px[i] <= whole {
             muni_x_px[i] = 0;
+            muni_drop_bomb(i);
             muni_kind[i] = MUNI_FREE;      // ran off the west edge
         } else {
             muni_x_px[i] = muni_x_px[i] - whole;
@@ -171,12 +185,14 @@ far fn muni_update() {
             if muni_kind[i] != MUNI_FREE {
                 if (muni_y[i] >> 8) >= GROUND_Y {
                     if muni_kind[i] == MUNI_BOMB {
+                        muni_bombs = muni_bombs - 1;
                         muni_kind[i] = MUNI_BLAST;
                     } else {
                         muni_kind[i] = MUNI_FREE;
                     }
                 } else {
                     if muni_x_px[i] >= WORLD_W {
+                        muni_drop_bomb(i);
                         muni_kind[i] = MUNI_FREE;   // off the east edge
                     }
                 }

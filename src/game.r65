@@ -1,0 +1,55 @@
+// game - the match: its two ends, and the way back to the start.
+//
+// The plan keeps exactly two terminal conditions. A van reaching the
+// other side's base destroys it and its owner loses - the base is immune
+// to everything else, so a two-fund unarmed van is the only way to win.
+// And a side that runs out of helicopters loses; the player starts with
+// four and buys more at twenty. The enemy has no helicopter until phase
+// 10, so only the first of those can end a match against the player.
+//
+// When it ends the simulation freezes where it stands, the result goes up
+// mid-screen, and Start begins a fresh match.
+
+#[bank(0)]
+
+const GAME_PLAYING: u8 = 0;
+const GAME_WON:     u8 = 1;
+const GAME_LOST:    u8 = 2;
+
+#[lowram] static mut game_state: u8;
+
+static MSG_WON:  [u8; 7]  = "VICTORY";
+static MSG_LOST: [u8; 6]  = "DEFEAT";
+
+far fn game_init() {
+    game_state = GAME_PLAYING;
+}
+
+// game_over - end the match one way or the other. Idempotent: the first
+// end stands.
+far fn game_over(result: u8) {
+    if game_state != GAME_PLAYING { return; }
+    game_state = result;
+    if result == GAME_WON {
+        hud_message(&MSG_WON as *u8, 7);
+    } else {
+        hud_message(&MSG_LOST as *u8, 6);
+    }
+}
+
+// game_reset - a fresh match from the same level. Everything that
+// boot_load initialised, minus the hardware.
+far fn game_reset() {
+    pad_init();
+    heli_init();
+    muni_init();
+    unit_init();
+    struct_init();
+    econ_init();
+    order_init();
+    hud_init();
+    hud_message(&MSG_WON as *u8, 0);
+    camera_x = 0;
+    focus_x = CAM_MID;
+    game_init();
+}

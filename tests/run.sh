@@ -151,10 +151,10 @@ if [ -z "$CAM" ]; then
     echo "FAIL cam:addr (camera_x not found in build/main.asm)"; fail=$((fail+1))
 else
     run_case cam_rest   "shot"                        --check-mem16 0x$CAM=0x0000
-    run_case cam_r30    "wait20,right30,shot"         --check-mem16 0x$CAM=0x0033
-    run_case cam_r120   "wait20,right120,shot"        --check-mem16 0x$CAM=0x01F5
-    run_case cam_r240   "wait20,right240,shot"        --check-mem16 0x$CAM=0x044D
-    run_case cam_back   "wait20,right240,left90,shot" --check-mem16 0x$CAM=0x0354
+    run_case cam_r30    "wait20,right30,shot"         --check-mem16 0x$CAM=0x0005
+    run_case cam_r120   "wait20,right120,shot"        --check-mem16 0x$CAM=0x01C3
+    run_case cam_r240   "wait20,right240,shot"        --check-mem16 0x$CAM=0x041B
+    run_case cam_back   "wait20,right240,left90,shot" --check-mem16 0x$CAM=0x03EA
 fi
 
 # Four layers at four rates, and eight equal HDMA ground bands.
@@ -180,17 +180,17 @@ else
     # Rest: heli_init's spawn, untouched by a frame of no input.
     run_case heli_rest  "shot"                --check-mem16 0x$HX=0x0040 \
                                               --check-mem16 0x$HY=0x6000
-    run_case heli_right "wait20,right30,shot" --check-mem16 0x$HX=0x00AB
+    run_case heli_right "wait20,right30,shot" --check-mem16 0x$HX=0x007D
 
     # Leftward travel exercises the borrow path in heli_move_x. `>>` is a
     # logical shift even on signed types, so a negative delta cannot be
     # shifted apart - a round trip that lands mid-world proves the explicit
     # sign branch, where a clamp at 0 would not.
-    run_case heli_back  "wait20,right240,left60,shot" --check-mem16 0x$HX=0x0452
+    run_case heli_back  "wait20,right240,left60,shot" --check-mem16 0x$HX=0x04D3
 
     # All four clamps: world edge, and the flyable box between the HUD strip
     # and the ground at y=168.
-    run_case heli_wall  "wait20,left30,shot"  --check-mem16 0x$HX=0x0000
+    run_case heli_wall  "wait20,left60,shot"  --check-mem16 0x$HX=0x0000
     run_case heli_ceil  "wait20,up30,shot"    --check-mem16 0x$HY=0x1000
     run_case heli_floor "wait20,down60,shot"  --check-mem16 0x$HY=0x9800
 
@@ -212,13 +212,22 @@ else
     run_case heli_tilt_left  "wait20,right120,left60,shot" \
                                                    --check-mem 0x$TILT=0x02 \
                                                    --check-mem 0x$ATTR=0x70
-    # Reversing flips facing while vx is still positive, so the airframe is
-    # briefly moving backwards along its own nose: it flares nose-up.
-    # vx decays 16/frame from 320, so 10 frames leaves +160 against a -96
-    # threshold. This is the only case that reaches the nose-up frame.
-    run_case heli_tilt_flare "wait20,right120,left10,shot" \
-                                                   --check-mem 0x$TILT=0x0A \
+    # Reversing is a turn: five drawings held three frames each, advancing
+    # only while the new direction is held. Ten frames in, the three-quarter
+    # view faces the new way (its cells swap under hflip, so the first slot
+    # carries the right-hand cell, $E2); six frames in and released, it
+    # stalls on the three-quarter view still facing the old way ($E0); and
+    # wound back to nothing, the facing never changed. The nose-up flare the
+    # reversal used to show is out of reach now - the swing outlasts the
+    # velocity decay - so the tilt cases stop at nose-down and level.
+    run_case heli_turn_mid   "wait20,right120,left10,shot" \
+                                                   --check-mem 0x$TILT=0xE2 \
                                                    --check-mem 0x$ATTR=0x70
+    run_case heli_turn_stall "wait20,right120,left6,wait20,shot" \
+                                                   --check-mem 0x$TILT=0xE0 \
+                                                   --check-mem 0x$ATTR=0x30
+    run_case heli_turn_back  "wait20,right120,left6,right6,wait2,shot" \
+                                                   --check-mem 0x$ATTR=0x30
 
     # The airframe is actually drawn, not just positioned. Canopy and rotor
     # are the two OBJ colours that appear nowhere else on screen, so finding
@@ -286,7 +295,7 @@ if [ -z "$LAND" ] || [ -z "$FUEL" ]; then
 else
     # Descending onto the deck lands; stopping short or overshooting does not.
     run_case pad_land      "wait20,right190,down80,shot"  --check-mem 0x$LAND=0x01
-    run_case pad_short     "wait20,right170,down80,shot"  --check-mem 0x$LAND=0x00
+    run_case pad_short     "wait20,right120,down80,shot"  --check-mem 0x$LAND=0x00 --check-mem16 0x$HY=0x9800
     run_case pad_over      "wait20,right210,down80,shot" --check-mem 0x$LAND=0x00
 
     # "Land only while descending." Reaching the floor first and then sliding
@@ -375,12 +384,12 @@ else
     # buildings culled a frame, turrets, bunkers, the super bunker, bases
     # and banks all ticking, munitions tested against them, and sprites
     # straddling the left edge drawn at a negative 9-bit X rather than
-    # culled) cost 144 frames in 3665 here - 0.961, accepted as the stress
-    # case, and what the pair pins. The next cycles are in unit_advance's
-    # call and the traffic scan.
+    # culled, and the bases' van scan of phase 9) cost 178 frames in 3666
+    # here - 0.951, accepted as the stress case, and what the pair pins.
+    # The next cycles are in unit_advance's call and the traffic scan.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0DC1
+                                                      --check-mem16 0x$FLOOP=0x0D94
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -450,18 +459,18 @@ if [ -z "$HHP" ] || [ -z "$SHP" ]; then
 else
     # The enemy turret at x=6656 (level entry 12) lofts rounds at an
     # approaching airframe: 20 hp becomes 14 on the way in.
-    run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0E
+    run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
 
     # Descend to its height and fire back: a round is a point off its 62.
     run_case turret_gunfire "wait20,right1290,down40,wait10,b90,shot" \
-        --check-mem 0x$(at "$SHP" 12)=0x36 --check-mem 0x$HHP=0x0D
+        --check-mem 0x$(at "$SHP" 12)=0x2F --check-mem 0x$HHP=0x09
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact: a life gone and the airframe back at the start, ten
     # frames of held right past it.
     HX=$(ramaddr heli_x_px)
-    run_case balloon_kill "up10,right410,shot" --check-mem 0x$LIVES=0x03 \
-                                              --check-mem16 0x$HX=0x004A
+    run_case balloon_kill "up10,right425,shot" --check-mem 0x$LIVES=0x03 \
+                                              --check-mem16 0x$HX=0x004C
 
     # An enemy infantryman walking into the neutral bunker at x=5120 (level
     # entry 9) takes it. He spawns at frame ~270 and covers 2560 px at a
@@ -475,12 +484,45 @@ else
     run_case base_missile "wait20,right1500,wait200,shot" --check-mem 0x$LIVES=0x03 \
                                                           --check-mem 0x$HHP=0x14
 
+    # The enemy column's launcher (the rotation's fourth, slot 3) fires its
+    # one homing missile at an airframe inside 224 px and is spent doing
+    # so: the slot is free, and the missile lands for 10 of the 20 hp.
+    run_case launcher_fire "wait20,right1400,wait80,shot" \
+        --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$HHP=0x0A
+
     # The super bunker (level entry 7, dead centre) starts empty and nobody's.
     # The second enemy infantryman to walk the field - the first is spent on
     # the bunker at 5120 - goes inside: one man, and it is the enemy's.
     SMEN=$(ramaddr structs__men)
     run_case super_manned "wait16200,shot" --timeout 500000 \
         --check-mem 0x$(at "$SMEN" 7)=0x01 --check-mem 0x$(at "$SOWN" 7)=0x01
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 9 - win and loss.
+#
+# Two ends only: a van at the other side's base, or no helicopters left.
+# The van cannot be scripted from the pad in useful time - it was checked by
+# planting one at the enemy base with the debugger - so the suite covers the
+# other end and the way back.
+# ---------------------------------------------------------------------------
+GS=$(ramaddr game_state)
+if [ -z "$GS" ]; then
+    echo "FAIL game:addr (game_state not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # Five passes into the enemy base's missiles lose all four airframes:
+    # the match ends (2 = DEFEAT) and the last one is not replaced.
+    PASS_="wait20,right1500,wait300"
+    run_case game_lost "$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,shot" --timeout 300000 \
+        --check-mem 0x$GS=0x02 --check-mem 0x$LIVES=0x00
+
+    # Start begins a fresh match: playing, four lives, the airframe at the
+    # start, the camera at the west edge.
+    CAMX=$(ramaddr camera_x)
+    run_case game_reset "$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,start,wait10,shot" --timeout 300000 \
+        --check-mem 0x$GS=0x00 --check-mem 0x$LIVES=0x04 \
+        --check-mem16 0x$HX=0x0040 --check-mem16 0x$CAMX=0x0000
 fi
 
 # ---------------------------------------------------------------------------

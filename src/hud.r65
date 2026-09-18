@@ -26,6 +26,8 @@ const GLYPH_DOLLAR:   u16 = 10;
 const GLYPH_LBRACKET: u16 = 11;
 const GLYPH_RBRACKET: u16 = 12;
 const GLYPH_ICON:     u16 = 13;           // + Order, in ring order
+// Capitals on the row below: tile (HUD_LETTER_ROW * 32 + c - 'A').
+const HUD_LETTER_ROW: u16 = 29;
 
 // Row 0 layout, in tile columns.
 const HUD_COL_FUNDS: u16 = 1;             // "$NN"
@@ -66,6 +68,7 @@ far fn hud_init() {
     hud_funds = 0xFF;
     hud_sel = 0xFF;
     hud_dirty = 0;
+    hud_msg_dirty = 0;
     hud_update();
 }
 
@@ -92,10 +95,51 @@ far fn hud_update() {
     }
 }
 
-// hud_flush - push the row to VRAM. Vblank only.
+// -------------------------------------------------------------- message ---
+// The battle-over line, on map row HUD_MSG_ROW - mid-screen, over the
+// field, where BG1 is otherwise transparent. Composed into its own shadow
+// from a ROM string of capitals and spaces, centred, and flushed once.
+const HUD_MSG_ROW: u16 = 10;
+const HUD_MSG_MAX: u16 = 32;
+
+#[lowram] static mut hud_msg:       [u16; 32];
+#[lowram] static mut hud_msg_dirty: u8;
+
+// The tile the map has on the message row - whatever the art left there,
+// read back rather than assumed, so clearing the line restores it.
+fn hud_clear_tile() -> u16 {
+    return (BG1_MAP[(HUD_MSG_ROW << 6)] as u16)
+         | ((BG1_MAP[(HUD_MSG_ROW << 6) + 1] as u16) << 8);
+}
+
+// hud_letter - the tile word for a capital, or the clear tile for a space.
+fn hud_letter(c: u8) -> u16 {
+    if c == 0x20 { return hud_clear_tile(); }
+    let i: u16 = ((HUD_LETTER_ROW << 5) + ((c - 0x41) as u16)) << 1;
+    return (BG1_MAP[i] as u16) | ((BG1_MAP[i + 1] as u16) << 8);
+}
+
+// hud_message - show *len* capitals from *text*, centred; 0 clears.
+far fn hud_message(text: *u8, len: u16) {
+    let blank: u16 = hud_clear_tile();
+    for c in 0..HUD_MSG_MAX {
+        hud_msg[c] = blank;
+    }
+    let start: u16 = (HUD_MSG_MAX - len) >> 1;
+    for k in 0..len {
+        hud_msg[start + k] = hud_letter(text[k]);
+    }
+    hud_msg_dirty = 1;
+}
+
+// hud_flush - push the rows to VRAM. Vblank only.
 far fn hud_flush() {
     if hud_dirty != 0 {
         hud_dirty = 0;
         dma_copy_vram(1, &hud_row as far *u8, VRAM_BG1, 64);
+    }
+    if hud_msg_dirty != 0 {
+        hud_msg_dirty = 0;
+        dma_copy_vram(1, &hud_msg as far *u8, VRAM_BG1 + (HUD_MSG_ROW << 5), 64);
     }
 }
