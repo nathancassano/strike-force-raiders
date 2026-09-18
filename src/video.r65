@@ -37,12 +37,51 @@ const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000
 // bank for WRAM symbols, the same trap gnd_hdma_init works around.
 #[lowram] static mut oam: OamBuffer;
 
+// ------------------------------------------------------- OAM allocation ---
+// Slots are handed out in importance order, not owned statically by each
+// subsystem. The PPU evaluates sprites starting at index 0 and drops the
+// ones it reaches last, so slot order *is* the drop policy: helicopter,
+// then munitions in flight, then buildings, then ground units nearest the
+// camera. A pool index says nothing about what matters this frame, so the
+// draw order decides and everything left over is parked.
+const OAM_SLOTS: u16 = 128;
+
+#[lowram] static mut oam_next: u8;
+
+fn oam_begin() {
+    oam_next = 0;
+}
+
+// oam_take - claim the next slot, or OAM_SLOTS when the table is full.
+// A caller that gets OAM_SLOTS draws nothing, which is the graceful end of
+// the importance order rather than a wrap that would corrupt the sprite 0.
+fn oam_take() -> u16 {
+    let slot: u16 = oam_next as u16;
+    if slot < OAM_SLOTS {
+        oam_next = oam_next + 1;
+    }
+    return slot;
+}
+
+// oam_end - park every slot the frame did not claim. Without this a sprite
+// that stopped being drawn stays frozen wherever it last was.
+fn oam_end() {
+    let mut i: u16 = oam_next as u16;
+    while i < OAM_SLOTS {
+        oam.hide!(i as u8);
+        i = i + 1;
+    }
+}
+
 // oam_flush - push the shadow buffer to the PPU. Vblank only.
 // Sets the channel registers directly rather than using dma_copy_oam_const!,
 // which resolves the source bank through `#:`.
 far fn oam_flush() {
     OAMADDL = 0;
-    OAMADDH = 0;
+    // Bit 7 enables priority rotation: the sprite evaluation start point
+    // moves each frame, so a scanline that overflows flickers between the
+    // sprites competing for it instead of always dropping the same ones.
+    OAMADDH = 0x80;
     DMAP7 = 0x00;                  // 1 register, 1 write per transfer
     BBAD7 = 0x04;                  // $2104 OAMDATA
     A1T7 = &oam as u16;
@@ -52,8 +91,21 @@ far fn oam_flush() {
 }
 
 // ---------------------------------------------------------------- world ---
-const WORLD_W:   u16 = 4096;              // 16 screens
-const CAM_MAX:   u16 = 4096 - 256;        // left edge upper bound
+// Sides. A unit marches toward the opposing bank: the player east, the
+// enemy west. Declared here because munitions, units and the airframe all
+// need them and none of those owns the concept.
+const SIDE_PLAYER: u8 = 0;
+const SIDE_ENEMY:  u8 = 1;
+
+// Armor Alley's field, at its original width rather than the halved one the
+// plan first specified. Our sprites are smaller than AA's, so 8192 px is a
+// larger field in helicopter-lengths than the original and a traverse takes
+// about 27 s at 5 px/frame against AA's ~11 s.
+//
+// It also sets the scale any future radar strip has to work at: 8192 px of
+// world across a 256 px HUD is 32 world pixels per HUD pixel.
+const WORLD_W:   u16 = 8192;              // 32 screens
+const CAM_MAX:   u16 = 8192 - 256;        // left edge upper bound
 const CAM_MID:   u16 = 128;               // half a screen
 const CAM_DEAD:  u16 = 8;                 // deadzone half-width, px
 const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed

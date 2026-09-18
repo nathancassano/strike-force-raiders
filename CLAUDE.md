@@ -137,6 +137,38 @@ Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a mu
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
+Ground units (`src/unit.r65`) are a 16-slot pool. **16 is a measured limit, not a guess**: at 32
+the frame loop ran at 0.45 ticks per vblank. `frames_nmi` vs `frames_loop` is the frame-budget
+probe - the V-counter cannot be used because latching it needs a discarded read of $2137 and the
+compiler eliminates unused hardware reads. Traffic control is O(n^2) and re-evaluates 4 units a
+frame; collision rejects a munition against the whole pool with one scanline-band test.
+
+A unit is three declarations. **Unit** is a `#[soa]` struct holding what every unit has -
+position, hp, owner, lane, block, rank - plus its `kind`, so `units[i].hp` is one
+`LDA units__hp,X`. **UnitType** is that `kind`: a tagged enum contributing a tag plane that
+doubles as the free marker (`Free` is variant 0) and a payload plane for what only one kind
+carries - `Tank(Tank)` holds the gun reload that used to be a pool-wide `unit_timer[16]` four
+kinds never touched; `Van`, `Launcher` and `Infantry` have nothing of their own and are plain
+variants. **UnitStat**
+is what is fixed about a kind: `unit_stats` is a `#[soa]` immutable static, one ROM table per
+column with one entry per variant in tag order. Three rules come out of it:
+
+- **Read a kind's constants straight out of the table by tag**:
+  `unit_stats[units[i].kind as u16].speed`. The cast is the bare tag-plane read and each
+  column is its own table, so a read is one `LDA.l unit_stats__speed_data,X` with the index
+  scaled by the column width (none for a `u8`). Do not route them through a method on the
+  enum: both the `*UnitBase` accessor and per-column `match self` methods were measured at
+  0.85 and 0.94 ticks/frame against 1.00 for the table.
+- **A variant has no value form** - it cannot sit in a local, a parameter or a table - so the
+  spawn order is a separate fieldless `enum Order` that `unit_spawn` maps to a variant. The
+  pool takes no initializer either, so `unit_init` writes every element before anything
+  matches on it.
+
+OAM slots come from `oam_begin`/`oam_take`/`oam_end` in draw order - airframe, munitions,
+buildings, units from the camera centre out - because the PPU drops what it evaluates last.
+`tools/oamstat.py oam.bin` reads a `--dump oam` and reports peak sprites and tiles per scanline
+against the 32 / 34 hardware limits.
+
 Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
 (`src/muni.r65`). OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px

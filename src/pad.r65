@@ -21,17 +21,13 @@ const PAD_Y:     u16 = GROUND_Y;
 const PAD_TILE:  u8  = 32;
 const PAD_ATTR:  u16 = 0x3000;            // priority 3, OBJ palette 0
 
-// OAM slots. Structures rank below the helicopter and munitions in the
-// plan's importance order, so they take the slots after the munition pool.
-const OAM_PAD_BASE: u8 = 18;
-// Three 16x16 cells per deck. Spelled out rather than PAD_COUNT * 3 because
-// `*` only takes power-of-two constants.
+// Structures rank below the helicopter and munitions, so decks draw third.
+// Three 16x16 cells per deck.
 const PAD_CELLS:    u16 = 3;
-const PAD_SLOTS:    u16 = 6;              // PAD_COUNT decks x PAD_CELLS
 
 // Left edges, in world pixels. The player's pad sits a few screens in from
 // the west bank; the enemy's mirrors it at the far end.
-static PAD_X: [u16; 2] = [512, 3536];
+static PAD_X: [u16; 2] = [1024, 7072];
 
 // pad_at - the pad a point is over, or PAD_COUNT for none.
 //
@@ -55,7 +51,6 @@ far fn pad_at(centre: u16) -> u16 {
 //
 // Both pads are drawn from the same three tiles; only the OAM X changes.
 far fn pad_draw() {
-    let mut slot: u8 = OAM_PAD_BASE;
     for i in 0..PAD_COUNT {
         let sx: u16 = PAD_X[i] - camera_x;
         // One unsigned compare culls both directions: a pad west of the
@@ -63,16 +58,13 @@ far fn pad_draw() {
         if sx < 256 {
             for cell in 0..PAD_CELLS {
                 let cx: u16 = (sx + (cell << 4)) & 0x01FF;
-                oam.set_full!(slot, cx, PAD_Y as u8,
-                              ((PAD_TILE + ((cell as u8) << 1)) as u16) | PAD_ATTR);
-                oam.set_size!(slot, 1);       // 16x16
-                slot = slot + 1;
+                let slot: u16 = oam_take();
+                if slot < OAM_SLOTS {
+                    oam.set_full!(slot as u8, cx, PAD_Y as u8,
+                                  ((PAD_TILE + ((cell as u8) << 1)) as u16) | PAD_ATTR);
+                    oam.set_size!(slot as u8, 1);       // 16x16
+                }
             }
         }
-    }
-
-    while (slot as u16) < (OAM_PAD_BASE as u16) + PAD_SLOTS {
-        oam.hide!(slot);
-        slot = slot + 1;
     }
 }

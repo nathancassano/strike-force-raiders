@@ -2,9 +2,24 @@
 // SNES LoROM. A helicopter tug-of-war descended from Rescue Raiders (1984)
 // by way of Armor Alley (1991).
 
+// NOTE: `fastrom` would buy back cycles the ground units need, but this ROM
+// hangs at boot with it enabled - execution moves to the $80-$BF mirror and
+// never reaches the game loop. Left off until that is understood; the frame
+// budget is met without it.
 #[snesrom(name="ROTOR_RAIDERS")]
 
 #[stack(0x0100, 0x01FF)]
+
+// Compiler scratch. Reading a struct field through a pointer needs a
+// zero-page pointer to index off, and promoted parameters need a home; the
+// compiler allocates both from this pool - without one it refuses to spill
+// rather than inventing storage. $10-$15 are the pad state in input.r65.
+#[zeropage(0x16, register)]
+static mut SCRATCH0: u16;
+#[zeropage(0x18, register)]
+static mut SCRATCH1: u16;
+#[zeropage(0x1A, register)]
+static mut SCRATCH2: u16;
 
 // Standard libraries
 include!("lib/65816.r65")
@@ -19,6 +34,7 @@ include!("input.r65")
 include!("video.r65")
 include!("pad.r65")
 include!("muni.r65")
+include!("unit.r65")
 include!("heli.r65")
 
 // Bank 0 - Main code
@@ -27,6 +43,17 @@ include!("heli.r65")
 // Test-harness hook. tests/ drives the ROM with a scripted input movie and
 // breaks here to screenshot; play.sh finds this symbol in the .sym file.
 // Select is otherwise unused by the game.
+// Frame cost probe. Counting missed vblanks is the honest measure and the
+// only one available: latching the V-counter needs a *read* of $2137 whose
+// value is discarded, and the compiler eliminates unused hardware reads.
+// Mesen's cycle counter is no good either - it is blind to memory speed.
+//
+// The NMI counts real frames and the loop counts ticks it completed. Equal
+// means the logic fits in a frame; the loop falling behind is the budget
+// being blown, and by exactly the ratio between them.
+#[lowram] static mut frames_nmi:  u16;
+#[lowram] static mut frames_loop: u16;
+
 fn snapshot_point() {
     asm!("NOP");
 }
@@ -48,9 +75,12 @@ fn boot_load() {
     // Sky. Written after the palette DMA, which overwrites CGRAM 0.
     set_backdrop!(Color::rgb!(4, 6, 14));
 
+    frames_nmi = 0;
+    frames_loop = 0;
     pad_init();
     heli_init();
     muni_init();
+    unit_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
     enable_autojoy!();
@@ -62,7 +92,8 @@ fn boot_load() {
 // NMI handler - called every VBlank. PPU/DMA traffic goes here.
 #[interrupt(nmi)]
 fn nmi_handler() {
-    clear_nmi!()
+    clear_nmi!();
+    frames_nmi = frames_nmi + 1;
 }
 
 // Game loop.
@@ -84,10 +115,19 @@ fn main() -> ! {
         heli_update(held);
         heli_fire(held, trig);
         muni_update();
+        unit_update();
+        unit_collide();
         camera_update();
+
+        // Draw order is the OAM drop policy: airframe, munitions in flight,
+        // buildings, then ground units from the camera centre outward.
+        oam_begin();
         heli_draw();
         muni_draw();
         pad_draw();
+        unit_draw();
+        oam_end();
+        frames_loop = frames_loop + 1;
 
         if (trig & JOY_SELECT) != 0 {
             snapshot_point();

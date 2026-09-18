@@ -43,9 +43,8 @@ const HELI_TILE_LEVEL:     u8 = 4;        // ... frame 1
 const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
 const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 
-// OAM slots. The helicopter is the highest-priority object in the game.
-const OAM_HELI_L: u8 = 0;
-const OAM_HELI_R: u8 = 1;
+// The helicopter is the highest-priority object in the game, so it draws
+// first and takes the lowest slots from the shared allocator.
 
 // -------------------------------------------------------------- weapons ---
 // The plan's loadout. Ammo is the real bottleneck by design - roughly 21 s to
@@ -169,7 +168,7 @@ far fn heli_fire(held: u16, trig: u16) {
                     v = Q10(0) - BULLET_SPEED;
                 }
                 muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
-                           v, Q10(0), BULLET_LIFE);
+                           v, Q10(0), BULLET_LIFE, SIDE_PLAYER);
             }
         }
     }
@@ -181,7 +180,7 @@ far fn heli_fire(held: u16, trig: u16) {
             // rest vertically, so a fast pass throws it forward.
             // A bomb has no timer: it lives until it reaches the ground.
             muni_spawn(MUNI_BOMB, heli_x_px + (HELI_W >> 1),
-                       heli_y + (HELI_H << 8), heli_vx, Q10(0), 0);
+                       heli_y + (HELI_H << 8), heli_vx, Q10(0), 0, SIDE_PLAYER);
         }
     }
 }
@@ -360,8 +359,12 @@ far fn heli_draw() {
         far_ = tile;
     }
 
-    oam.set_full!(OAM_HELI_L, sx, sy, (near as u16) | attr);
-    oam.set_size!(OAM_HELI_L, 1);
-    oam.set_full!(OAM_HELI_R, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
-    oam.set_size!(OAM_HELI_R, 1);
+    let l: u16 = oam_take();
+    let r: u16 = oam_take();
+    if r < OAM_SLOTS {
+        oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
+        oam.set_size!(l as u8, 1);
+        oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
+        oam.set_size!(r as u8, 1);
+    }
 }

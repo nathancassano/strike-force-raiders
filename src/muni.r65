@@ -18,6 +18,11 @@ const MUNI_MASK: u16 = 15;
 const MUNI_FREE:   u8 = 0;
 const MUNI_BULLET: u8 = 1;
 const MUNI_BOMB:   u8 = 2;
+const MUNI_SHELL:  u8 = 3;                // tank main gun
+// A bomb that has reached the ground becomes a blast for exactly one tick,
+// so the area damage is applied where the unit pool can see it. Bombs do
+// nothing to infantry until they land - this state is what encodes that.
+const MUNI_BLAST:  u8 = 4;
 
 // Gunfire crosses the screen fast and flat; a bomb inherits the airframe's
 // horizontal speed and accelerates downward from rest.
@@ -34,11 +39,11 @@ const BOMB_VY_MAX:  Q10 = 6 * 64;
 // helicopter's three frames.
 const MUNI_TILE_BULLET: u8 = 12;
 const MUNI_TILE_BOMB:   u8 = 13;
+const MUNI_TILE_SHELL:  u8 = 14;
 const MUNI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 
-// OAM slots. Munitions in flight sit directly behind the helicopter in the
-// plan's importance order, so they take the slots right after it.
-const OAM_MUNI_BASE: u8 = 2;
+// Munitions in flight rank directly behind the helicopter, so they draw
+// second and take whatever the allocator hands out next.
 
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut muni_kind:  [u8; 16];
@@ -48,6 +53,8 @@ const OAM_MUNI_BASE: u8 = 2;
 #[lowram] static mut muni_vx:    [Q10; 16];
 #[lowram] static mut muni_vy:    [Q10; 16];
 #[lowram] static mut muni_life:  [u8; 16];    // frames left, 0 = unlimited
+#[lowram] static mut muni_owner: [u8; 16];    // 0 player, 1 enemy - decides
+                                              // who a round can hurt
 #[lowram] static mut muni_cursor: u16;
 
 // muni_init - empty the pool. Arrays are declared bare, so they hold
@@ -64,7 +71,8 @@ far fn muni_init() {
 // Rotating cursor rather than a scan from 0: with a fixed start the low
 // slots churn while the high ones idle, and a burst of gunfire would keep
 // evicting itself from the same few entries.
-far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8) {
+far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8,
+                  owner: u8) {
     let mut i: u16 = muni_cursor;
     let mut n: u16 = 0;
     // No `continue` in an entity loop - compiler region-spill bug.
@@ -77,6 +85,7 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8) {
             muni_vx[i] = vx;
             muni_vy[i] = vy;
             muni_life[i] = life;
+            muni_owner[i] = owner;
             muni_cursor = (i + 1) & MUNI_MASK;
             n = MUNI_MAX;              // done; no `break` needed either
         } else {
@@ -87,7 +96,7 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8) {
 }
 
 // muni_move_x - the same 16.8 advance the airframe uses, on a pool slot.
-far fn muni_move_x(i: u16, v: Q10) {
+fn muni_move_x(i: u16, v: Q10) {
     let d: i16 = v.0 << 2;
     if d >= 0 {
         let m: u16 = d as u16;
@@ -148,7 +157,11 @@ far fn muni_update() {
             // fired while diving hits it too, which is correct.
             if muni_kind[i] != MUNI_FREE {
                 if (muni_y[i] >> 8) >= GROUND_Y {
-                    muni_kind[i] = MUNI_FREE;
+                    if muni_kind[i] == MUNI_BOMB {
+                        muni_kind[i] = MUNI_BLAST;
+                    } else {
+                        muni_kind[i] = MUNI_FREE;
+                    }
                 } else {
                     if muni_x_px[i] >= WORLD_W {
                         muni_kind[i] = MUNI_FREE;   // off the east edge
@@ -164,26 +177,23 @@ far fn muni_update() {
 // rather than drawn off-screen: OAM slots are the scarce resource, and the
 // plan's importance order only works if wasted slots are not held.
 far fn muni_draw() {
-    let mut slot: u8 = OAM_MUNI_BASE;
     for i in 0..MUNI_MAX {
         let kind: u8 = muni_kind[i];
         if kind != MUNI_FREE {
             let sx: u16 = muni_x_px[i] - camera_x;
             if sx < 256 {
+              if kind != MUNI_BLAST {
                 let mut tile: u8 = MUNI_TILE_BULLET;
                 if kind == MUNI_BOMB { tile = MUNI_TILE_BOMB; }
-                oam.set_full!(slot, sx, (muni_y[i] >> 8) as u8,
-                              (tile as u16) | MUNI_ATTR);
-                oam.set_size!(slot, 0);        // 8x8
-                slot = slot + 1;
+                if kind == MUNI_SHELL { tile = MUNI_TILE_SHELL; }
+                let slot: u16 = oam_take();
+                if slot < OAM_SLOTS {
+                    oam.set_full!(slot as u8, sx, (muni_y[i] >> 8) as u8,
+                                  (tile as u16) | MUNI_ATTR);
+                    oam.set_size!(slot as u8, 0);        // 8x8
+                }
+              }
             }
         }
-    }
-
-    // Park the slots this frame did not use. Without this a munition that
-    // died leaves its last sprite frozen on screen.
-    while (slot as u16) < (OAM_MUNI_BASE as u16) + MUNI_MAX {
-        oam.hide!(slot);
-        slot = slot + 1;
     }
 }

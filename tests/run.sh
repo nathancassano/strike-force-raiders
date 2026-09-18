@@ -58,6 +58,29 @@ expect_colour() {
     fi
 }
 
+# budget_case NAME ACTIONS - run the ROM, dump OAM at the snapshot and assert
+#   the per-scanline sprite and tile load stays inside what the PPU can draw.
+#   Ground units all stand on the same few scanlines, so this is the check
+#   that matters most as the field fills.
+budget_case() {
+    local name="$1" actions="$2"
+    if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then
+        skipped=$((skipped+1)); return
+    fi
+    local oam="$SHOTS/$name.oam"
+    if ! "$PROJ/play.sh" "$SHOTS/$name.png" "$actions" --timeout 300000 \
+            --dump oam "$oam" >/dev/null 2>&1; then
+        echo "FAIL $name (emulator)"; fail=$((fail+1)); return
+    fi
+    local out
+    if out=$(python3 "$PROJ/tools/oamstat.py" "$oam"); then
+        echo "PASS $name  ($(echo "$out" | grep -c peak) peaks inside budget)"
+        pass=$((pass+1))
+    else
+        echo "FAIL $name"; echo "$out"; fail=$((fail+1))
+    fi
+}
+
 # expect_snes NAME R,G,B MIN_PCT - assert a 5-bit BGR555 palette colour is
 #   actually on screen. The PPU expands 5->8 bits by replication, not by
 #   scaling, so --snes does the conversion; comparing against round(v/31*255)
@@ -245,8 +268,8 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 5 - landing pad and rearm.
 #
-# The player's deck spans world x 512..559, so the airframe's centre has to
-# be inside that window - x 496..543 - at the moment it touches the floor.
+# The player's deck spans world x 1024..1071, so the airframe's centre has
+# to be inside that window - x 1008..1055 - when it touches the floor.
 # ---------------------------------------------------------------------------
 LAND=$(ramaddr heli_landed)
 FUEL=$(ramaddr heli_fuel)
@@ -255,20 +278,20 @@ if [ -z "$LAND" ] || [ -z "$FUEL" ]; then
     fail=$((fail+1))
 else
     # Descending onto the deck lands; stopping short or overshooting does not.
-    run_case pad_land      "wait20,right90,down80,shot"  --check-mem 0x$LAND=0x01
-    run_case pad_short     "wait20,right80,down80,shot"  --check-mem 0x$LAND=0x00
-    run_case pad_over      "wait20,right100,down80,shot" --check-mem 0x$LAND=0x00
+    run_case pad_land      "wait20,right190,down80,shot"  --check-mem 0x$LAND=0x01
+    run_case pad_short     "wait20,right170,down80,shot"  --check-mem 0x$LAND=0x00
+    run_case pad_over      "wait20,right210,down80,shot" --check-mem 0x$LAND=0x00
 
     # "Land only while descending." Reaching the floor first and then sliding
     # sideways onto the deck arrives with vy already zeroed by the clamp, so
     # it must not count - this is the case a naive overlap test gets wrong.
-    run_case pad_slide     "wait20,down80,right90,shot"  --check-mem 0x$LAND=0x00
+    run_case pad_slide     "wait20,down80,right190,shot"  --check-mem 0x$LAND=0x00
 
-    run_case pad_takeoff   "wait20,right90,down80,up20,shot" --check-mem 0x$LAND=0x00
+    run_case pad_takeoff   "wait20,right190,down80,up20,shot" --check-mem 0x$LAND=0x00
 
     # Full rearm: fuel back to 100, and the reload countdowns give back rounds
     # at 20 frames each and bombs at 10 while the airframe sits.
-    run_case pad_rearm "wait20,b60,a1,right90,down80,wait120,shot" \
+    run_case pad_rearm "wait20,b60,a1,right190,down80,wait120,shot" \
                                              --check-mem 0x$LAND=0x01 \
                                              --check-mem 0x$FUEL=0x64 \
                                              --check-mem 0x$GUN=0x3E \
@@ -279,10 +302,65 @@ else
 
     # Dry tank: gravity is allowed in exactly two places in the plan and this
     # is one. The airframe sinks to the floor with no input at all, and open
-    # ground is not a deck, so it must not read as landed. ~6600 frames.
-    run_case fuel_dry "wait6600,shot" --check-mem 0x$FUEL=0x00 \
+    # ground is not a deck, so it must not read as landed. ~7200 frames.
+    run_case fuel_dry "wait7200,shot" --check-mem 0x$FUEL=0x00 \
                                       --check-mem16 0x$HY=0x9800 \
                                       --check-mem 0x$LAND=0x00
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 6 - ground units.
+#
+# Both bases send a rotating column; the two meet mid-field and stop, because
+# traffic control blocks on any unit ahead in the lane, not only a friendly.
+# ---------------------------------------------------------------------------
+# A unit is a `#[soa] struct Unit`, so every field is its own plane: x_px at
+# two bytes per slot, hp at one, and the kind's own tag and payload planes at
+# one byte per slot each.
+UK=$(ramaddr units__kind__tag)
+UD=$(ramaddr units__kind__data)
+UX=$(ramaddr units__x_px)
+UHP=$(ramaddr units__hp)
+FNMI=$(ramaddr frames_nmi)
+FLOOP=$(ramaddr frames_loop)
+if [ -z "$UK" ] || [ -z "$UX" ] || [ -z "$FNMI" ]; then
+    echo "FAIL unit:addr (unit/frame symbols not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # The first thing out of the base is a tank, and it marches east. The pool
+    # is a tagged enum, so slot 0's kind is the first byte of its tag plane.
+    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x01
+    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x02F8
+
+    # The pool is a tagged enum, so a spawn order of Kind values becomes a
+    # variant, and the hit points come from that variant's max_hp(). Slots
+    # 0/2/4/6 are the first tank, infantry, van and launcher out of the
+    # rotation; each is checked against its tag and its hp.
+    #
+    # The last check is the tank's payload: its gun reload lives in the
+    # Tank variant, not in a pool-wide array, so units__data[0] is the only
+    # place the countdown exists. With nothing in range it cycles 0..8 every
+    # nine frames, which makes the value here a phase - re-baseline it if a
+    # change shifts the pool by a frame, but do not delete it.
+    at() { printf '%X' $((0x$1 + $2)); }            # tag plane: one byte per slot
+    hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
+    run_case unit_kinds "wait600,shot" \
+        --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$(hp 0)=0x19 \
+        --check-mem 0x$(at "$UK" 2)=0x04 --check-mem 0x$(hp 2)=0x05 \
+        --check-mem 0x$(at "$UK" 4)=0x02 --check-mem 0x$(hp 4)=0x0C \
+        --check-mem 0x$(at "$UK" 6)=0x03 --check-mem 0x$(hp 6)=0x08 \
+        --check-mem 0x$(at "$UD" 0)=0x07
+
+    # Frame budget. The NMI counts real frames and the loop counts ticks it
+    # finished; a full field must still keep up. This measured 0.45 with a
+    # 32-unit pool, which is why the pool is 16 - the assertion is what stops
+    # that regressing silently.
+    run_case unit_budget "wait3600,shot" --check-mem16 0x$FNMI=0x0E21 \
+                                         --check-mem16 0x$FLOOP=0x0E1E
+
+    # The headline constraint: at a bunched front line the PPU must still be
+    # able to draw everything standing on those scanlines.
+    budget_case unit_oam "wait1200,right180,wait60,shot"
 fi
 
 # ---------------------------------------------------------------------------

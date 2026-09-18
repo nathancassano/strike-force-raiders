@@ -1,0 +1,561 @@
+// unit - ground units: the pool, the march, traffic control and tank fire.
+//
+// Every unit sits on the same ground line, so they all compete for the same
+// scanlines. That is the hardest constraint in the project, and it shapes
+// three things here: units are culled to the camera window before they are
+// given OAM slots, the slots come from the shared importance-ordered
+// allocator rather than a static base, and units are staggered across a few
+// shallow lanes so adjacent ranks do not overlap perfectly.
+//
+// A unit is three declarations that share one index:
+//
+//   Unit           what changes as it moves - position, hp, owner, lane -
+//                  plus its `kind`. One `#[soa]` record per pool slot.
+//   UnitType       what it is: a tagged enum whose payload is that kind's
+//                  own struct, so the payload plane holds whatever only that
+//                  kind carries. The tag plane doubles as the free marker.
+//   UnitStat       what is fixed about a kind: `unit_stats`, one ROM table
+//                  per column, indexed by the tag.
+
+#[bank(0)]
+
+const UNIT_MAX:  u16 = 16;
+const UNIT_MASK: u16 = 15;
+
+// Geometry. Vehicles are 24x16 drawn across two 16x16 cells; a man is 8
+// wide inside one cell.
+const UNIT_W:      u16 = 24;
+const UNIT_MAN_W:  u16 = 8;
+const UNIT_H:      u16 = 16;
+
+// Traffic control: a unit stops rather than piling into the one ahead.
+// The plan puts the look-ahead at about a third of a unit width.
+const UNIT_GAP: u16 = 8;
+
+// Lanes stagger units vertically so a bunched column does not stack every
+// sprite on identical scanlines. Sprites are 16 px tall and the lanes are
+// 4 apart, so neighbours still share most of their rows - this buys perhaps
+// a third of the budget, not half, and is not a substitute for culling.
+// Spacing is a shift because `*` only takes power-of-two constants.
+const UNIT_LANES:      u16 = 3;
+const UNIT_LANE_SHIFT: u16 = 2;           // 4 px between lanes
+const UNIT_BASE_Y:     u16 = GROUND_Y - UNIT_H;
+// The scanline band every ground unit occupies, lanes included.
+const UNIT_BAND_TOP:   u16 = GROUND_Y - UNIT_H;
+const UNIT_BAND_BOT:   u16 = GROUND_Y + (UNIT_LANES << UNIT_LANE_SHIFT);
+
+// OBJ tiles: left cell of each 24x16 vehicle, right cell is +2.
+const UNIT_TILE_TANK:     u8 = 38;
+const UNIT_TILE_VAN:      u8 = 42;
+const UNIT_TILE_LAUNCHER: u8 = 64;
+const UNIT_TILE_INFANTRY: u8 = 68;
+const UNIT_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
+
+// Tank main gun.
+const TANK_RANGE:  u16 = 96;
+const TANK_RELOAD: u8  = 90;
+const SHELL_SPEED: Q10 = 6 * 64;
+const SHELL_LIFE:  u8  = 32;
+const TANK_SCAN:   u8  = 8;               // frames between target sweeps
+
+// Bomb blast reach, in pixels either side of the impact.
+const BLAST_R: u16 = 20;
+
+// ------------------------------------------------------------ the kinds ---
+// A payload struct carries whatever only that kind has. The gun's reload
+// timer used to be a pool-wide `unit_timer[16]` that four kinds out of five
+// never touched; it belongs to Tank now. The other kinds have nothing of
+// their own, so they are plain variants.
+struct Tank { reload: u8 }                // frames until the main gun is ready
+
+// What a unit *is*, and what only that kind carries. `Free` is variant 0, so
+// an empty slot is a zero tag, and the tag plane is stride 1 - "is this slot
+// taken?" is one `LDA units__kind__tag,X`, with no scaling.
+enum UnitType {
+    Free,
+    Tank(Tank),
+    Van,
+    Launcher,
+    Infantry,
+}
+
+// What to spawn. A tagged enum's variant has no value form - it cannot sit
+// in a local, a parameter or a table - so the spawn order needs a plain
+// fieldless enum and `unit_spawn` maps one to the other.
+enum Order { Tank, Van, Launcher, Infantry }
+
+// ------------------------------------------------------------ the stats ---
+// Everything fixed about a kind, one row per `UnitType` variant in tag
+// order, so `unit_stats[units[i].kind as u16]` is the row for that unit.
+// `#[soa]` on an immutable static makes it one ROM table per column, so the
+// discriminant (`LDA units__kind__tag,X`) indexes each column at the
+// column's own width - a u8 column with no scaling at all - and a read is
+// one `LDA.l unit_stats__col_data,X`. Read columns directly - there is no
+// row to point at.
+//
+// Row 0 is `Free` and is never read - every caller tests for Free first -
+// but the tag is the index, so it has to exist.
+//
+// Hit points are the plan's roster - the 1984/1991 numbers the damage table
+// is balanced against.
+#[soa]
+struct UnitStat {
+    speed:      u16,      // 1/256 px per frame
+    width:      u16,      // collision and traffic-control reach
+    tile:       u8,       // left OBJ cell
+    max_hp:     u8,
+    cells:      u8,       // OBJ cells across: 1 for a man, 2 for a vehicle
+    bullet_dmg: u8,       // helicopter gunfire; shell and blast do not vary
+}
+
+static unit_stats: [UnitStat; 5] = [
+    // Free
+    UnitStat { speed: 0,   width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0 },
+    // Tank: 0.5 px/frame; armour shrugs off gunfire
+    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_TANK, max_hp: 25, cells: 2, bullet_dmg: 1 },
+    // Van: unarmed - the win condition
+    UnitStat { speed: 192, width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2 },
+    // Launcher: AA only, once aircraft exist
+    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2 },
+    // Infantry
+    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2 },
+];
+
+// ---------------------------------------------------------------- state ---
+// What changes as a unit moves, and what it is, paired by the type rather
+// than by two arrays agreeing to use the same index.
+//
+// Measured: an AoS record costs 0.75 ticks/frame against 1.00 for planes,
+// and hoisting a pointer to kill the index shifts recovered only 0.02 of
+// that. What is left is the addressing mode - a plane read compiles to
+// `LDA abs,X`, the cheapest indexed load on this CPU, while a record field
+// goes through pointer indirection. `#[soa]` keeps that property while
+// letting the fields be one declaration: `units[i].hp` is `LDA units__hp,X`,
+// and `kind` contributes its own tag and payload planes, so
+// `units__kind__tag` keeps its stride of 1.
+#[soa]
+struct Unit {
+    x_px:  u16,
+    x_sub: u8,           // 1/256 px accumulator
+    hp:    u8,
+    owner: u8,
+    lane:  u8,
+    block: u8,           // cached traffic-control flag
+    rank:  u8,           // the plan's promotion count; nothing earns it yet
+    kind:  UnitType,
+}
+
+#[lowram] static mut units: [Unit; 16];
+
+#[lowram] static mut unit_cursor: u16;
+#[lowram] static mut unit_slice: u16;         // rolling traffic-control cursor
+#[lowram] static mut unit_lane_rr: u16;       // round-robin lane assignment
+
+// Traffic control is O(n^2) over the pool. Measured on hardware, a full
+// pass every frame costs more than a whole frame: with the pool filled the
+// loop ran at 0.45 ticks per vblank. Re-evaluating a slice instead leaves a
+// unit's flag at most three frames stale, which at 0.5 px/frame is about a
+// pixel and a half of overshoot - invisible, and it buys back the frame.
+const UNIT_SLICE: u16 = 4;
+
+// Neither pool takes an initializer, so both are garbage at power-on and
+// every element must be written before anything matches on it.
+far fn unit_init() {
+    for i in 0..UNIT_MAX {
+        units[i].kind = UnitType::Free;
+    }
+    unit_cursor = 0;
+    unit_slice = 0;
+    unit_lane_rr = 0;
+    spawn_t = SPAWN_PERIOD;
+    spawn_seq = 0;
+}
+
+// unit_spawn - put a unit on the field, or drop the order if the pool is
+// full. Lanes are handed out round-robin so a column of one kind spreads
+// across all three rather than stacking.
+far fn unit_spawn(kind: Order, owner: u8, x_px: u16) {
+    let mut i: u16 = unit_cursor;
+    let mut n: u16 = 0;
+    while n < UNIT_MAX {
+        match units[i].kind {
+            UnitType::Free => {
+                // The one place an Order becomes a variant. A tank starts
+                // loaded; the other kinds carry nothing to initialise.
+                match kind {
+                    Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0 }); }
+                    Order::Van      => { units[i].kind = UnitType::Van; }
+                    Order::Launcher => { units[i].kind = UnitType::Launcher; }
+                    Order::Infantry => { units[i].kind = UnitType::Infantry; }
+                };
+                units[i].owner = owner;
+                units[i].x_px = x_px;
+                units[i].x_sub = 0;
+                units[i].hp = unit_stats[units[i].kind as u16].max_hp;
+                units[i].block = 0;
+                units[i].rank = 0;
+                units[i].lane = unit_lane_rr as u8;
+                unit_lane_rr = unit_lane_rr + 1;
+                if unit_lane_rr >= UNIT_LANES { unit_lane_rr = 0; }
+                unit_cursor = (i + 1) & UNIT_MASK;
+                n = UNIT_MAX;
+            }
+            _ => {
+                i = (i + 1) & UNIT_MASK;
+                n = n + 1;
+            }
+        };
+    }
+}
+
+// unit_blocked - is another unit close ahead in the same lane?
+//
+// Two jobs in one test. Behind the line it is convoy spacing: units stop
+// rather than walking through each other, which is what makes a column read
+// as a column. At the line it is the front itself - an advancing column
+// meeting an opposing one halts and fights instead of the two sliding
+// through each other. So this deliberately does not care whose unit is
+// ahead, only that something is.
+fn unit_blocked(self_i: u16) -> u8 {
+    let x: u16 = units[self_i].x_px;
+    let lane: u8 = units[self_i].lane;
+    let mine: u8 = units[self_i].owner;
+    let reach: u16 = unit_stats[units[self_i].kind as u16].width + UNIT_GAP;
+
+    for j in 0..UNIT_MAX {
+        match units[j].kind {
+            UnitType::Free => {}
+            _ => {
+                if j != self_i {
+                    if units[j].lane == lane {
+                        if mine == SIDE_PLAYER {
+                            if units[j].x_px > x {
+                                if units[j].x_px - x < reach { return 1; }
+                            }
+                        } else {
+                            if x > units[j].x_px {
+                                if x - units[j].x_px < reach { return 1; }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+    return 0;
+}
+
+// unit_advance - move one unit along its heading by a 1/256 px step.
+fn unit_advance(i: u16, step: u16) {
+    if units[i].owner == SIDE_PLAYER {
+        let t: u16 = (units[i].x_sub as u16) + (step & 0x00FF);
+        units[i].x_sub = t as u8;
+        units[i].x_px = units[i].x_px + (step >> 8) + (t >> 8);
+        if units[i].x_px >= WORLD_W { units[i].kind = UnitType::Free; }
+    } else {
+        let mut whole: u16 = step >> 8;
+        let frac: u16 = step & 0x00FF;
+        if (units[i].x_sub as u16) < frac { whole = whole + 1; }
+        units[i].x_sub = units[i].x_sub - (frac as u8);
+        if units[i].x_px <= whole {
+            units[i].kind = UnitType::Free;
+        } else {
+            units[i].x_px = units[i].x_px - whole;
+        }
+    }
+}
+
+// unit_target - nearest opposing unit within the tank's reach, ahead of it.
+fn unit_target(self_i: u16) -> u16 {
+    let x: u16 = units[self_i].x_px;
+    let mine: u8 = units[self_i].owner;
+    let mut best: u16 = UNIT_MAX;
+    let mut best_d: u16 = TANK_RANGE;
+
+    for j in 0..UNIT_MAX {
+        match units[j].kind {
+            UnitType::Free => {}
+            _ => {
+                if units[j].owner != mine {
+                    let mut d: u16 = 0;
+                    let mut ahead: u8 = 0;
+                    if mine == SIDE_PLAYER {
+                        if units[j].x_px > x { d = units[j].x_px - x; ahead = 1; }
+                    } else {
+                        if x > units[j].x_px { d = x - units[j].x_px; ahead = 1; }
+                    }
+                    if ahead != 0 {
+                        if d < best_d { best_d = d; best = j; }
+                    }
+                }
+            }
+        };
+    }
+    return best;
+}
+
+// unit_fire - the main gun. Only a tank carries one, and the reload timer it
+// counts down is the tank's own payload - so this is a no-op for every other
+// kind without a flag to ask about first.
+fn unit_fire(i: u16) {
+    match units[i].kind {
+        UnitType::Tank(t) => {
+            if t.reload > 0 {
+                t.reload = t.reload - 1;
+            } else {
+                if unit_target(i) >= UNIT_MAX {
+                    // Nothing in reach. Wait before sweeping the pool again
+                    // rather than paying for a scan on every frame of an
+                    // empty field.
+                    t.reload = TANK_SCAN;
+                } else {
+                    t.reload = TANK_RELOAD;
+                    let mut v: Q10 = SHELL_SPEED;
+                    let mut mx: u16 = units[i].x_px + UNIT_W;
+                    if units[i].owner == SIDE_ENEMY {
+                        v = Q10(0) - SHELL_SPEED;
+                        mx = units[i].x_px;
+                    }
+                    let y: u16 = (UNIT_BASE_Y
+                                  + ((units[i].lane as u16) << UNIT_LANE_SHIFT)
+                                  + 4) << 8;
+                    muni_spawn(MUNI_SHELL, mx, y, v, Q10(0), SHELL_LIFE,
+                               units[i].owner);
+                }
+            }
+        }
+        _ => {}
+    };
+}
+
+// ---------------------------------------------------------------- spawn ---
+// Units come out of each side's base. Ordering and economy decide what and
+// when in phase 7; until then both bases send a rotating column so the
+// field populates and a front line forms.
+const BASE_X_PLAYER: u16 = 512;
+const BASE_X_ENEMY:  u16 = 7680;
+const SPAWN_PERIOD:  u8  = 120;
+
+static SPAWN_ORDER: [Order; 4] = [Order::Tank, Order::Infantry, Order::Van,
+                                  Order::Launcher];
+
+#[lowram] static mut spawn_t:   u8;
+#[lowram] static mut spawn_seq: u8;
+
+far fn unit_spawn_tick() {
+    if spawn_t > 0 {
+        spawn_t = spawn_t - 1;
+    } else {
+        spawn_t = SPAWN_PERIOD;
+        let k: Order = SPAWN_ORDER[(spawn_seq & 3) as u16];
+        unit_spawn(k, SIDE_PLAYER, BASE_X_PLAYER);
+        unit_spawn(k, SIDE_ENEMY, BASE_X_ENEMY);
+        spawn_seq = spawn_seq + 1;
+    }
+}
+
+// unit_update - one tick for the whole pool.
+far fn unit_update() {
+    unit_spawn_tick();
+
+    // Refresh the traffic-control flags for this frame's slice only.
+    for k in 0..UNIT_SLICE {
+        let i: u16 = unit_slice;
+        match units[i].kind {
+            UnitType::Free => {}
+            _          => { units[i].block = unit_blocked(i); }
+        };
+        unit_slice = (unit_slice + 1) & UNIT_MASK;
+    }
+
+    for i in 0..UNIT_MAX {
+        match units[i].kind {
+            UnitType::Free => {}
+            _ => {
+                unit_fire(i);
+                if units[i].block == 0 {
+                    unit_advance(i, unit_stats[units[i].kind as u16].speed);
+                }
+            }
+        };
+    }
+}
+
+// unit_draw - place the units inside the camera window.
+//
+// Culling here is the big lever: the simulation carries every unit in the
+// pool, but only what is actually on screen consumes OAM. Draw order runs
+// from the camera centre outward, so when slots run out the sprites that
+// vanish are the ones furthest from where the player is looking.
+far fn unit_draw() {
+    let centre: u16 = camera_x + CAM_MID;
+    // Two passes over an unsorted pool rather than sorting it: near units
+    // first, then the rest. A full sort costs more than it saves for a pool
+    // this size, and the split is all the ordering the drop policy needs.
+    for pass in 0..2 {
+        for i in 0..UNIT_MAX {
+            match units[i].kind {
+                UnitType::Free => {}
+                _ => {
+                    let sx: u16 = units[i].x_px - camera_x;
+                    if sx < 256 {
+                        let mut d: u16 = 0;
+                        if units[i].x_px > centre {
+                            d = units[i].x_px - centre;
+                        } else {
+                            d = centre - units[i].x_px;
+                        }
+                        let mut want: u16 = 1;
+                        if d < 64 { want = 0; }
+                        if want == pass {
+                            let y: u8 = (UNIT_BASE_Y
+                                         + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
+                            let tile: u8 = unit_stats[units[i].kind as u16].tile;
+                            let mut attr: u16 = UNIT_ATTR;
+                            if units[i].owner == SIDE_ENEMY { attr = UNIT_ATTR | 0x4000; }
+
+                            let a: u16 = oam_take();
+                            if a < OAM_SLOTS {
+                                oam.set_full!(a as u8, sx, y, (tile as u16) | attr);
+                                oam.set_size!(a as u8, 1);
+                            }
+                            // A man is one cell; a vehicle needs its second.
+                            if unit_stats[units[i].kind as u16].cells > 1 {
+                                let c: u16 = oam_take();
+                                if c < OAM_SLOTS {
+                                    oam.set_full!(c as u8, (sx + 16) & 0x01FF, y,
+                                                  ((tile + 2) as u16) | attr);
+                                    oam.set_size!(c as u8, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    }
+}
+
+// --------------------------------------------------------------- combat ---
+// The damage asymmetry, from the munition's side. These numbers are what
+// make composition matter, so they are spelled out per pair rather than
+// folded into one "power" value - the whole point is that the same weapon is
+// decisive against one target and useless against another.
+//
+// Only gunfire varies by target, so that column is the kind's; a shell and
+// a blast do the same damage to anything they reach.
+//
+// Rows that need targets this phase does not have yet (turrets, super and
+// end bunkers) arrive with those structures; the shape is here for them.
+fn unit_damage_for(mk: u8, i: u16) -> u8 {
+    if mk == MUNI_SHELL {
+        return 8;                         // the anti-armour tool
+    }
+    if mk == MUNI_BULLET {
+        return unit_stats[units[i].kind as u16].bullet_dmg;
+    }
+    if mk == MUNI_BLAST {
+        return 25;                        // a bomb kills what it lands on
+    }
+    return 0;
+}
+
+// unit_hit - apply damage and retire the unit if it runs out of hit points.
+fn unit_hit(i: u16, dmg: u8) {
+    if dmg > 0 {
+        if units[i].hp > dmg {
+            units[i].hp = units[i].hp - dmg;
+        } else {
+            units[i].kind = UnitType::Free;
+        }
+    }
+}
+
+// unit_collide - munitions against units, and gunfire against bombs.
+//
+// Runs after both pools have moved, so a round and its target are compared
+// at the same instant rather than a frame apart.
+far fn unit_collide() {
+    for m in 0..MUNI_MAX {
+        let mk: u8 = muni_kind[m];
+        if mk != MUNI_FREE {
+            let mx: u16 = muni_x_px[m];
+            let my: u16 = muni_y[m] >> 8;
+
+            // A blast reaches everything standing near where the bomb fell,
+            // friend included - a bomb does not check sides.
+            if mk == MUNI_BLAST {
+                for i in 0..UNIT_MAX {
+                    match units[i].kind {
+                        UnitType::Free => {}
+                        _ => {
+                            let ux: u16 = units[i].x_px;
+                            let mut d: u16 = 0;
+                            if ux > mx { d = ux - mx; } else { d = mx - ux; }
+                            if d < BLAST_R {
+                                unit_hit(i, unit_damage_for(mk, i));
+                            }
+                        }
+                    };
+                }
+                muni_kind[m] = MUNI_FREE;
+            } else {
+                // Gunfire can shoot a bomb down. Checked before units so a
+                // round crossing both resolves against the bomb.
+                if mk == MUNI_BULLET {
+                    for b in 0..MUNI_MAX {
+                        if muni_kind[b] == MUNI_BOMB {
+                            let bx: u16 = muni_x_px[b];
+                            let by: u16 = muni_y[b] >> 8;
+                            let mut dx: u16 = 0;
+                            if bx > mx { dx = bx - mx; } else { dx = mx - bx; }
+                            let mut dy: u16 = 0;
+                            if by > my { dy = by - my; } else { dy = my - by; }
+                            if dx < 8 {
+                                if dy < 8 {
+                                    muni_kind[b] = MUNI_FREE;
+                                    muni_kind[m] = MUNI_FREE;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Everything on the ground stands in one narrow band of
+                // scanlines. A round above it cannot hit anything, and most
+                // of the airframe's fire is above it - so test the band once
+                // per munition rather than once per unit. Measured: this is
+                // the difference between 0.77 and 1.00 ticks/frame under
+                // sustained fire.
+                if muni_kind[m] != MUNI_FREE
+                   && my >= UNIT_BAND_TOP && my < UNIT_BAND_BOT {
+                    for i in 0..UNIT_MAX {
+                        match units[i].kind {
+                            UnitType::Free => {}
+                            _ => {
+                                if units[i].owner != muni_owner[m] {
+                                    let uy: u16 = UNIT_BASE_Y
+                                        + ((units[i].lane as u16) << UNIT_LANE_SHIFT);
+                                    let ux: u16 = units[i].x_px;
+                                    // Lane band first: it is a plain compare
+                                    // and rejects most of the pool, which
+                                    // keeps the dispatch off the hot path.
+                                    if my >= uy {
+                                        if my < uy + UNIT_H {
+                                            if mx >= ux {
+                                                if mx < ux + unit_stats[units[i].kind as u16].width {
+                                                    unit_hit(i, unit_damage_for(mk, i));
+                                                    muni_kind[m] = MUNI_FREE;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                    }
+                }
+            }
+        }
+    }
+}

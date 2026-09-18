@@ -64,9 +64,11 @@ assets/gfx/bg%.chr: assets/src/bg%.bmp
 	@mkdir -p assets/gfx
 	$(R65X) bmp2chr $< -o $@ -b2 -p -t
 
+# -f writes the whole bitmap; without it bmp2chr stops at the size of any
+# existing destination file, silently truncating the sheet when it grows.
 assets/gfx/obj.chr: assets/src/obj.bmp
 	@mkdir -p assets/gfx
-	$(R65X) bmp2chr $< -o $@ -b4 -p
+	$(R65X) bmp2chr $< -o $@ -b4 -p -f
 
 # Bindings are generated from whatever r65x actually produced. Tile counts
 # move when art is edited - dedup decides them - so a hand-written size in
