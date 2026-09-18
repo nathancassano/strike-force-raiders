@@ -35,6 +35,8 @@ include!("video.r65")
 include!("pad.r65")
 include!("muni.r65")
 include!("unit.r65")
+include!("order.r65")
+include!("hud.r65")
 include!("heli.r65")
 
 // Bank 0 - Main code
@@ -81,6 +83,9 @@ fn boot_load() {
     heli_init();
     muni_init();
     unit_init();
+    econ_init();
+    order_init();
+    hud_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
     enable_autojoy!();
@@ -107,6 +112,7 @@ fn main() -> ! {
         scroll_update();
         gnd_table_build();
         oam_flush();
+        hud_flush();
 
         pad_read_ports();
         let held: u16 = pad_poll();
@@ -114,6 +120,10 @@ fn main() -> ! {
 
         heli_update(held);
         heli_fire(held, trig);
+        econ_tick();
+        order_input(trig);
+        order_tick();
+        hud_update();
         muni_update();
         unit_update();
         unit_collide();

@@ -1,0 +1,175 @@
+// order - the economy and the quick-order ring.
+//
+// Funds come from where the helicopter is: every frame its distance from
+// the player's end of the map goes into an accumulator, and each time that
+// crosses a threshold it pays one fund. Deeper into enemy territory earns
+// faster - the income *is* the incentive to press forward.
+//
+// Orders are the plan's L/R ring: six entries in roster order, L and R move
+// the selection, X buys the selected one. The cost comes off immediately,
+// and a refused order - short of funds, at the inventory cap, or queue
+// full - changes nothing. Bought units leave the base one every ORDER_GAP
+// frames; a multi-man order is just several in a row, so a convoy is what
+// queuing a few orders back to back looks like.
+
+#[bank(0)]
+
+// ------------------------------------------------------------- economy ---
+// The plan calls for a 24-bit add of the raw distance. Dropping the low
+// four bits of the distance first keeps the whole thing in one u16 with no
+// loss that matters: the accumulator only ever needs to hold one threshold
+// plus one frame's worth, and 8192 >> 4 leaves plenty of headroom.
+//
+// The threshold sets the pace: at mid-field (~3500 px) a fund every ~3 s,
+// at the far end every ~1.5 s, and on the home pad (x=512) one every ~21 s.
+// Difficulty tiers will scale this rather than the funds themselves.
+const ECON_START:  u8  = 32;
+const ECON_MAX:    u8  = 99;              // two HUD digits
+const ECON_SHIFT:  u8  = 4;
+const ECON_THRESH: u16 = 40000;
+
+#[lowram] static mut funds:    u8;
+#[lowram] static mut econ_acc: u16;
+
+far fn econ_init() {
+    funds = ECON_START;
+    econ_acc = 0;
+}
+
+far fn econ_tick() {
+    econ_acc = econ_acc + (heli_x_px >> ECON_SHIFT);
+    if econ_acc >= ECON_THRESH {
+        econ_acc = econ_acc - ECON_THRESH;
+        if funds < ECON_MAX { funds = funds + 1; }
+    }
+}
+
+// -------------------------------------------------------------- the ring ---
+// One row per Order, in ring order. Costs are the 1984/1991 values; the
+// caps are the plan's halved inventory limits. Infantry and engineers share
+// the 16-man cap, so both rows carry it and `unit_count` counts them
+// together. The helicopter has no cap and no ground presence: it is an
+// extra life.
+const ORDER_RING: u8 = 6;
+
+#[soa]
+struct OrderStat {
+    cost: u8,
+    men:  u8,             // units one order puts on the field
+    cap:  u8,             // most of this kind one side may have out
+}
+
+static order_stats: [OrderStat; 6] = [
+    OrderStat { cost: 2,  men: 1, cap: 6  },      // Van
+    OrderStat { cost: 3,  men: 1, cap: 4  },      // Launcher
+    OrderStat { cost: 4,  men: 1, cap: 8  },      // Tank
+    OrderStat { cost: 5,  men: 5, cap: 16 },      // Infantry
+    OrderStat { cost: 5,  men: 2, cap: 16 },      // Engineer
+    OrderStat { cost: 20, men: 0, cap: 0  },      // Helicopter
+];
+
+// The queue holds whole orders; the emitter drains one at a time. Eight is
+// deep enough that a player who spends a whole purse in one burst is not
+// refused, and shallow enough that a stuck front does not bank an army.
+const ORDER_QUEUE: u8 = 8;
+const ORDER_QMASK: u8 = 7;
+const ORDER_GAP:   u8 = 10;               // frames between men leaving
+
+#[lowram] static mut order_sel:  u8;      // ring position
+#[lowram] static mut order_q:    [u8; 8]; // Order values
+#[lowram] static mut order_head: u8;      // next to drain
+#[lowram] static mut order_tail: u8;      // next free
+#[lowram] static mut order_men:  u8;      // still to leave for the current order
+#[lowram] static mut order_kind: u8;      // ... and what they are
+#[lowram] static mut order_t:    u8;      // frames until the next one
+#[lowram] static mut heli_lives: u8;
+
+far fn order_init() {
+    order_sel = Order::Tank as u8;        // the main line; what you want first
+    order_head = 0;
+    order_tail = 0;
+    order_men = 0;
+    order_kind = 0;
+    order_t = 0;
+    heli_lives = 4;
+}
+
+// order_queued - men of a kind bought but not yet on the field. They count
+// against the cap, or a burst of orders would overshoot it.
+fn order_queued(kind: Order) -> u8 {
+    let mut n: u8 = 0;
+    if order_kind == kind as u8 { n = order_men; }
+    let mut i: u8 = order_head;
+    while i != order_tail {
+        if order_q[(i & ORDER_QMASK) as u16] == kind as u8 {
+            n = n + order_stats[kind as u16].men;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+// order_place - buy the selected entry. Returns 1 if the order was taken.
+far fn order_place() -> u8 {
+    let k: u16 = order_sel as u16;
+    let cost: u8 = order_stats[k].cost;
+    if funds < cost { return 0; }
+
+    if order_sel == Order::Heli as u8 {
+        funds = funds - cost;
+        heli_lives = heli_lives + 1;
+        return 1;
+    }
+
+    // Engineers share the infantry cap, and `unit_count` already folds the
+    // two together; fold the queue the same way.
+    let kind: Order = order_sel as Order;
+    let mut have: u8 = unit_count(kind, SIDE_PLAYER) + order_queued(kind);
+    if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer); }
+    if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry); }
+    if have + order_stats[k].men > order_stats[k].cap { return 0; }
+
+    if order_tail - order_head >= ORDER_QUEUE { return 0; }
+    order_q[(order_tail & ORDER_QMASK) as u16] = order_sel;
+    order_tail = order_tail + 1;
+    funds = funds - cost;
+    return 1;
+}
+
+// order_input - L/R walk the ring, X buys.
+far fn order_input(trig: u16) {
+    if (trig & JOY_R) != 0 {
+        order_sel = order_sel + 1;
+        if order_sel >= ORDER_RING { order_sel = 0; }
+    }
+    if (trig & JOY_L) != 0 {
+        if order_sel == 0 { order_sel = ORDER_RING; }
+        order_sel = order_sel - 1;
+    }
+    if (trig & JOY_X) != 0 {
+        order_place();
+    }
+}
+
+// order_tick - let the next man out of the base when his gap is up. A full
+// pool holds him at the gate rather than losing him; he leaves the frame a
+// slot frees.
+far fn order_tick() {
+    if order_t > 0 {
+        order_t = order_t - 1;
+    } else {
+        if order_men == 0 {
+            if order_head != order_tail {
+                order_kind = order_q[(order_head & ORDER_QMASK) as u16];
+                order_men = order_stats[order_kind as u16].men;
+                order_head = order_head + 1;
+            }
+        }
+        if order_men > 0 {
+            if unit_spawn(order_kind as Order, SIDE_PLAYER, BASE_X_PLAYER) != 0 {
+                order_men = order_men - 1;
+                order_t = ORDER_GAP;
+            }
+        }
+    }
+}

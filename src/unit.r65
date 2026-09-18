@@ -77,12 +77,15 @@ enum UnitType {
     Van,
     Launcher,
     Infantry,
+    Engineer,
 }
 
 // What to spawn. A tagged enum's variant has no value form - it cannot sit
 // in a local, a parameter or a table - so the spawn order needs a plain
-// fieldless enum and `unit_spawn` maps one to the other.
-enum Order { Tank, Van, Launcher, Infantry }
+// fieldless enum and `unit_spawn` maps one to the other. The order is the
+// HUD ring's, which is the plan's roster order; `order.r65` indexes its
+// cost table by it.
+enum Order { Van, Launcher, Tank, Infantry, Engineer, Heli }
 
 // ------------------------------------------------------------ the stats ---
 // Everything fixed about a kind, one row per `UnitType` variant in tag
@@ -108,7 +111,7 @@ struct UnitStat {
     bullet_dmg: u8,       // helicopter gunfire; shell and blast do not vary
 }
 
-static unit_stats: [UnitStat; 5] = [
+static unit_stats: [UnitStat; 6] = [
     // Free
     UnitStat { speed: 0,   width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0 },
     // Tank: 0.5 px/frame; armour shrugs off gunfire
@@ -119,6 +122,9 @@ static unit_stats: [UnitStat; 5] = [
     UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2 },
     // Infantry
     UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2 },
+    // Engineer: an infantryman who repairs and claims turrets instead of
+    // capturing bunkers - the same body, a different job
+    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2 },
 ];
 
 // ---------------------------------------------------------------- state ---
@@ -171,22 +177,27 @@ far fn unit_init() {
     spawn_seq = 0;
 }
 
-// unit_spawn - put a unit on the field, or drop the order if the pool is
-// full. Lanes are handed out round-robin so a column of one kind spreads
-// across all three rather than stacking.
-far fn unit_spawn(kind: Order, owner: u8, x_px: u16) {
+// unit_spawn - put a unit on the field. Returns 1, or 0 with nothing
+// placed when the pool is full, so an order can wait for a slot rather
+// than be lost. Lanes are handed out round-robin so a column of one kind
+// spreads across all three rather than stacking.
+far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
     let mut i: u16 = unit_cursor;
     let mut n: u16 = 0;
+    let mut placed: u8 = 0;
     while n < UNIT_MAX {
         match units[i].kind {
             UnitType::Free => {
                 // The one place an Order becomes a variant. A tank starts
-                // loaded; the other kinds carry nothing to initialise.
+                // loaded; the other kinds carry nothing to initialise. A
+                // helicopter is not a ground unit and never reaches here.
                 match kind {
                     Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0 }); }
                     Order::Van      => { units[i].kind = UnitType::Van; }
                     Order::Launcher => { units[i].kind = UnitType::Launcher; }
                     Order::Infantry => { units[i].kind = UnitType::Infantry; }
+                    Order::Engineer => { units[i].kind = UnitType::Engineer; }
+                    Order::Heli     => { units[i].kind = UnitType::Free; }
                 };
                 units[i].owner = owner;
                 units[i].x_px = x_px;
@@ -198,6 +209,7 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) {
                 unit_lane_rr = unit_lane_rr + 1;
                 if unit_lane_rr >= UNIT_LANES { unit_lane_rr = 0; }
                 unit_cursor = (i + 1) & UNIT_MASK;
+                placed = 1;
                 n = UNIT_MAX;
             }
             _ => {
@@ -206,6 +218,33 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) {
             }
         };
     }
+    return placed;
+}
+
+// unit_count - how many of a kind one side has on the field. `Free` is
+// variant 0 and never an owner's, so it needs no special case. The
+// ordering caps count men, and engineers share the infantry cap, so the
+// two kinds count together.
+far fn unit_count(kind: Order, owner: u8) -> u8 {
+    let mut n: u8 = 0;
+    for i in 0..UNIT_MAX {
+        if units[i].owner == owner {
+            let t: u8 = units[i].kind as u8;
+            let mut hit: u8 = 0;
+            match kind {
+                Order::Van      => { if t == UnitType::Van      as u8 { hit = 1; } }
+                Order::Launcher => { if t == UnitType::Launcher as u8 { hit = 1; } }
+                Order::Tank     => { if t == UnitType::Tank     as u8 { hit = 1; } }
+                Order::Infantry => { if t == UnitType::Infantry as u8 { hit = 1; }
+                                     if t == UnitType::Engineer as u8 { hit = 1; } }
+                Order::Engineer => { if t == UnitType::Infantry as u8 { hit = 1; }
+                                     if t == UnitType::Engineer as u8 { hit = 1; } }
+                Order::Heli     => {}
+            };
+            n = n + hit;
+        }
+    }
+    return n;
 }
 
 // unit_blocked - is another unit close ahead in the same lane?
@@ -329,9 +368,9 @@ fn unit_fire(i: u16) {
 }
 
 // ---------------------------------------------------------------- spawn ---
-// Units come out of each side's base. Ordering and economy decide what and
-// when in phase 7; until then both bases send a rotating column so the
-// field populates and a front line forms.
+// Units come out of each side's base. The player's come from orders
+// (order.r65). The CPU opponent arrives in phase 10; until then the enemy
+// base sends a rotating column so the field populates and a front forms.
 const BASE_X_PLAYER: u16 = 512;
 const BASE_X_ENEMY:  u16 = 7680;
 const SPAWN_PERIOD:  u8  = 120;
@@ -348,7 +387,6 @@ far fn unit_spawn_tick() {
     } else {
         spawn_t = SPAWN_PERIOD;
         let k: Order = SPAWN_ORDER[(spawn_seq & 3) as u16];
-        unit_spawn(k, SIDE_PLAYER, BASE_X_PLAYER);
         unit_spawn(k, SIDE_ENEMY, BASE_X_ENEMY);
         spawn_seq = spawn_seq + 1;
     }

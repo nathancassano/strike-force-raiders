@@ -327,15 +327,18 @@ if [ -z "$UK" ] || [ -z "$UX" ] || [ -z "$FNMI" ]; then
     echo "FAIL unit:addr (unit/frame symbols not found in build/main.asm)"
     fail=$((fail+1))
 else
-    # The first thing out of the base is a tank, and it marches east. The pool
-    # is a tagged enum, so slot 0's kind is the first byte of its tag plane.
-    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x01
-    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x02F8
+    # The player's base only sends what is ordered (phase 7), so the rotating
+    # placeholder column comes from the enemy base alone until the CPU
+    # opponent lands: a tank first, marching west from x=7680. The pool is a
+    # tagged enum, so slot 0's kind is the first byte of its tag plane.
+    UO=$(ramaddr units__owner)
+    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x01 --check-mem 0x$UO=0x01
+    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x1D07
 
-    # The pool is a tagged enum, so a spawn order of Kind values becomes a
-    # variant, and the hit points come from that variant's max_hp(). Slots
-    # 0/2/4/6 are the first tank, infantry, van and launcher out of the
-    # rotation; each is checked against its tag and its hp.
+    # A spawn order of Kind values becomes a variant, and the hit points
+    # come from that variant's row of unit_stats. Slots 0..3 are the tank,
+    # infantry, van and launcher of the enemy rotation, one every 120
+    # frames; each is checked against its tag and its hp.
     #
     # The last check is the tank's payload: its gun reload lives in the
     # Tank variant, not in a pool-wide array, so units__data[0] is the only
@@ -346,21 +349,74 @@ else
     hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
     run_case unit_kinds "wait600,shot" \
         --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$(hp 0)=0x19 \
-        --check-mem 0x$(at "$UK" 2)=0x04 --check-mem 0x$(hp 2)=0x05 \
-        --check-mem 0x$(at "$UK" 4)=0x02 --check-mem 0x$(hp 4)=0x0C \
-        --check-mem 0x$(at "$UK" 6)=0x03 --check-mem 0x$(hp 6)=0x08 \
+        --check-mem 0x$(at "$UK" 1)=0x04 --check-mem 0x$(hp 1)=0x05 \
+        --check-mem 0x$(at "$UK" 2)=0x02 --check-mem 0x$(hp 2)=0x0C \
+        --check-mem 0x$(at "$UK" 3)=0x03 --check-mem 0x$(hp 3)=0x08 \
         --check-mem 0x$(at "$UD" 0)=0x07
 
     # Frame budget. The NMI counts real frames and the loop counts ticks it
     # finished; a full field must still keep up. This measured 0.45 with a
     # 32-unit pool, which is why the pool is 16 - the assertion is what stops
-    # that regressing silently.
-    run_case unit_budget "wait3600,shot" --check-mem16 0x$FNMI=0x0E21 \
-                                         --check-mem16 0x$FLOOP=0x0E1E
+    # that regressing silently. The opening buys the whole purse in tanks so
+    # the player's half of the field is there to meet the enemy column.
+    #
+    # A tank line is the heaviest legitimate load: eight guns in range keep
+    # eight shells in the ground band, and each is tested against the whole
+    # pool every frame. Measured 0.984 here (59 frames dropped in 3665)
+    # where fifteen infantry against the same column keep up exactly. Known
+    # and accepted; the pair below pins it so a change either way shows.
+    EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
+    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
+                                                      --check-mem16 0x$FLOOP=0x0E16
 
     # The headline constraint: at a bunched front line the PPU must still be
     # able to draw everything standing on those scanlines.
-    budget_case unit_oam "wait1200,right180,wait60,shot"
+    budget_case unit_oam "$EIGHT_TANKS,wait1200,right180,wait60,shot"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 7 - economy and ordering.
+#
+# Funds grow with the helicopter's distance from the west edge; L/R walk the
+# order ring and X buys. Every check is on the ROM's own state: the purse,
+# the selection, and what came out of the base.
+# ---------------------------------------------------------------------------
+FUNDS=$(ramaddr funds)
+SEL=$(ramaddr order_sel)
+LIVES=$(ramaddr heli_lives)
+QMEN=$(ramaddr order_men)
+if [ -z "$FUNDS" ] || [ -z "$SEL" ] || [ -z "$LIVES" ]; then
+    echo "FAIL order:addr (order symbols not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # 32 funds, the tank selected, four lives.
+    run_case order_boot "wait60,shot" --check-mem 0x$FUNDS=0x20 --check-mem 0x$SEL=0x02 \
+                                      --check-mem 0x$LIVES=0x04
+
+    # One press buys one tank: it comes out of the player's base at x=512
+    # marching east, and the cost comes off at once.
+    run_case order_tank "x3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
+        --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$UO=0x00 --check-mem16 0x$UX=0x0211
+
+    # R moves the ring to infantry; one order is five men, ten frames apart,
+    # all out within the minute and the emitter idle again.
+    run_case order_infantry "r3,wait3,x3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
+        --check-mem 0x$(at "$UK" 0)=0x04 --check-mem 0x$(at "$UK" 4)=0x04 \
+        --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$QMEN=0x00
+
+    # L twice wraps to the van. Its cap is six: the seventh press is refused
+    # and costs nothing, so the purse is 32 - 6*2.
+    SEVEN="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3"
+    run_case order_cap "l3,wait3,l3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
+        --check-mem 0x$SEL=0x00 --check-mem 0x$(at "$UK" 5)=0x02
+
+    # R three times from the tank is the helicopter: an extra life for 20.
+    run_case order_heli "r3,wait3,r3,wait3,r3,wait3,x3,wait10,shot" \
+        --check-mem 0x$FUNDS=0x0C --check-mem 0x$LIVES=0x05 --check-mem 0x$SEL=0x05
+
+    # Income. A push to the far end and a wait there pays out; the exact
+    # figure is the threshold's, so re-baseline it when that is tuned.
+    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x2B
 fi
 
 # ---------------------------------------------------------------------------

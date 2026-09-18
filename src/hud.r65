@@ -1,0 +1,101 @@
+// hud - the strip along the top of the screen.
+//
+// BG1 is a 32x32 map DMA'd from ROM at boot; the strip is its top three
+// tile rows. Row 0 carries the text: the purse at the left, the order ring
+// in the middle with brackets around the selection, and the selected
+// entry's cost at the right. Rows 1 and 2 are the ruler and the rule, and
+// are left as the art has them.
+//
+// The row is composed into a shadow and DMA'd to VRAM in vblank when it
+// changed - 64 bytes, so the cost is nothing, but there is no reason to
+// pay it on a frame where nothing moved.
+//
+// Glyphs live on map row HUD_GLYPH_ROW of bg1.bmp, below the 224 scanlines
+// the screen shows. bmp2chr de-duplicates tiles, so their IDs are whatever
+// it decided; rather than hard-code them, the strip is read back out of the
+// tilemap in ROM - the glyph's *position* on that row is the contract, and
+// tools/hud_glyphs.py keeps it.
+
+#[bank(0)]
+
+const HUD_GLYPH_ROW: u16 = 28;
+
+// Glyph positions on the strip, in tools/hud_glyphs.py order.
+const GLYPH_DIGIT:    u16 = 0;            // 0..9
+const GLYPH_DOLLAR:   u16 = 10;
+const GLYPH_LBRACKET: u16 = 11;
+const GLYPH_RBRACKET: u16 = 12;
+const GLYPH_ICON:     u16 = 13;           // + Order, in ring order
+
+// Row 0 layout, in tile columns.
+const HUD_COL_FUNDS: u16 = 1;             // "$NN"
+const HUD_COL_RING:  u16 = 12;            // six icons two columns apart
+const HUD_COL_COST:  u16 = 26;            // "$NN"
+
+// The blank tile is whatever the art has at (0,0): plain navy.
+const HUD_BLANK: u16 = 0;
+
+#[lowram] static mut hud_row:   [u16; 32];
+#[lowram] static mut hud_dirty: u8;
+#[lowram] static mut hud_funds: u8;       // what the row currently shows ...
+#[lowram] static mut hud_sel:   u8;       // ... so a frame with no change is free
+
+// hud_glyph - the tile word for glyph *n*, out of the map row in ROM.
+fn hud_glyph(n: u16) -> u16 {
+    let i: u16 = ((HUD_GLYPH_ROW << 5) + n) << 1;
+    return (BG1_MAP[i] as u16) | ((BG1_MAP[i + 1] as u16) << 8);
+}
+
+// hud_put2 - two decimal digits at *col*. Values are capped at 99 upstream.
+fn hud_put2(col: u16, v: u8) {
+    let tens: u8 = div8(v, 10);
+    hud_row[col]     = hud_glyph(GLYPH_DIGIT + (tens as u16));
+    hud_row[col + 1] = hud_glyph(GLYPH_DIGIT + ((v - mul8(tens, 10)) as u16));
+}
+
+far fn hud_init() {
+    for c in 0..32 {
+        hud_row[c] = HUD_BLANK;
+    }
+    for k in 0..(ORDER_RING as u16) {
+        hud_row[HUD_COL_RING + (k << 1)] = hud_glyph(GLYPH_ICON + k);
+    }
+    hud_row[HUD_COL_FUNDS] = hud_glyph(GLYPH_DOLLAR);
+    hud_row[HUD_COL_COST]  = hud_glyph(GLYPH_DOLLAR);
+    // Force the first compose: no real state matches these.
+    hud_funds = 0xFF;
+    hud_sel = 0xFF;
+    hud_dirty = 0;
+    hud_update();
+}
+
+// hud_update - recompose the row if the purse or the selection moved.
+far fn hud_update() {
+    if hud_funds != funds {
+        hud_funds = funds;
+        hud_put2(HUD_COL_FUNDS + 1, funds);
+        hud_dirty = 1;
+    }
+    if hud_sel != order_sel {
+        // Clear both brackets of the old selection, then place the new.
+        if hud_sel < ORDER_RING {
+            let old: u16 = HUD_COL_RING + ((hud_sel as u16) << 1);
+            hud_row[old - 1] = HUD_BLANK;
+            hud_row[old + 1] = HUD_BLANK;
+        }
+        hud_sel = order_sel;
+        let at: u16 = HUD_COL_RING + ((order_sel as u16) << 1);
+        hud_row[at - 1] = hud_glyph(GLYPH_LBRACKET);
+        hud_row[at + 1] = hud_glyph(GLYPH_RBRACKET);
+        hud_put2(HUD_COL_COST + 1, order_stats[order_sel as u16].cost);
+        hud_dirty = 1;
+    }
+}
+
+// hud_flush - push the row to VRAM. Vblank only.
+far fn hud_flush() {
+    if hud_dirty != 0 {
+        hud_dirty = 0;
+        dma_copy_vram(1, &hud_row as far *u8, VRAM_BG1, 64);
+    }
+}
