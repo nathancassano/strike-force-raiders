@@ -15,7 +15,7 @@ static BG3_PAL: [u8; 32] = include_bytes!("../assets/gfx/bg3.pal");
 static BG4_CHR: [u8; 3488] = include_bytes!("../assets/gfx/bg4.chr");
 static BG4_MAP: [u8; 4096] = include_bytes!("../assets/gfx/bg4.tilemap");
 static BG4_PAL: [u8; 32] = include_bytes!("../assets/gfx/bg4.pal");
-static OBJ_CHR: [u8; 3072] = include_bytes!("../assets/gfx/obj.chr");
+static OBJ_CHR: [u8; 7168] = include_bytes!("../assets/gfx/obj.chr");
 static OBJ_PAL: [u8; 32] = include_bytes!("../assets/gfx/obj.pal");
 
 const BG1_CHR_SIZE: u16 = 368;
@@ -30,5 +30,5 @@ const BG3_PAL_SIZE: u16 = 32;
 const BG4_CHR_SIZE: u16 = 3488;
 const BG4_MAP_SIZE: u16 = 4096;
 const BG4_PAL_SIZE: u16 = 32;
-const OBJ_CHR_SIZE: u16 = 3072;
+const OBJ_CHR_SIZE: u16 = 7168;
 const OBJ_PAL_SIZE: u16 = 32;

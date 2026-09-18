@@ -90,6 +90,13 @@ const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 #[lowram] static mut heli_fuel_t: u8;     // countdown to the next fuel unit
 #[lowram] static mut heli_gun_t:  u8;     // ... and to the next round
 #[lowram] static mut heli_bomb_t: u8;
+#[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
+
+// Enemy fire against the airframe. Gunfire takes a point; at zero the
+// airframe is lost - a life goes (order.r65's heli_lives) and it returns
+// to the start with a full load. The battle-over screen is phase 9's.
+const HELI_HP_MAX: u8 = 20;
+const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
@@ -108,6 +115,43 @@ far fn heli_init() {
     heli_fuel_t = HELI_FUEL_DRAIN;
     heli_gun_t = HELI_GUN_RELOAD;
     heli_bomb_t = HELI_BOMB_RELOAD;
+    heli_hp = HELI_HP_MAX;
+}
+
+// heli_collide - enemy rounds against the airframe's box, and the
+// barrage balloons, which end it outright.
+far fn heli_collide() {
+    let hx: u16 = heli_x_px;
+    let hy: u16 = heli_y >> 8;
+    if struct_balloon_at(hx, hy) != 0 {
+        heli_lives = heli_lives - 1;
+        heli_init();
+        return;
+    }
+    for m in 0..MUNI_MAX {
+        let mk: u8 = muni_kind[m];
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE {
+            // Anything not the player's own: the enemy's, or a
+            // hostile-neutral super bunker's.
+            if muni_owner[m] != SIDE_PLAYER {
+                let mx: u16 = muni_x_px[m];
+                let my: u16 = muni_y[m] >> 8;
+                if mx >= hx && mx < hx + HELI_W {
+                    if my >= hy && my < hy + HELI_H {
+                        muni_kind[m] = MUNI_FREE;
+                        let mut dmg: u8 = 1;
+                        if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
+                        if heli_hp > dmg {
+                            heli_hp = heli_hp - dmg;
+                        } else {
+                            heli_lives = heli_lives - 1;
+                            heli_init();
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // heli_rearm - one tick on the deck. Fuel, rounds and bombs each refill on

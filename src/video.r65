@@ -205,6 +205,7 @@ far fn video_load() {
     dma_copy_cgram(0, &BG3_PAL as far *u8, 64, BG3_PAL_SIZE);
     dma_copy_cgram(0, &BG4_PAL as far *u8, 96, BG4_PAL_SIZE);
     dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
+    struct_palettes();              // OBJ palettes 1 and 2 from 0
 
     dma_copy_vram(0, &BG1_CHR as far *u8, VRAM_BG1C, BG1_CHR_SIZE);
     dma_copy_vram(0, &BG2_CHR as far *u8, VRAM_BG2C, BG2_CHR_SIZE);

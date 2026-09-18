@@ -66,7 +66,9 @@ const TANK_RANGE:  u16 = 96;
 const TANK_RELOAD: u8  = 90;
 const SHELL_SPEED: Q10 = 6 * 64;
 const SHELL_LIFE:  u8  = 32;
-const TANK_SCAN:   u8  = 8;               // frames between target sweeps
+const TANK_SCAN:   u8  = 16;              // frames between target sweeps: a
+                                          // sweep is O(pool), and at 8 it was
+                                          // an eighth of a full-field frame
 
 // Bomb blast reach, in pixels either side of the impact.
 const BLAST_R: u16 = 20;
@@ -170,10 +172,11 @@ struct Unit {
 // Traffic control is O(n^2) over the pool. Measured on hardware, a full
 // pass every frame costs more than a whole frame: with a 16-slot pool
 // filled the loop ran at 0.45 ticks per vblank. Re-evaluating a slice
-// instead leaves a unit's flag at most three frames stale, which at
-// 0.5 px/frame is about a pixel and a half of overshoot - invisible, and
-// it buys back the frame. The slice scales with the pool to keep that.
-const UNIT_SLICE: u16 = 8;
+// instead leaves a unit's flag stale - with 32 slots and four a frame, up
+// to seven frames, which at 0.5-0.75 px/frame is 4-6 px of overshoot
+// against an 8 px gap: a column packs tighter but never overlaps. Eight
+// a frame was 26% of the frame once the structures came in.
+const UNIT_SLICE: u16 = 4;
 
 // Neither pool takes an initializer, so both are garbage at power-on and
 // every element must be written before anything matches on it.
@@ -428,7 +431,9 @@ far fn unit_update() {
         match units[i].kind {
             UnitType::Free => {}
             _ => {
-                unit_fire(i);
+                // Only a tank has a gun; the tag test here is cheaper
+                // than the call that would make it.
+                if units[i].kind as u8 == UnitType::Tank as u8 { unit_fire(i); }
                 if units[i].block == 0 {
                     unit_advance(i, unit_stats[units[i].kind as u16].speed);
                 }

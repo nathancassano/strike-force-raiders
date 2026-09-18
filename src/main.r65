@@ -33,6 +33,7 @@ include!("assets.r65")
 include!("input.r65")
 include!("video.r65")
 include!("pad.r65")
+include!("struct.r65")
 include!("muni.r65")
 include!("unit.r65")
 include!("order.r65")
@@ -83,6 +84,7 @@ fn boot_load() {
     heli_init();
     muni_init();
     unit_init();
+    struct_init();
     econ_init();
     order_init();
     hud_init();
@@ -126,7 +128,10 @@ fn main() -> ! {
         hud_update();
         muni_update();
         unit_update();
+        struct_update();
         unit_collide();
+        struct_collide();
+        heli_collide();
         camera_update();
 
         // Draw order is the OAM drop policy: airframe, munitions in flight,
@@ -134,6 +139,7 @@ fn main() -> ! {
         oam_begin();
         heli_draw();
         muni_draw();
+        struct_draw();
         pad_draw();
         unit_draw();
         oam_end();

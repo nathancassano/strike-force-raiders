@@ -1,0 +1,805 @@
+// struct - the buildings: banks, bases, bunkers, the super bunker, turrets.
+//
+// Everything on the ground is a sprite (see the plan's graphics
+// architecture), so a structure is a pool entry drawn through the shared
+// OAM allocator, third in importance after the airframe and the munitions
+// in flight. Structures never move; what changes is who owns one, how
+// much of it is left, and what it is doing about the units in front of it.
+//
+// The level is a ROM table of placements, laid out west to east as the
+// plan's match shape: bank -> base -> pad -> open field -> pad -> base ->
+// bank, with turrets and bunkers along the field and the super bunker in
+// the middle. Ownership shows through the OBJ palette: green trim is the
+// player's, red-brown the enemy's, grey nobody's.
+
+#[bank(0)]
+
+const STRUCT_MAX: u16 = 16;
+
+// Owners. SIDE_PLAYER and SIDE_ENEMY are the units'; a structure may also
+// belong to nobody, which is what a captured-then-emptied bunker or a
+// turret nobody has claimed is.
+const SIDE_NONE: u8 = 2;
+
+// OBJ palettes: 0 player (the sheet's greens), 1 enemy, 2 neutral. Built
+// at boot from the one palette the sheet carries, by recolouring its four
+// green entries (see struct_palettes).
+const OBJ_PAL_PLAYER:  u16 = 0x0000;
+const OBJ_PAL_ENEMY:   u16 = 0x0200;
+const OBJ_PAL_NEUTRAL: u16 = 0x0400;
+
+// ------------------------------------------------------------- kinds ---
+enum StructKind { Turret, Bunker, Super, Base, Bank }
+
+// Everything fixed about a kind, one row per StructKind in that order.
+// Sizes are in 16x16 cells; the cell box stands on the ground line, so a
+// 24 px building in a 32 px box has its 8 empty rows on top. Tiles are
+// the box's top-left cell on the sheet (tools/struct_art.py); the cell to
+// the right is +2 and the one below +32.
+#[soa]
+struct StructStat {
+    tile:    u8,
+    cells_w: u8,
+    cells_h: u8,
+    max_hp:  u8,
+}
+
+const STRUCT_TILE_TURRET: u8 = 96;
+const STRUCT_TILE_BUNKER: u8 = 102;
+const STRUCT_TILE_BANK:   u8 = 106;
+const STRUCT_TILE_SUPER:  u8 = 160;
+const STRUCT_TILE_BASE:   u8 = 166;
+const STRUCT_TILE_BALLOON: u8 = 98;
+const STRUCT_TILE_CHAIN:   u8 = 100;      // an 8x8 tile
+
+// ----------------------------------------------------------- bunkers ---
+// A bunker is taken by an infantryman - not an engineer - of another side
+// walking into it: he goes inside and it is his side's. Tank shells and
+// bombs wear it down; at zero it is rubble that nobody can hold, drawn
+// with nobody's colours until phase 12 gives it art of its own.
+//
+// Each standing bunker moors a barrage balloon on a chain. The balloon
+// kills a helicopter of either side on contact - the plan's quirk worth
+// keeping - and gunfire brings it down; it regrows after a while.
+const BUNKER_W:       u16 = 32;
+const BUNKER_ROOF_Y:  u16 = GROUND_Y - 24;
+const BUNKER_DMG_SHELL: u8 = 8;
+const BUNKER_DMG_BLAST: u8 = 25;
+
+// ------------------------------------------------------- super bunker ---
+// Its hit points are the men inside, five at most. An infantryman of its
+// side walking in joins them; one of another side fights - he and one
+// inside both fall - and takes it over if he finds it empty. Only a tank
+// shell hurts it, one man a shell. Its gun is anti-air: it lofts rounds
+// at a helicopter within reach, faster the more men it holds, and at no
+// men it is nobody's and hostile-neutral - it fires on every side's
+// airframe, which is what makes it the centre of the field. Ground units
+// walk up to it unshot, which is how it changes hands.
+const SUPER_W:        u16 = 40;
+const SUPER_RANGE:    u16 = 200;
+const SUPER_RATE_BASE: u8 = 30;           // frames between rounds, empty
+// Four frames fewer per man inside (a shift, since `*` takes powers of two).
+const SUPER_MEN_MAX:   u8 = 5;
+
+// ---------------------------------------------------------------- base ---
+// A helicopter within BASE_RANGE of a base draws a smart missile every
+// BASE_RATE frames: the plan's no-fly zone. Nothing hurts a base; a van
+// reaching it ends the match (phase 9).
+const BASE_W:     u16 = 64;
+const BASE_RANGE: u16 = 320;
+const BASE_RATE:  u8  = 45;
+
+// ---------------------------------------------------------------- bank ---
+// The end bunker holds the funds. Its gun covers BANK_RANGE like a
+// turret's until two tank shells silence it (hp 10, a shell 5). An enemy
+// infantryman reaching it steals half the purse and is spent doing so.
+const BANK_W:         u16 = 32;
+const BANK_RANGE:     u16 = 200;
+const BANK_RATE:      u8  = 20;
+const BANK_DMG_SHELL: u8  = 5;
+
+const BALLOON_HP:     u8  = 3;
+const BALLOON_REGROW: u8  = 240;          // frames, counted in 4s (see tick)
+const BALLOON_DX:     u16 = 8;            // over the bunker's centre
+const BALLOON_Y:      u16 = 56;
+const BALLOON_W:      u16 = 16;
+const BALLOON_H:      u16 = 16;
+
+static struct_stats: [StructStat; 5] = [
+    // Turret: hit points are the plan's 31, doubled so tank fire's 8 and
+    // gunfire's 0.5 are 16 and 1 without fractions.
+    StructStat { tile: STRUCT_TILE_TURRET, cells_w: 1, cells_h: 1, max_hp: 62 },
+    // Bunker
+    StructStat { tile: STRUCT_TILE_BUNKER, cells_w: 2, cells_h: 2, max_hp: 69 },
+    // Super bunker: hp is the men inside, five at most
+    StructStat { tile: STRUCT_TILE_SUPER,  cells_w: 3, cells_h: 2, max_hp: 5 },
+    // Base: only a van ends it, so hp is nominal
+    StructStat { tile: STRUCT_TILE_BASE,   cells_w: 4, cells_h: 2, max_hp: 1 },
+    // Bank (end bunker)
+    StructStat { tile: STRUCT_TILE_BANK,   cells_w: 2, cells_h: 2, max_hp: 10 },
+];
+
+// ------------------------------------------------------------ layout ---
+// The level, west to east. A kind's x is its left edge in world pixels;
+// the two bases stand a screen inside each edge with the units' spawn
+// points just past them, the pads a few screens in (pad.r65), and the
+// field between carries the fought-over ground: a turret every ~1000 px,
+// bunkers between, the super bunker dead centre and neutral.
+#[soa]
+struct Placement {
+    kind:  u8,
+    x:     u16,
+    owner: u8,
+}
+
+const LEVEL_COUNT: u16 = 15;
+
+static level_layout: [Placement; 15] = [
+    Placement { kind: StructKind::Bank   as u8, x: 96,   owner: SIDE_PLAYER },
+    Placement { kind: StructKind::Base   as u8, x: 400,  owner: SIDE_PLAYER },
+    Placement { kind: StructKind::Turret as u8, x: 1536, owner: SIDE_PLAYER },
+    Placement { kind: StructKind::Bunker as u8, x: 2048, owner: SIDE_PLAYER },
+    Placement { kind: StructKind::Turret as u8, x: 2560, owner: SIDE_NONE },
+    Placement { kind: StructKind::Bunker as u8, x: 3072, owner: SIDE_NONE },
+    Placement { kind: StructKind::Turret as u8, x: 3584, owner: SIDE_NONE },
+    Placement { kind: StructKind::Super  as u8, x: 4076, owner: SIDE_NONE },
+    Placement { kind: StructKind::Turret as u8, x: 4608, owner: SIDE_NONE },
+    Placement { kind: StructKind::Bunker as u8, x: 5120, owner: SIDE_NONE },
+    Placement { kind: StructKind::Turret as u8, x: 5632, owner: SIDE_NONE },
+    Placement { kind: StructKind::Bunker as u8, x: 6144, owner: SIDE_ENEMY },
+    Placement { kind: StructKind::Turret as u8, x: 6656, owner: SIDE_ENEMY },
+    Placement { kind: StructKind::Base   as u8, x: 7728, owner: SIDE_ENEMY },
+    Placement { kind: StructKind::Bank   as u8, x: 8064, owner: SIDE_ENEMY },
+];
+
+// -------------------------------------------------------------- pool ---
+// One record per placed structure, index-stable for the whole match. The
+// geometry the draw needs every frame - pixel width, cell counts, box top,
+// first tile, attribute word - is filled in once from the stats and the
+// owner rather than looked up per frame: fifteen buildings are culled on
+// every tick, and that path is a subtract and two compares.
+#[soa]
+struct Structure {
+    kind:  u8,
+    x:     u16,
+    owner: u8,
+    hp:    u8,
+    t:     u8,           // fire / repair countdown
+    w:     u16,          // pixel width of the cell box
+    cols:  u8,
+    rows:  u8,
+    top:   u8,           // screen y of the cell box
+    tile:  u8,
+    attr:  u16,          // priority and the owner's palette
+    bal:   u8,           // bunker: balloon hit points, 0 = down
+    men:   u8,           // super bunker: the infantry inside
+}
+
+#[lowram] static mut structs: [Structure; 16];
+#[lowram] static mut struct_count: u16;
+
+// The turrets by pool index, so the per-frame scans and the munition
+// test walk six entries rather than asking fifteen buildings their kind.
+#[lowram] static mut turret_idx: [u8; 8];
+#[lowram] static mut turret_count: u16;
+#[lowram] static mut bunker_idx: [u8; 8];
+#[lowram] static mut bunker_count: u16;
+// The rest are one or two of a kind; their pool indices are found once.
+#[lowram] static mut super_i: u16;
+#[lowram] static mut base_idx: [u8; 2];
+#[lowram] static mut bank_idx: [u8; 2];
+#[lowram] static mut base_count: u16;
+#[lowram] static mut bank_count: u16;
+
+// struct_attr - the OAM attribute word for an owner: priority 3 and the
+// owner's palette.
+fn struct_attr(owner: u8) -> u16 {
+    if owner == SIDE_ENEMY { return 0x3000 | OBJ_PAL_ENEMY; }
+    if owner == SIDE_NONE { return 0x3000 | OBJ_PAL_NEUTRAL; }
+    return 0x3000 | OBJ_PAL_PLAYER;
+}
+
+// struct_set_owner - hand a structure to a side; the palette follows.
+fn struct_set_owner(i: u16, owner: u8) {
+    structs[i].owner = owner;
+    structs[i].attr = struct_attr(owner);
+}
+
+far fn struct_init() {
+    for i in 0..LEVEL_COUNT {
+        let k: u16 = level_layout[i].kind as u16;
+        let cols: u8 = struct_stats[k].cells_w;
+        let rows: u8 = struct_stats[k].cells_h;
+        structs[i].kind = level_layout[i].kind;
+        structs[i].x = level_layout[i].x;
+        structs[i].hp = struct_stats[k].max_hp;
+        structs[i].t = 0;
+        structs[i].w = (cols as u16) << 4;
+        structs[i].cols = cols;
+        structs[i].rows = rows;
+        structs[i].top = (GROUND_Y - ((rows as u16) << 4)) as u8;
+        structs[i].tile = struct_stats[k].tile;
+        structs[i].bal = 0;
+        structs[i].men = 0;
+        if level_layout[i].kind == StructKind::Bunker as u8 { structs[i].bal = BALLOON_HP; }
+        struct_set_owner(i, level_layout[i].owner);
+    }
+    struct_count = LEVEL_COUNT;
+
+    // RAM is garbage at power-on: every count starts at zero here.
+    turret_count = 0;
+    bunker_count = 0;
+    base_count = 0;
+    bank_count = 0;
+    super_i = 0;
+    for i in 0..LEVEL_COUNT {
+        if level_layout[i].kind == StructKind::Turret as u8 {
+            turret_idx[turret_count] = i as u8;
+            turret_count = turret_count + 1;
+        }
+        if level_layout[i].kind == StructKind::Bunker as u8 {
+            bunker_idx[bunker_count] = i as u8;
+            bunker_count = bunker_count + 1;
+        }
+        if level_layout[i].kind == StructKind::Super as u8 { super_i = i; }
+        if level_layout[i].kind == StructKind::Base as u8 {
+            base_idx[base_count] = i as u8;
+            base_count = base_count + 1;
+        }
+        if level_layout[i].kind == StructKind::Bank as u8 {
+            bank_idx[bank_count] = i as u8;
+            bank_count = bank_count + 1;
+        }
+    }
+    // The super bunker starts empty, and empty means hostile-neutral.
+    structs[super_i].hp = 0;
+    structs[super_i].men = 0;
+}
+
+// struct_palettes - fill OBJ palettes 1 and 2 from palette 0. The sheet
+// carries one palette; the enemy's is that with its greens turned
+// red-brown, and nobody's with them turned grey. Runs in force blank
+// after the sheet's own palette is loaded.
+#[lowram] static mut obj_pal_copy: [u8; 32];
+
+fn struct_palette_variant(cgram: u16, c2: Color, c3: Color, c7: Color, c8: Color) {
+    for i in 0..32 {
+        obj_pal_copy[i] = OBJ_PAL[i];
+    }
+    obj_pal_copy[4] = c2.0 as u8;   obj_pal_copy[5] = (c2.0 >> 8) as u8;
+    obj_pal_copy[6] = c3.0 as u8;   obj_pal_copy[7] = (c3.0 >> 8) as u8;
+    obj_pal_copy[14] = c7.0 as u8;  obj_pal_copy[15] = (c7.0 >> 8) as u8;
+    obj_pal_copy[16] = c8.0 as u8;  obj_pal_copy[17] = (c8.0 >> 8) as u8;
+    dma_copy_cgram(0, &obj_pal_copy as far *u8, cgram, 32);
+}
+
+far fn struct_palettes() {
+    struct_palette_variant(144, Color::rgb!(12, 5, 4), Color::rgb!(22, 9, 6),
+                                Color::rgb!(10, 4, 3), Color::rgb!(17, 7, 5));
+    struct_palette_variant(160, Color::rgb!(10, 10, 11), Color::rgb!(17, 17, 18),
+                                Color::rgb!(8, 8, 9), Color::rgb!(13, 13, 14));
+}
+
+// struct_draw - place the structures inside the camera window, third in
+// the importance order. A building is a grid of 16x16 cells standing on
+// the ground line; a cell wholly off the right edge is skipped so a
+// half-visible base does not spend slots on nothing.
+far fn struct_draw() {
+    // The pool is the level table's order, west to east, so the first
+    // building east of the window ends the walk: everything after it is
+    // further east still. (A `while` with the index run off the end,
+    // rather than `break` - see the project's entity-loop rule.)
+    let mut i: u16 = 0;
+    while i < struct_count {
+        let sx: u16 = structs[i].x - camera_x;
+        // Visible if any of it is: left edge inside the window, or - for
+        // one just west of the camera, sx wrapped to $FFxx - the window's
+        // left edge inside the building.
+        let mut show: u8 = 0;
+        if sx < 256 {
+            show = 1;
+        } else {
+            if sx >= 0xFFC0 {
+                if (0 - sx) < structs[i].w { show = 1; }
+            } else {
+                if sx < 0x8000 { i = struct_count; }     // east of the window
+            }
+        }
+        if show != 0 {
+            let attr: u16 = structs[i].attr;
+            let cols: u16 = structs[i].cols as u16;
+            let mut ty: u16 = structs[i].top as u16;
+            let mut row_tile: u16 = structs[i].tile as u16;
+            for r in 0..(structs[i].rows as u16) {
+                let mut cx: u16 = sx & 0x01FF;
+                let mut tile: u16 = row_tile;
+                for c in 0..cols {
+                    // A cell entirely off the right edge still costs a
+                    // slot; one partly off the left ($1F0..$1FF) does not.
+                    if cx < 256 || cx >= 0x01F0 {
+                        let slot: u16 = oam_take();
+                        if slot < OAM_SLOTS {
+                            oam.set_full!(slot as u8, cx, ty as u8, tile | attr);
+                            oam.set_size!(slot as u8, 1);
+                        }
+                    }
+                    cx = (cx + 16) & 0x01FF;
+                    tile = tile + 2;
+                }
+                row_tile = row_tile + 32;
+                ty = ty + 16;
+            }
+            if structs[i].kind == StructKind::Bunker as u8 {
+                if structs[i].bal > 0 { struct_balloon_draw(i, sx); }
+            }
+        }
+        if i < struct_count { i = i + 1; }
+    }
+}
+
+// struct_balloon_draw - the barrage balloon over bunker *i* and the chain
+// down to its roof: one 16x16 cell and 8x8 links every 8 px.
+fn struct_balloon_draw(i: u16, sx: u16) {
+    let bx: u16 = (sx + BALLOON_DX) & 0x01FF;
+    let attr: u16 = structs[i].attr;
+    let slot: u16 = oam_take();
+    if slot < OAM_SLOTS {
+        oam.set_full!(slot as u8, bx, BALLOON_Y as u8, (STRUCT_TILE_BALLOON as u16) | attr);
+        oam.set_size!(slot as u8, 1);
+    }
+    let cx: u16 = (bx + 4) & 0x01FF;
+    let mut cy: u16 = BALLOON_Y + 16;
+    while cy < BUNKER_ROOF_Y {
+        let link: u16 = oam_take();
+        if link < OAM_SLOTS {
+            oam.set_full!(link as u8, cx, cy as u8, (STRUCT_TILE_CHAIN as u16) | attr);
+            oam.set_size!(link as u8, 0);
+        }
+        cy = cy + 8;
+    }
+}
+
+// ------------------------------------------------------------ turrets ---
+// A turret sweeps TURRET_RANGE either side for the other side's units and,
+// if it is the enemy's, the helicopter - which it prefers, being the one
+// thing that can come to it. It fires a round every TURRET_RATE frames
+// while it has a target; that rate is the plan's difficulty dial. Damage
+// from gunfire is a scratch and from a tank shell a chunk (see the stats),
+// and while any of it stands it heals a point every TURRET_REPAIR frames.
+// At zero it is nobody's and does nothing until an engineer of either side
+// walks up to it, claims it, and stands there restoring it a point a frame.
+const TURRET_RANGE:  u16 = 340;
+const TURRET_RATE:   u8  = 12;            // tier 2 of 15/12/6/2/1
+const TURRET_REPAIR: u8  = 32;
+const TURRET_MUZZLE: u16 = 8;             // px above the ground line
+const TURRET_W:      u16 = 16;
+
+// Munition damage to a turret. Gunfire's half point is one on the doubled
+// scale; a shell's 8 is 16; a bomb's blast counts as a shell.
+const TURRET_DMG_BULLET: u8 = 1;
+const TURRET_DMG_SHELL:  u8 = 16;
+
+// struct_turret_target - the nearest unit of the other side within reach,
+// or UNIT_MAX. The scan runs once per shot, not per frame.
+fn struct_turret_target(i: u16) -> u16 {
+    return struct_gun_target(i, TURRET_RANGE);
+}
+
+// struct_gun_target - the nearest unit of another side within *range* of
+// structure *i*'s centre, or UNIT_MAX.
+fn struct_gun_target(i: u16, range: u16) -> u16 {
+    let x: u16 = structs[i].x + (structs[i].w >> 1);
+    let mine: u8 = structs[i].owner;
+    let mut best: u16 = UNIT_MAX;
+    let mut best_d: u16 = range;
+    for j in 0..UNIT_MAX {
+        if units[j].lane != UNIT_NO_LANE {
+            if units[j].owner != mine {
+                let ux: u16 = units[j].x_px;
+                let mut d: u16 = 0;
+                if ux > x { d = ux - x; } else { d = x - ux; }
+                if d < best_d { best_d = d; best = j; }
+            }
+        }
+    }
+    return best;
+}
+
+// struct_turret_fire - one round from turret *i* toward world x *tx*, at
+// screen height *ty* (8.8). A ground target gets a flat round; the
+// helicopter gets one lofted along the line to it.
+fn struct_turret_fire(i: u16, tx: u16, ty: u16) {
+    let mx: u16 = structs[i].x + (structs[i].w >> 1);
+    let my: u16 = (GROUND_Y - TURRET_MUZZLE) << 8;
+    let mut v: Q10 = BULLET_SPEED;
+    let mut dx: u16 = tx - mx;
+    if tx < mx { v = Q10(0) - BULLET_SPEED; dx = mx - tx; }
+    let mut vy: Q10 = Q10(0);
+    if ty < my {
+        // Rise over run, scaled to the round's speed. dx is at least a
+        // few pixels whenever this fires, so the quotient is bounded.
+        let dy: u16 = (my - ty) >> 8;
+        if dx == 0 { dx = 1; }
+        vy = Q10(0) - Q10::from_int(dy as i16).div(Q10::from_int(dx as i16)).mul(BULLET_SPEED);
+    }
+    muni_spawn(MUNI_BULLET, mx, my, v, vy, BULLET_LIFE, structs[i].owner);
+}
+
+fn struct_turret_tick(i: u16) {
+    if structs[i].hp == 0 { return; }
+    if structs[i].owner == SIDE_NONE { return; }
+
+    // Self-repair rides the same countdown as the gun when idle: a
+    // turret with nothing to shoot heals on its own schedule.
+    if structs[i].t > 0 {
+        structs[i].t = structs[i].t - 1;
+        return;
+    }
+
+    // The helicopter first, for an enemy gun.
+    if structs[i].owner == SIDE_ENEMY {
+        let hx: u16 = heli_x_px + (HELI_W >> 1);
+        let tx: u16 = structs[i].x + (TURRET_W >> 1);
+        let mut d: u16 = 0;
+        if hx > tx { d = hx - tx; } else { d = tx - hx; }
+        if d < TURRET_RANGE {
+            struct_turret_fire(i, hx, heli_y + ((HELI_H >> 1) << 8));
+            structs[i].t = TURRET_RATE;
+            return;
+        }
+    }
+
+    let j: u16 = struct_turret_target(i);
+    if j < UNIT_MAX {
+        let w: u16 = unit_stats[units[j].kind as u16].width;
+        struct_turret_fire(i, units[j].x_px + (w >> 1), (GROUND_Y - 8) << 8);
+        structs[i].t = TURRET_RATE;
+    } else {
+        structs[i].t = TURRET_REPAIR;
+        let max: u8 = struct_stats[StructKind::Turret as u16].max_hp;
+        if structs[i].hp < max { structs[i].hp = structs[i].hp + 1; }
+    }
+}
+
+// struct_turret_claim - an engineer standing at a turret that is not his
+// side's takes it, and restores it a point a frame while he is there.
+fn struct_turret_claim(i: u16) {
+    let x: u16 = structs[i].x;
+    for j in 0..UNIT_MAX {
+        if units[j].kind as u8 == UnitType::Engineer as u8 {
+            let ux: u16 = units[j].x_px;
+            if ux + UNIT_MAN_W > x {
+                if ux < x + TURRET_W {
+                    if structs[i].owner != units[j].owner {
+                        struct_set_owner(i, units[j].owner);
+                    }
+                    let max: u8 = struct_stats[StructKind::Turret as u16].max_hp;
+                    if structs[i].hp < max { structs[i].hp = structs[i].hp + 1; }
+                }
+            }
+        }
+    }
+}
+
+// struct_turret_hit - damage to turret *i*; at zero it falls to nobody.
+fn struct_turret_hit(i: u16, dmg: u8) {
+    if structs[i].hp > dmg {
+        structs[i].hp = structs[i].hp - dmg;
+    } else {
+        structs[i].hp = 0;
+        struct_set_owner(i, SIDE_NONE);
+    }
+}
+
+// struct_update - one tick for every structure. The engineer scan is
+// O(units) per turret, so each turret runs it on its own frame in
+// sixteen - an engineer covers four pixels in that time.
+far fn struct_update() {
+    for n in 0..turret_count {
+        let i: u16 = turret_idx[n] as u16;
+        struct_turret_tick(i);
+        if (frames_loop & 15) == (n & 15) {
+            struct_turret_claim(i);
+        }
+    }
+    for n in 0..bunker_count {
+        let i: u16 = bunker_idx[n] as u16;
+        struct_bunker_tick(i);
+        if (frames_loop & 15) == ((n + 8) & 15) {
+            struct_bunker_capture(i);
+        }
+    }
+    struct_super_tick(super_i);
+    if (frames_loop & 15) == 12 { struct_super_enter(super_i); }
+    for n in 0..base_count {
+        struct_base_tick(base_idx[n] as u16);
+    }
+    for n in 0..bank_count {
+        let i: u16 = bank_idx[n] as u16;
+        struct_bank_tick(i);
+        if (frames_loop & 15) == (13 + n) { struct_bank_rob(i); }
+    }
+}
+
+// struct_collide - munitions against structures. Runs after the pools
+// have moved, in the same pass order as unit_collide.
+//
+// A round in the ground band walks the pool west to east and stops at
+// the first building east of it, so it pays one subtract-and-compare per
+// building it passes and looks closely at the one it is inside - the
+// pool is the level table's order. Balloons hang above the band and only
+// gunfire reaches them; they are tested from the bunker list.
+far fn struct_collide() {
+    for m in 0..MUNI_MAX {
+        let mk: u8 = muni_kind[m];
+        if mk != MUNI_FREE {
+            let my: u16 = muni_y[m] >> 8;
+            let mx: u16 = muni_x_px[m];
+            if mk == MUNI_BULLET && my >= BALLOON_Y && my < BALLOON_Y + BALLOON_H {
+                for n in 0..bunker_count {
+                    let i: u16 = bunker_idx[n] as u16;
+                    if structs[i].bal > 0 {
+                        if (mx - (structs[i].x + BALLOON_DX)) < BALLOON_W {
+                            struct_balloon_hit(i);
+                            muni_kind[m] = MUNI_FREE;
+                        }
+                    }
+                }
+            }
+            if my < GROUND_Y && my >= GROUND_Y - 32 {
+                let mut i: u16 = 0;
+                while i < struct_count {
+                    let dx: u16 = mx - structs[i].x;          // wraps when west
+                    if dx < structs[i].w {
+                        struct_collide_one(m, mk, my, i);
+                        i = struct_count;                     // one building holds the point
+                    } else {
+                        if dx >= 0x8000 { i = struct_count; } // this and the rest are east
+                    }
+                    if i < struct_count { i = i + 1; }
+                }
+            }
+        }
+    }
+}
+
+// struct_collide_one - munition *m* is inside building *i*'s footprint.
+fn struct_collide_one(m: u16, mk: u8, my: u16, i: u16) {
+    let k: u8 = structs[i].kind;
+    if k == StructKind::Turret as u8 {
+        if structs[i].hp > 0 && muni_owner[m] != structs[i].owner {
+            if my >= structs[i].top as u16 {
+                let mut dmg: u8 = 0;
+                if mk == MUNI_BULLET { dmg = TURRET_DMG_BULLET; }
+                if mk == MUNI_SHELL || mk == MUNI_BLAST { dmg = TURRET_DMG_SHELL; }
+                if dmg > 0 {
+                    struct_turret_hit(i, dmg);
+                    if mk != MUNI_BLAST { muni_kind[m] = MUNI_FREE; }
+                }
+            }
+        }
+        return;
+    }
+    if k == StructKind::Bunker as u8 {
+        if structs[i].hp > 0 {
+            if mk == MUNI_SHELL {
+                struct_bunker_hit(i, BUNKER_DMG_SHELL);
+                muni_kind[m] = MUNI_FREE;
+            }
+            if mk == MUNI_BLAST { struct_bunker_hit(i, BUNKER_DMG_BLAST); }
+        }
+        return;
+    }
+    if mk == MUNI_SHELL {
+        if k == StructKind::Super as u8 {
+            struct_super_hit(i);
+            muni_kind[m] = MUNI_FREE;
+        }
+        if k == StructKind::Bank as u8 {
+            if muni_owner[m] != structs[i].owner {
+                struct_bank_hit(i);
+                muni_kind[m] = MUNI_FREE;
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------ bunkers ---
+// struct_bunker_capture - an infantryman of another side inside the
+// bunker's footprint takes it and is consumed. Engineers walk past.
+fn struct_bunker_capture(i: u16) {
+    if structs[i].hp == 0 { return; }
+    let x: u16 = structs[i].x;
+    for j in 0..UNIT_MAX {
+        if units[j].kind as u8 == UnitType::Infantry as u8 {
+            if units[j].owner != structs[i].owner {
+                let ux: u16 = units[j].x_px;
+                if ux + UNIT_MAN_W > x + 8 {
+                    if ux < x + BUNKER_W - 8 {
+                        struct_set_owner(i, units[j].owner);
+                        unit_free(j);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// struct_bunker_hit - shells and blasts against a standing bunker.
+fn struct_bunker_hit(i: u16, dmg: u8) {
+    if structs[i].hp > dmg {
+        structs[i].hp = structs[i].hp - dmg;
+    } else {
+        structs[i].hp = 0;
+        structs[i].bal = 0;
+        struct_set_owner(i, SIDE_NONE);
+    }
+}
+
+// struct_bunker_tick - regrow a downed balloon over a standing bunker.
+// The countdown steps every fourth frame so a u8 spans sixteen seconds.
+fn struct_bunker_tick(i: u16) {
+    if structs[i].hp == 0 { return; }
+    if structs[i].bal == 0 {
+        if (frames_loop & 3) == 0 {
+            if structs[i].t > 0 {
+                structs[i].t = structs[i].t - 1;
+            } else {
+                structs[i].bal = BALLOON_HP;
+            }
+        }
+    }
+}
+
+// struct_balloon_hit - gunfire against the balloon; down at zero.
+fn struct_balloon_hit(i: u16) {
+    if structs[i].bal > 1 {
+        structs[i].bal = structs[i].bal - 1;
+    } else {
+        structs[i].bal = 0;
+        structs[i].t = BALLOON_REGROW;
+    }
+}
+
+// struct_balloon_at - is the airframe's box on a balloon? Any bunker's:
+// a balloon does not care whose helicopter it is.
+far fn struct_balloon_at(hx: u16, hy: u16) -> u8 {
+    for n in 0..bunker_count {
+        let i: u16 = bunker_idx[n] as u16;
+        if structs[i].bal > 0 {
+            let bx: u16 = structs[i].x + BALLOON_DX;
+            if hx + HELI_W > bx {
+                if hx < bx + BALLOON_W {
+                    if hy + HELI_H > BALLOON_Y {
+                        if hy < BALLOON_Y + BALLOON_H { return 1; }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// ------------------------------------------------------- super bunker ---
+fn struct_super_enter(i: u16) {
+    let x: u16 = structs[i].x;
+    for j in 0..UNIT_MAX {
+        if units[j].kind as u8 == UnitType::Infantry as u8 {
+            let ux: u16 = units[j].x_px;
+            if ux + UNIT_MAN_W > x + 12 {
+                if ux < x + SUPER_W - 12 {
+                    if units[j].owner == structs[i].owner {
+                        if structs[i].men < SUPER_MEN_MAX {
+                            structs[i].men = structs[i].men + 1;
+                            structs[i].hp = structs[i].men;
+                            unit_free(j);
+                        }
+                    } else {
+                        if structs[i].men == 0 {
+                            struct_set_owner(i, units[j].owner);
+                            structs[i].men = 1;
+                        } else {
+                            structs[i].men = structs[i].men - 1;
+                            if structs[i].men == 0 { struct_set_owner(i, SIDE_NONE); }
+                        }
+                        structs[i].hp = structs[i].men;
+                        unit_free(j);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+}
+
+// struct_super_hit - a tank shell kills a man inside; none left and it is
+// nobody's again.
+fn struct_super_hit(i: u16) {
+    if structs[i].men > 0 {
+        structs[i].men = structs[i].men - 1;
+        structs[i].hp = structs[i].men;
+        if structs[i].men == 0 { struct_set_owner(i, SIDE_NONE); }
+    }
+}
+
+fn struct_super_tick(i: u16) {
+    if structs[i].t > 0 {
+        structs[i].t = structs[i].t - 1;
+        return;
+    }
+    // The player's airframe is the only one until phase 10; the bunker
+    // shoots it unless the player holds the bunker.
+    if structs[i].owner != SIDE_PLAYER {
+        let bx: u16 = structs[i].x + (SUPER_W >> 1);
+        let hx: u16 = heli_x_px + (HELI_W >> 1);
+        let mut d: u16 = 0;
+        if hx > bx { d = hx - bx; } else { d = bx - hx; }
+        if d < SUPER_RANGE {
+            struct_turret_fire(i, hx, heli_y + ((HELI_H >> 1) << 8));
+        }
+    }
+    structs[i].t = SUPER_RATE_BASE - (structs[i].men << 2);   // four fewer per man
+}
+
+// ---------------------------------------------------------------- base ---
+fn struct_base_tick(i: u16) {
+    if structs[i].t > 0 {
+        structs[i].t = structs[i].t - 1;
+        return;
+    }
+    if structs[i].owner != SIDE_ENEMY { return; }     // the player's fires in phase 10
+    let bx: u16 = structs[i].x + (BASE_W >> 1);
+    let hx: u16 = heli_x_px + (HELI_W >> 1);
+    let mut d: u16 = 0;
+    if hx > bx { d = hx - bx; } else { d = bx - hx; }
+    if d < BASE_RANGE {
+        muni_spawn(MUNI_MISSILE, bx, (GROUND_Y - 32) << 8, Q10(0), Q10(0) - MISSILE_SPEED,
+                   MISSILE_LIFE, structs[i].owner);
+        structs[i].t = BASE_RATE;
+    }
+}
+
+// ---------------------------------------------------------------- bank ---
+fn struct_bank_tick(i: u16) {
+    if structs[i].t > 0 {
+        structs[i].t = structs[i].t - 1;
+        return;
+    }
+    if structs[i].hp > 0 {
+        let j: u16 = struct_gun_target(i, BANK_RANGE);
+        if j < UNIT_MAX {
+            let w: u16 = unit_stats[units[j].kind as u16].width;
+            struct_turret_fire(i, units[j].x_px + (w >> 1), (GROUND_Y - 8) << 8);
+        }
+    }
+    structs[i].t = BANK_RATE;
+}
+
+// struct_bank_rob - an infantryman of the other side at the player's bank
+// takes half the purse with him. The enemy's purse is phase 10's.
+fn struct_bank_rob(i: u16) {
+    let x: u16 = structs[i].x;
+    for j in 0..UNIT_MAX {
+        if units[j].kind as u8 == UnitType::Infantry as u8 {
+            if units[j].owner != structs[i].owner {
+                let ux: u16 = units[j].x_px;
+                if ux + UNIT_MAN_W > x + 8 {
+                    if ux < x + BANK_W - 8 {
+                        if structs[i].owner == SIDE_PLAYER { funds = funds >> 1; }
+                        unit_free(j);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn struct_bank_hit(i: u16) {
+    if structs[i].hp > BANK_DMG_SHELL {
+        structs[i].hp = structs[i].hp - BANK_DMG_SHELL;
+    } else {
+        structs[i].hp = 0;
+    }
+}

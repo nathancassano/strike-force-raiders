@@ -23,6 +23,11 @@ const MUNI_SHELL:  u8 = 3;                // tank main gun
 // so the area damage is applied where the unit pool can see it. Bombs do
 // nothing to infantry until they land - this state is what encodes that.
 const MUNI_BLAST:  u8 = 4;
+// A base's smart missile: it steers toward the helicopter every frame
+// (see muni_update) and lives MISSILE_LIFE frames.
+const MUNI_MISSILE: u8 = 5;
+const MISSILE_SPEED: Q10 = 6 * 64;        // 6 px/frame along either axis
+const MISSILE_LIFE:  u8  = 90;
 
 // Gunfire crosses the screen fast and flat; a bomb inherits the airframe's
 // horizontal speed and accelerates downward from rest.
@@ -133,6 +138,14 @@ far fn muni_update() {
                 if muni_life[i] == 0 {
                     muni_kind[i] = MUNI_FREE;   // out of range
                 }
+            }
+
+            if kind == MUNI_MISSILE {
+                // Steer: full speed toward the airframe on each axis.
+                muni_vx[i] = MISSILE_SPEED;
+                if heli_x_px + (HELI_W >> 1) < muni_x_px[i] { muni_vx[i] = Q10(0) - MISSILE_SPEED; }
+                muni_vy[i] = MISSILE_SPEED;
+                if heli_y + ((HELI_H >> 1) << 8) < muni_y[i] { muni_vy[i] = Q10(0) - MISSILE_SPEED; }
             }
 
             if kind == MUNI_BOMB {

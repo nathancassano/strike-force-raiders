@@ -349,9 +349,10 @@ else
     #
     # The last check is the tank's payload: its gun reload lives in the
     # Tank variant, not in a pool-wide array, so units__data[0] is the only
-    # place the countdown exists. With nothing in range it cycles 0..8 every
-    # nine frames, which makes the value here a phase - re-baseline it if a
-    # change shifts the pool by a frame, but do not delete it.
+    # place the countdown exists. With nothing in range it cycles 0..16
+    # every seventeen frames (TANK_SCAN), which makes the value here a
+    # phase - re-baseline it if a change shifts the pool by a frame, but do
+    # not delete it.
     at() { printf '%X' $((0x$1 + $2)); }            # tag plane: one byte per slot
     hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
     run_case unit_kinds "wait600,shot" \
@@ -359,7 +360,7 @@ else
         --check-mem 0x$(at "$UK" 1)=0x04 --check-mem 0x$(hp 1)=0x05 \
         --check-mem 0x$(at "$UK" 2)=0x02 --check-mem 0x$(hp 2)=0x0C \
         --check-mem 0x$(at "$UK" 3)=0x03 --check-mem 0x$(hp 3)=0x08 \
-        --check-mem 0x$(at "$UD" 0)=0x07
+        --check-mem 0x$(at "$UD" 0)=0x0D
 
     # Frame budget. The NMI counts real frames and the loop counts ticks it
     # finished; a full field must still keep up. The opening buys the whole
@@ -369,11 +370,15 @@ else
     # The pool was 16 until the compiler learned to keep an indexing loop
     # counter in Y (a const bound folded to a literal, a u16 counter for an
     # array index, and a scaled index no longer disqualifying it) and
-    # oam_end stopped sweeping a hundred idle slots a frame. At 32 it is one
-    # frame short in 3665 with the traffic slice at 8; the pair pins that.
+    # oam_end stopped sweeping a hundred idle slots a frame. At 32 with the
+    # traffic slice at 4 it was exact; the structures (phase 8: fifteen
+    # buildings culled a frame, turrets, bunkers, the super bunker, bases
+    # and banks all ticking, munitions tested against them) cost 117 frames
+    # in 3665 here - 0.968, accepted as the stress case, and what the pair
+    # pins. The next cycles are in unit_advance's call and the traffic scan.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0E50
+                                                      --check-mem16 0x$FLOOP=0x0DDC
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -423,8 +428,57 @@ else
         --check-mem 0x$FUNDS=0x0C --check-mem 0x$LIVES=0x05 --check-mem 0x$SEL=0x05
 
     # Income. A push to the far end and a wait there pays out; the exact
-    # figure is the threshold's, so re-baseline it when that is tuned.
-    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x2C
+    # figure is the threshold's - and, since phase 8, the no-fly zone's:
+    # the enemy base's missiles send the airframe home part way, which is
+    # why it is less than it was.
+    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x29
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 8 - structures.
+#
+# Fifteen buildings from the level table. Turrets fire at the other side's
+# units and, if the enemy's, at the helicopter; gunfire wears them down.
+# ---------------------------------------------------------------------------
+HHP=$(ramaddr heli_hp)
+SHP=$(ramaddr structs__hp)
+if [ -z "$HHP" ] || [ -z "$SHP" ]; then
+    echo "FAIL struct:addr (structure symbols not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    # The enemy turret at x=6656 (level entry 12) lofts rounds at an
+    # approaching airframe: 20 hp becomes 14 on the way in.
+    run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0E
+
+    # Descend to its height and fire back: a round is a point off its 62.
+    run_case turret_gunfire "wait20,right1290,down40,wait10,b90,shot" \
+        --check-mem 0x$(at "$SHP" 12)=0x36 --check-mem 0x$HHP=0x0D
+
+    # The balloon over the player's own bunker (x=2048) kills the airframe
+    # on contact: a life gone and the airframe back at the start, ten
+    # frames of held right past it.
+    HX=$(ramaddr heli_x_px)
+    run_case balloon_kill "up10,right410,shot" --check-mem 0x$LIVES=0x03 \
+                                              --check-mem16 0x$HX=0x004A
+
+    # An enemy infantryman walking into the neutral bunker at x=5120 (level
+    # entry 9) takes it. He spawns at frame ~270 and covers 2560 px at a
+    # quarter pixel a frame, so this is the suite's longest wait.
+    SOWN=$(ramaddr structs__owner)
+    run_case bunker_capture "wait12500,shot" --timeout 400000 \
+        --check-mem 0x$(at "$SOWN" 9)=0x01
+
+    # The enemy base's missiles: an airframe pushed into its 320 px is lost
+    # inside two hundred frames and comes back at the start with a life gone.
+    run_case base_missile "wait20,right1500,wait200,shot" --check-mem 0x$LIVES=0x03 \
+                                                          --check-mem 0x$HHP=0x14
+
+    # The super bunker (level entry 7, dead centre) starts empty and nobody's.
+    # The second enemy infantryman to walk the field - the first is spent on
+    # the bunker at 5120 - goes inside: one man, and it is the enemy's.
+    SMEN=$(ramaddr structs__men)
+    run_case super_manned "wait16200,shot" --timeout 500000 \
+        --check-mem 0x$(at "$SMEN" 7)=0x01 --check-mem 0x$(at "$SOWN" 7)=0x01
 fi
 
 # ---------------------------------------------------------------------------
