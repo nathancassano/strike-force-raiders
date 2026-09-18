@@ -448,72 +448,89 @@ far fn unit_update() {
 // pool, but only what is actually on screen consumes OAM. Draw order runs
 // from the camera centre outward, so when slots run out the sprites that
 // vanish are the ones furthest from where the player is looking.
+// Visible units this frame, split by distance from the camera centre so
+// the near ones take slots first. Classifying once and drawing from the
+// lists is half the cost of culling the pool twice.
+#[lowram] static mut draw_near: [u8; 32];
+#[lowram] static mut draw_far:  [u8; 32];
+
+fn unit_draw_one(i: u16, sx: u16) {
+    let y: u8 = (UNIT_BASE_Y
+                 + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
+    let tile: u8 = unit_stats[units[i].kind as u16].tile;
+    let cells: u8 = unit_stats[units[i].kind as u16].cells;
+
+    // The enemy faces west - hflip - and wears the enemy palette.
+    // Mirroring a vehicle also swaps its two cells, or the front half
+    // renders on the tail side - and it moves the art within its box, so
+    // the box shifts back to keep the sprite over the collision extent
+    // (`UNIT_MIRROR_*`).
+    let mut attr: u16 = UNIT_ATTR;
+    let mut near: u8 = tile;
+    let mut far_: u8 = tile + 2;
+    let mut bx: u16 = sx & 0x01FF;
+    if units[i].owner == SIDE_ENEMY {
+        attr = UNIT_ATTR | 0x4000 | OBJ_PAL_ENEMY;
+        if cells > 1 {
+            near = tile + 2;
+            far_ = tile;
+            bx = (sx - UNIT_MIRROR_VEH) & 0x01FF;
+        } else {
+            bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
+        }
+    }
+
+    let a: u16 = oam_take();
+    if a < OAM_SLOTS {
+        oam.set_full!(a as u8, bx, y, (near as u16) | attr);
+        oam.set_size!(a as u8, 1);
+    }
+    // A man is one cell; a vehicle needs its second.
+    if cells > 1 {
+        let c: u16 = oam_take();
+        if c < OAM_SLOTS {
+            oam.set_full!(c as u8, (bx + 16) & 0x01FF, y,
+                          (far_ as u16) | attr);
+            oam.set_size!(c as u8, 1);
+        }
+    }
+}
+
 far fn unit_draw() {
     let centre: u16 = camera_x + CAM_MID;
-    // Two passes over an unsorted pool rather than sorting it: near units
-    // first, then the rest. A full sort costs more than it saves for a pool
-    // this size, and the split is all the ordering the drop policy needs.
-    for pass in 0..2 {
-        for i in 0..UNIT_MAX {
-            match units[i].kind {
-                UnitType::Free => {}
-                _ => {
-                    let sx: u16 = units[i].x_px - camera_x;
-                    if sx < 256 {
-                        let mut d: u16 = 0;
-                        if units[i].x_px > centre {
-                            d = units[i].x_px - centre;
-                        } else {
-                            d = centre - units[i].x_px;
-                        }
-                        let mut want: u16 = 1;
-                        if d < 64 { want = 0; }
-                        if want == pass {
-                            let y: u8 = (UNIT_BASE_Y
-                                         + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
-                            let tile: u8 = unit_stats[units[i].kind as u16].tile;
-                            let cells: u8 = unit_stats[units[i].kind as u16].cells;
-
-                            // The enemy faces west: hflip. Mirroring a
-                            // vehicle also swaps its two cells, or the
-                            // front half renders on the tail side - and it
-                            // moves the art within its box, so the box
-                            // shifts back to keep the sprite over the
-                            // collision extent (`UNIT_MIRROR_*`).
-                            let mut attr: u16 = UNIT_ATTR;
-                            let mut near: u8 = tile;
-                            let mut far_: u8 = tile + 2;
-                            let mut bx: u16 = sx;
-                            if units[i].owner == SIDE_ENEMY {
-                                attr = UNIT_ATTR | 0x4000;
-                                if cells > 1 {
-                                    near = tile + 2;
-                                    far_ = tile;
-                                    bx = (sx - UNIT_MIRROR_VEH) & 0x01FF;
-                                } else {
-                                    bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
-                                }
-                            }
-
-                            let a: u16 = oam_take();
-                            if a < OAM_SLOTS {
-                                oam.set_full!(a as u8, bx, y, (near as u16) | attr);
-                                oam.set_size!(a as u8, 1);
-                            }
-                            // A man is one cell; a vehicle needs its second.
-                            if cells > 1 {
-                                let c: u16 = oam_take();
-                                if c < OAM_SLOTS {
-                                    oam.set_full!(c as u8, (bx + 16) & 0x01FF, y,
-                                                  (far_ as u16) | attr);
-                                    oam.set_size!(c as u8, 1);
-                                }
-                            }
-                        }
-                    }
+    let mut n_near: u16 = 0;
+    let mut n_far: u16 = 0;
+    for i in 0..UNIT_MAX {
+        if units[i].lane != UNIT_NO_LANE {
+            let sx: u16 = units[i].x_px - camera_x;
+            // On screen if the left edge is inside the window, or the unit
+            // straddles the window's left edge: sx has wrapped to $FFxx and
+            // the 9-bit OAM X carries it as a negative position. A vehicle
+            // is 24 px, a man 8; the wider bound serves both.
+            if sx < 256 || sx >= (0 - UNIT_W) {
+                let mut d: u16 = 0;
+                if units[i].x_px > centre {
+                    d = units[i].x_px - centre;
+                } else {
+                    d = centre - units[i].x_px;
                 }
-            };
+                if d < 64 {
+                    draw_near[n_near] = i as u8;
+                    n_near = n_near + 1;
+                } else {
+                    draw_far[n_far] = i as u8;
+                    n_far = n_far + 1;
+                }
+            }
         }
+    }
+    for k in 0..n_near {
+        let i: u16 = draw_near[k] as u16;
+        unit_draw_one(i, units[i].x_px - camera_x);
+    }
+    for k in 0..n_far {
+        let i: u16 = draw_far[k] as u16;
+        unit_draw_one(i, units[i].x_px - camera_x);
     }
 }
 

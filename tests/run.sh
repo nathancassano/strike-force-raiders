@@ -373,12 +373,14 @@ else
     # oam_end stopped sweeping a hundred idle slots a frame. At 32 with the
     # traffic slice at 4 it was exact; the structures (phase 8: fifteen
     # buildings culled a frame, turrets, bunkers, the super bunker, bases
-    # and banks all ticking, munitions tested against them) cost 117 frames
-    # in 3665 here - 0.968, accepted as the stress case, and what the pair
-    # pins. The next cycles are in unit_advance's call and the traffic scan.
+    # and banks all ticking, munitions tested against them, and sprites
+    # straddling the left edge drawn at a negative 9-bit X rather than
+    # culled) cost 144 frames in 3665 here - 0.961, accepted as the stress
+    # case, and what the pair pins. The next cycles are in unit_advance's
+    # call and the traffic scan.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0DDC
+                                                      --check-mem16 0x$FLOOP=0x0DC1
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three

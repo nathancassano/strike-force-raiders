@@ -194,14 +194,16 @@ far fn muni_draw() {
         let kind: u8 = muni_kind[i];
         if kind != MUNI_FREE {
             let sx: u16 = muni_x_px[i] - camera_x;
-            if sx < 256 {
+            // Inside the window, or straddling its left edge (sx wrapped to
+            // $FFF8..$FFFF, which the 9-bit OAM X places at -8..-1).
+            if sx < 256 || sx >= 0xFFF8 {
               if kind != MUNI_BLAST {
                 let mut tile: u8 = MUNI_TILE_BULLET;
                 if kind == MUNI_BOMB { tile = MUNI_TILE_BOMB; }
-                if kind == MUNI_SHELL { tile = MUNI_TILE_SHELL; }
+                if kind == MUNI_SHELL || kind == MUNI_MISSILE { tile = MUNI_TILE_SHELL; }
                 let slot: u16 = oam_take();
                 if slot < OAM_SLOTS {
-                    oam.set_full!(slot as u8, sx, (muni_y[i] >> 8) as u8,
+                    oam.set_full!(slot as u8, sx & 0x01FF, (muni_y[i] >> 8) as u8,
                                   (tile as u16) | MUNI_ATTR);
                     oam.set_size!(slot as u8, 0);        // 8x8
                 }

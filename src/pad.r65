@@ -53,9 +53,10 @@ far fn pad_at(centre: u16) -> u16 {
 far fn pad_draw() {
     for i in 0..PAD_COUNT {
         let sx: u16 = PAD_X[i] - camera_x;
-        // One unsigned compare culls both directions: a pad west of the
-        // camera underflows to a very large number.
-        if sx < 256 {
+        // Inside the window, or straddling its left edge: a deck west of
+        // the camera underflows to $FFxx, and within a deck's width of the
+        // wrap it is still partly on screen at a negative 9-bit OAM X.
+        if sx < 256 || sx >= (0 - PAD_W) {
             for cell in 0..PAD_CELLS {
                 let cx: u16 = (sx + (cell << 4)) & 0x01FF;
                 let slot: u16 = oam_take();
