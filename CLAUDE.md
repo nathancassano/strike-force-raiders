@@ -4,7 +4,7 @@ A helicopter tug-of-war for the SNES, descended from *Rescue Raiders* (Apple II,
 by way of *Armor Alley* (1991). Built with the R65 compiler. For the full R65 language
 reference, see the main CLAUDE.md in the R65 repository.
 
-The design and phase plan live at `~/.claude/plans/going-to-make-a-jolly-pudding.md`.
+The design and phase plan live in [design.md](design.md).
 
 ## Project-specific rules
 
@@ -113,6 +113,7 @@ rotor_raiders/
 │   ├── sound/                # snesgss exports (spc700.bin, music_*.bin)
 │   └── levels/               # Battlefield placement lists
 ├── tools/                    # mkmovie.py, pngstat.py, asset generators
+├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
 ├── tests/run.sh              # Scripted-input regression suite
 ├── play.sh                   # One-shot scripted run + screenshot
 ├── build/                    # Compiled output (.asm, .smc, .sym, .dbg)
@@ -154,7 +155,8 @@ A tank shells the other side's units ahead and its standing turrets, bunkers and
 bunker (`struct_tank_target`, a walk of the sorted structure pool from the tank's own end),
 holding in place until the building falls. A rifleman's shot is not a munition: the sweep that
 finds a target within `INF_RANGE` lands `rifle_dmg` there and then (0 against a tank) and sets
-the pose for the frame it is drawn. Both sweep every 16 idle frames.
+the pose for the frame it is drawn; with no unit in reach an enemy turret ahead takes the point
+instead. Both sweep every 16 idle frames.
 Traffic control is O(n^2) and re-evaluates 8 units a frame; a freed slot's lane is `UNIT_NO_LANE`
 so the scan's lane compare rejects it without a tag test. Collision rejects a munition against
 the whole pool with one scanline-band test. **The sprite budget is the next ceiling**: eight
@@ -193,7 +195,9 @@ top, first tile, attribute) is precomputed into the pool at init and on `struct_
 Ownership is an OBJ palette: 0 the sheet's greens, 1 enemy (red-brown), 2 nobody (grey), built
 at boot by `struct_palettes` from the one palette the sheet carries; enemy units wear palette 1
 too. Turrets and the super bunker loft rounds at the helicopter along the line to it; bunkers
-moor a balloon on a chain that kills any helicopter on contact; the base fires homing missiles
+moor a balloon on a chain that kills any helicopter on contact (a bunker shelled to 0 hp is nobody's
+and balloonless but still capturable - the man who takes it restores it); a manned super bunker also fires
+along the ground at units of any other side outside its box; the base fires homing missiles
 (`MUNI_MISSILE`) inside 320 px; the bank's gun falls silent after two shells and an enemy
 infantryman at the player's bank halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers four pixels in that time.
@@ -205,8 +209,11 @@ The match (`src/game.r65`) ends two ways only: a van of either side inside the o
 player's last helicopter (`heli_lost`). Any other loss hides the airframe for `HELI_RESPAWN`
 (120) frames while `camera_pan` brings the view home at a pace sized at the loss
 (`camera_x / 120 + 1`, so the far end of the world arrives inside the delay); the next
-airframe appears on the start when the count runs out, and the stick, gun and hit test are
-all off until then. `game_state` gates the whole simulation; the draw
+airframe then rises out of the ground at the start, a pixel a frame from the ground line to
+hover height, drawn at OBJ priority 0 behind the dirt until it has cleared it (the BG4 tilemap
+carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
+are off until it is up. A dead stick touching open ground is a crash landing and a loss too;
+only a deck saves it. `game_state` gates the whole simulation; the draw
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
 from a letter row (`HUD_LETTER_ROW`, stamped by `tools/hud_glyphs.py` below the visible
 screen like the glyph strip), and Start calls `game_reset`, which re-runs every `*_init`.
