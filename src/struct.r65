@@ -70,11 +70,15 @@ const BUNKER_DMG_BLAST: u8 = 25;
 // Its hit points are the men inside, five at most. An infantryman of its
 // side walking in joins them; one of another side fights - he and one
 // inside both fall - and takes it over if he finds it empty. Only a tank
-// shell hurts it, one man a shell. Its gun is anti-air: it lofts rounds
-// at a helicopter within reach, faster the more men it holds, and at no
-// men it is nobody's and hostile-neutral - it fires on every side's
-// airframe, which is what makes it the centre of the field. Ground units
-// walk up to it unshot, which is how it changes hands.
+// shell hurts it, one man a shell. Its gun fires on everything of another
+// side within reach - it lofts rounds at a helicopter and puts them along
+// the ground at units - faster the more men it holds; at no men it is
+// nobody's and hostile-neutral, firing on every side's airframe, which is
+// what makes it the centre of the field. An empty bunker does not fire on
+// ground units, or nobody could ever walk in and man it; a manned one
+// does, so the way to take it is a tank line to put the garrison out
+// first. Units inside its box are immune: rounds at the ground leave from
+// the wall facing the target, not the centre.
 const SUPER_W:        u16 = 40;
 const SUPER_RANGE:    u16 = 200;
 const SUPER_RATE_BASE: u8 = 30;           // frames between rounds, empty
@@ -612,7 +616,6 @@ fn struct_collide_one(m: u16, mk: u8, my: u16, i: u16) {
 // struct_bunker_capture - an infantryman of another side inside the
 // bunker's footprint takes it and is consumed. Engineers walk past.
 fn struct_bunker_capture(i: u16) {
-    if structs[i].hp == 0 { return; }
     let x: u16 = structs[i].x;
     for j in 0..UNIT_MAX {
         if units[j].kind as u8 == UnitType::Infantry as u8 {
@@ -621,6 +624,13 @@ fn struct_bunker_capture(i: u16) {
                 if ux + UNIT_MAN_W > x + 8 {
                     if ux < x + BUNKER_W - 8 {
                         struct_set_owner(i, units[j].owner);
+                        // A shelled-out bunker is still taken, and the man
+                        // who takes it brings it back: full strength, and
+                        // the balloon regrows on its usual countdown.
+                        if structs[i].hp == 0 {
+                            structs[i].hp = struct_stats[StructKind::Bunker as u16].max_hp;
+                            structs[i].t = BALLOON_REGROW;
+                        }
                         unit_free(j);
                         return;
                     }
@@ -656,18 +666,14 @@ fn struct_bunker_tick(i: u16) {
     }
 }
 
-// struct_tank_target - is a standing turret, bunker or manned super
-// bunker of the other side within *range* ahead of a tank at *x*?
-// Neutral buildings are left alone: a fallen turret is nobody's and fires
-// at nobody, a neutral bunker is the infantry's job, and an empty super
-// bunker has nobody to shell out of it. The gap is measured between the two
-// boxes, so a bunker and a turret come into reach at the same distance.
-//
-// Eight idle tanks sweep every sixteen frames, so this walks the sorted
-// pool from the tank's own end for the one building nearest ahead and
-// asks only it, rather than asking every turret and bunker. (A `while`
-// run off the end rather than `break`, per the entity-loop rule.)
-far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
+// struct_ahead - the building nearest ahead of a unit at *x* facing its
+// side's way, if the gap between the two boxes is under *range*; else
+// STRUCT_MAX. Walks the sorted pool from the unit's own end - the first
+// building east of a player's, the last west of an enemy's - so it asks
+// one building, not every one. Eight idle tanks sweep every sixteen
+// frames, and the riflemen too. (A `while` run off the end rather than
+// `break`, per the entity-loop rule.)
+fn struct_ahead(x: u16, mine: u8, range: u16) -> u16 {
     let mut found: u16 = STRUCT_MAX;
     let mut gap: u16 = 0;
     let mut n: u16 = 0;
@@ -684,8 +690,6 @@ far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
             }
         }
     } else {
-        // From the east end, so an enemy tank's walk is as short as a
-        // player's: the buildings still ahead of it, plus one.
         n = struct_count;
         while n > 0 {
             n = n - 1;
@@ -697,8 +701,18 @@ far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
             }
         }
     }
+    if gap >= range { return STRUCT_MAX; }
+    return found;
+}
+
+// struct_tank_target - is a standing turret, bunker or manned super
+// bunker of the other side within *range* ahead of a tank at *x*?
+// Neutral buildings are left alone: a fallen turret is nobody's and fires
+// at nobody, a neutral bunker is the infantry's job, and an empty super
+// bunker has nobody to shell out of it.
+far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
+    let found: u16 = struct_ahead(x, mine, range);
     if found == STRUCT_MAX { return 0; }
-    if gap >= range { return 0; }
     if structs[found].hp == 0 { return 0; }
     let owner: u8 = structs[found].owner;
     if owner == mine || owner == SIDE_NONE { return 0; }
@@ -707,6 +721,25 @@ far fn struct_tank_target(x: u16, mine: u8, range: u16) -> u8 {
     // A manned super bunker is its garrison's; a shell puts a man out.
     if k == StructKind::Super as u8 { return 1; }
     return 0;
+}
+
+// struct_rifle_target - a standing turret of the other side within
+// *range* ahead of a rifleman at *x*, or STRUCT_MAX. Infantry fire at
+// turrets for the roster's half point (one on the doubled scale); they
+// do not stop for one, so it is a few points on the way past.
+far fn struct_rifle_target(x: u16, mine: u8, range: u16) -> u16 {
+    let found: u16 = struct_ahead(x, mine, range);
+    if found == STRUCT_MAX { return STRUCT_MAX; }
+    if structs[found].kind != StructKind::Turret as u8 { return STRUCT_MAX; }
+    if structs[found].hp == 0 { return STRUCT_MAX; }
+    let owner: u8 = structs[found].owner;
+    if owner == mine || owner == SIDE_NONE { return STRUCT_MAX; }
+    return found;
+}
+
+// struct_rifle_hit - a rifleman's shot against turret *i*.
+far fn struct_rifle_hit(i: u16) {
+    struct_turret_hit(i, TURRET_DMG_BULLET);
 }
 
 // struct_balloon_hit - gunfire against the balloon; down at zero.
@@ -785,6 +818,8 @@ fn struct_super_tick(i: u16) {
         structs[i].t = structs[i].t - 1;
         return;
     }
+    structs[i].t = SUPER_RATE_BASE - (structs[i].men << 2);   // four fewer per man
+
     // The player's airframe is the only one until phase 10; the bunker
     // shoots it unless the player holds the bunker.
     if structs[i].owner != SIDE_PLAYER {
@@ -794,9 +829,45 @@ fn struct_super_tick(i: u16) {
         if hx > bx { d = hx - bx; } else { d = bx - hx; }
         if d < SUPER_RANGE {
             struct_turret_fire(i, hx, heli_y + ((HELI_H >> 1) << 8));
+            return;
         }
     }
-    structs[i].t = SUPER_RATE_BASE - (structs[i].men << 2);   // four fewer per man
+
+    // Then the ground, for a manned bunker.
+    if structs[i].men == 0 { return; }
+    let j: u16 = struct_super_target(i);
+    if j < UNIT_MAX {
+        let x: u16 = structs[i].x;
+        let mut mx: u16 = x + SUPER_W;                // the wall facing it
+        let mut v: Q10 = BULLET_SPEED;
+        if units[j].x_px < x { mx = x; v = Q10(0) - BULLET_SPEED; }
+        muni_spawn(MUNI_BULLET, mx, (GROUND_Y - TURRET_MUZZLE) << 8, v, Q10(0),
+                   BULLET_LIFE, structs[i].owner);
+    }
+}
+
+// struct_super_target - the nearest unit of another side within reach of
+// the super bunker and outside its box, or UNIT_MAX. struct_gun_target
+// without the box: a unit standing in the doorway is not shot.
+fn struct_super_target(i: u16) -> u16 {
+    let x: u16 = structs[i].x;
+    let cx: u16 = x + (SUPER_W >> 1);
+    let mine: u8 = structs[i].owner;
+    let mut best: u16 = UNIT_MAX;
+    let mut best_d: u16 = SUPER_RANGE;
+    for j in 0..UNIT_MAX {
+        if units[j].lane != UNIT_NO_LANE {
+            if units[j].owner != mine {
+                let ux: u16 = units[j].x_px;
+                if ux + UNIT_W <= x || ux >= x + SUPER_W {
+                    let mut d: u16 = 0;
+                    if ux > cx { d = ux - cx; } else { d = cx - ux; }
+                    if d < best_d { best_d = d; best = j; }
+                }
+            }
+        }
+    }
+    return best;
 }
 
 // ---------------------------------------------------------------- base ---

@@ -157,19 +157,21 @@ expect_colour boot "33,49,115" 40
 #
 # Recalibrated in phase 3. These figures were set against the 4 px/frame
 # focus_move stand-in; the camera now follows the helicopter's centre, which
-# accelerates up to 5 px/frame, so every moving case travels further. The
-# relation still holds exactly - at cam_r240 the airframe is at 1221, so the
-# focus is 1237 and the camera settles at 1237 - 128 - 8 = 1101 = $044D.
+# accelerates up to 5 px/frame, so every moving case travels further - and
+# since the inertia rework the centre is led by vx/8 (design.md's lookahead).
+# The relation still holds exactly - at cam_r240 the airframe is at 1221
+# doing 312/64 px/frame, so the focus is 1221 + 16 + 39 = 1276 and the
+# camera settles at 1276 - 128 - 8 = 1140 = $0474.
 # ---------------------------------------------------------------------------
 CAM=$(ramaddr camera_x)
 if [ -z "$CAM" ]; then
     echo "FAIL cam:addr (camera_x not found in build/main.asm)"; fail=$((fail+1))
 else
     run_case cam_rest   "shot"                        --check-mem16 0x$CAM=0x0000
-    run_case cam_r30    "wait20,right30,shot"         --check-mem16 0x$CAM=0x0005
-    run_case cam_r120   "wait20,right120,shot"        --check-mem16 0x$CAM=0x01C3
-    run_case cam_r240   "wait20,right240,shot"        --check-mem16 0x$CAM=0x041B
-    run_case cam_back   "wait20,right240,left90,shot" --check-mem16 0x$CAM=0x03EA
+    run_case cam_r30    "wait20,right30,shot"         --check-mem16 0x$CAM=0x005A
+    run_case cam_r120   "wait20,right120,shot"        --check-mem16 0x$CAM=0x021C
+    run_case cam_r240   "wait20,right240,shot"        --check-mem16 0x$CAM=0x0474
+    run_case cam_back   "wait20,right240,left90,shot" --check-mem16 0x$CAM=0x032D
 fi
 
 # Four layers at four rates, and eight equal HDMA ground bands.
@@ -331,11 +333,14 @@ else
     # One unit per 64 frames aloft.
     run_case fuel_burn "wait20,right240,shot" --check-mem 0x$FUEL=0x60
 
-    # Dry tank: gravity is allowed in exactly two places in the plan and this
-    # is one. The airframe sinks to the floor with no input at all, and open
-    # ground is not a deck, so it must not read as landed. ~7200 frames.
-    run_case fuel_dry "wait7200,shot" --check-mem 0x$FUEL=0x00 \
-                                      --check-mem16 0x$HY=0x9800 \
+    # Dry tank: gravity is allowed in exactly one place in the plan and this
+    # is it. The airframe sinks with no input at all, and open ground is not
+    # a deck: touching it on a dead stick is a crash landing - a life gone,
+    # and by 7200 frames the next airframe is up at hover height with a
+    # full tank less the few units it has burned since.
+    LIVES=$(ramaddr heli_lives)
+    run_case fuel_dry "wait7200,shot" --check-mem 0x$LIVES=0x03 \
+                                      --check-mem16 0x$HY=0x6000 \
                                       --check-mem 0x$LAND=0x00
 fi
 
@@ -403,11 +408,12 @@ else
     # here - 0.951, accepted as the stress case, and what the pair pins.
     # The tanks' building sweep (a walk of the sorted structure pool from
     # the tank's own end, every sixteen idle frames) is another 50, and
-    # the riflemen's sweep and pose 23 more: 0.961.
+    # the riflemen's sweep and pose 23 more, the camera lookahead and the
+    # super bunker's ground gun 4, the riflemen's turret fallback 20: 0.955.
     # The next cycles are in unit_advance's call and the traffic scan.
     EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0DC4
+                                                      --check-mem16 0x$FLOOP=0x0DAC
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -486,21 +492,29 @@ else
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact, at frame 421 of this climb: a life gone, the airframe
     # back at the start but hidden for HELI_RESPAWN (120) frames, and the
-    # camera - 1906 at the loss - panning home at 1906/120+1 = 16 px a
-    # frame on top of the follow's 6. Sixty frames on it is 586 and the
+    # camera - 1945 at the loss, the lookahead included - panning home at
+    # 1945/120+1 = 17 px a frame on top of the follow's 6. Sixty frames on
+    # it is 565 and the
     # canopy colour is nowhere on screen (the screenshot trails the OAM
     # shadow by two frames, so the kill frame itself still shows it); at
-    # 120 the airframe is back on the start, the view with it, and the
-    # stick works again: ten frames of thrust from rest is 13 px.
+    # 120 the view is home and the next airframe starts rising out of the
+    # ground at the start - a pixel a frame from the ground line (168) to
+    # hover height (96), behind the dirt until it has cleared it, the stick
+    # dead meanwhile; at 192 it is there and the stick works again: ten
+    # frames of thrust from rest is 13 px.
     HX=$(ramaddr heli_x_px)
     DEAD=$(ramaddr heli_dead)
+    RISE=$(ramaddr heli_rising)
     run_case balloon_kill "up20,right401,shot" --check-mem 0x$LIVES=0x03 \
-        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x78 --check-mem16 0x$CAM=0x0772
+        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x78 --check-mem16 0x$CAM=0x0799
     run_case balloon_pan "up20,right401,wait60,shot" \
-        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x3C --check-mem16 0x$CAM=0x024A
+        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x3C --check-mem16 0x$CAM=0x0235
     expect_snes_none balloon_pan "14,22,28"                         # canopy
-    run_case balloon_respawn "up20,right401,wait120,right10,shot" \
-        --check-mem16 0x$HX=0x004D --check-mem 0x$DEAD=0x00 --check-mem16 0x$CAM=0x0000
+    run_case balloon_rise "up20,right401,wait120,right10,shot" \
+        --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x00 --check-mem 0x$RISE=0x01 \
+        --check-mem16 0x$HY=0x9E00 --check-mem16 0x$CAM=0x0000
+    run_case balloon_respawn "up20,right401,wait192,right10,shot" \
+        --check-mem16 0x$HX=0x004D --check-mem 0x$RISE=0x00 --check-mem16 0x$HY=0x6000
     expect_snes balloon_respawn "14,22,28" 0.02
 
     # An enemy infantryman walking into the neutral bunker at x=5120 (level
@@ -526,11 +540,13 @@ else
     # player's turret's reach, so nothing else can be shooting it - and
     # four hits of 2 finish its 8 hp. The column's tank (slot 6) arrives
     # on their heels and is not scratched: rifle_dmg against armour is 0,
-    # and its 25 hp say so while its shells start on the men. A launcher
-    # fires at nothing on the ground, so the men it met are unhurt.
-    run_case rifle_fire "r3,wait3,x3,wait9700,shot" --timeout 400000 \
+    # and its 25 hp say so while its shells start on the front men. A
+    # launcher fires at nothing on the ground, so the last man is unhurt.
+    # The wait is in vblanks and the loop drops a few percent of them, so
+    # the meeting drifts ~60 frames later per slower build; hence the slack.
+    run_case rifle_fire "r3,wait3,x3,wait9800,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(at "$UK" 6)=0x01 \
-        --check-mem 0x$(hp 6)=0x19 --check-mem 0x$(hp 1)=0x05
+        --check-mem 0x$(hp 6)=0x19 --check-mem 0x$(hp 4)=0x05
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -549,9 +565,12 @@ else
 
     # The super bunker (level entry 7, dead centre) starts empty and nobody's.
     # The second enemy infantryman to walk the field - the first is spent on
-    # the bunker at 5120 - goes inside: one man, and it is the enemy's.
+    # the bunker at 5120 - goes inside: one man, and it is the enemy's. He
+    # arrives around frame 16500, but the wait is in vblanks and the loop
+    # drops 2-3% of them under the enemy column, so the margin here is what
+    # keeps a build a few hundred cycles slower from failing the case.
     SMEN=$(ramaddr structs__men)
-    run_case super_manned "wait16200,shot" --timeout 500000 \
+    run_case super_manned "wait18000,shot" --timeout 600000 \
         --check-mem 0x$(at "$SMEN" 7)=0x01 --check-mem 0x$(at "$SOWN" 7)=0x01
 fi
 

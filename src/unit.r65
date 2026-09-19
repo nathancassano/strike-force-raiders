@@ -392,7 +392,8 @@ fn unit_target(self_i: u16, range: u16) -> u16 {
 // The rifle. A man's shot is not a munition: the sweep that finds a
 // target lands the damage there and then, and the pose flag shows the
 // shot for the one frame it is drawn. The damage is the target kind's
-// rifle_dmg, which is what keeps infantry from scratching a tank.
+// rifle_dmg, which is what keeps infantry from scratching a tank; an
+// enemy turret is the fallback target, for the roster's half point.
 impl Infantry {
     fn fire(self) {
         self.pose = 0;
@@ -400,12 +401,20 @@ impl Infantry {
             self.reload = self.reload - 1;
         } else {
             let j: u16 = unit_target(self, INF_RANGE);
-            if j >= UNIT_MAX {
-                self.reload = INF_SCAN;
-            } else {
+            if j < UNIT_MAX {
                 self.reload = INF_RELOAD;
                 self.pose = 1;
                 unit_hit(j, unit_stats[units[j].kind as u16].rifle_dmg);
+            } else {
+                // No unit: an enemy turret ahead takes the shot instead.
+                let t: u16 = struct_rifle_target(units[self].x_px, units[self].owner, INF_RANGE);
+                if t < STRUCT_MAX {
+                    self.reload = INF_RELOAD;
+                    self.pose = 1;
+                    struct_rifle_hit(t);
+                } else {
+                    self.reload = INF_SCAN;
+                }
             }
         }
     }

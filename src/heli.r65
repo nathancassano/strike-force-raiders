@@ -116,6 +116,7 @@ const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 #[lowram] static mut heli_bomb_t: u8;
 #[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
 #[lowram] static mut heli_dead:   u8;     // frames until the next airframe; 0 = flying
+#[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
 #[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized at the loss
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
@@ -130,13 +131,18 @@ const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
 // distance over the delay, rounded up, so the far end of the world takes
 // the whole delay and anywhere nearer arrives with frames to spare.
 const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
+// Then it rises out of the ground at the start: from the ground line up
+// to hover height at a pixel a frame, drawn behind the ground band until
+// it has cleared it, and under nobody's control.
+const HELI_Y_HOVER: u16 = 96 << 8;
+const HELI_RISE:    u16 = 1 << 8;         // px/frame, 8.8
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
 far fn heli_init() {
     heli_x_px = 64;
     heli_x_sub = 0;
-    heli_y = 96 << 8;
+    heli_y = HELI_Y_HOVER;
     heli_vx = Q10(0);
     heli_vy = Q10(0);
     heli_gun = HELI_GUN_MAX;
@@ -151,6 +157,7 @@ far fn heli_init() {
     heli_bomb_t = HELI_BOMB_RELOAD;
     heli_hp = HELI_HP_MAX;
     heli_dead = 0;
+    heli_rising = 0;
     heli_cam_step = 0;
 }
 
@@ -170,7 +177,7 @@ far fn heli_lost() {
 // heli_collide - enemy rounds against the airframe's box, and the
 // barrage balloons, which end it outright.
 far fn heli_collide() {
-    if heli_dead > 0 { return; }          // nothing there to hit
+    if heli_dead > 0 || heli_rising != 0 { return; }   // nothing there to hit
     let hx: u16 = heli_x_px;
     let hy: u16 = heli_y >> 8;
     if struct_balloon_at(hx, hy) != 0 {
@@ -244,7 +251,7 @@ far fn heli_burn() {
 // direction rather than the current velocity, so it does not flip back to
 // neutral while the airframe coasts to a stop.
 far fn heli_fire(held: u16, trig: u16) {
-    if heli_dead > 0 { return; }
+    if heli_dead > 0 || heli_rising != 0 { return; }
     if heli_gun_cd > 0 {
         heli_gun_cd = heli_gun_cd - 1;
     }
@@ -385,8 +392,21 @@ far fn heli_update(held: u16) {
         // Lost: the stick does nothing, and the view goes home ahead of
         // the next airframe. heli_init has already put it on the start.
         heli_dead = heli_dead - 1;
+        if heli_dead == 0 {
+            heli_rising = 1;
+            heli_y = GROUND_Y << 8;
+        }
         focus_x = heli_x_px + (HELI_W >> 1);
         camera_pan(heli_cam_step);
+        return;
+    }
+    if heli_rising != 0 {
+        heli_y = heli_y - HELI_RISE;
+        if heli_y <= HELI_Y_HOVER {
+            heli_y = HELI_Y_HOVER;
+            heli_rising = 0;
+        }
+        focus_x = heli_x_px + (HELI_W >> 1);
         return;
     }
 
@@ -450,11 +470,29 @@ far fn heli_update(held: u16) {
                     heli_landed = 1;
                 }
             }
+            // A dead stick that meets open ground is a crash landing.
+            // A deck catches it - the one landing that refuels a dry tank.
+            if heli_fuel == 0 && heli_landed == 0 {
+                heli_lost();
+                return;
+            }
         }
     }
 
-    // The camera follows the airframe's centre, not its left edge.
-    focus_x = heli_x_px + (HELI_W >> 1);
+    // The camera follows the airframe's centre, led by its velocity so
+    // the view opens up ahead of it: Armor Alley's lookahead of 0.4 of a
+    // half-screen at top speed, taken here as vx/8 - 40 px at 5 px/frame.
+    // `>>` is logical, so the sign is a branch. The deadzone in
+    // camera_update is what keeps a turn from snapping the view.
+    let mut f: u16 = heli_x_px + (HELI_W >> 1);
+    if heli_vx >= Q10(0) {
+        f = f + ((heli_vx.0 as u16) >> 3);
+        if f > WORLD_W { f = WORLD_W; }
+    } else {
+        let back: u16 = ((0 - heli_vx.0) as u16) >> 3;
+        if f > back { f = f - back; } else { f = 0; }
+    }
+    focus_x = f;
 }
 
 // heli_draw - place the two OBJ cells, camera-relative.
@@ -496,11 +534,16 @@ far fn heli_draw() {
 
     // Facing left mirrors the airframe. Both cells take the hflip bit and
     // swap places, otherwise the nose half would render on the tail side.
-    let mut attr: u16 = HELI_ATTR;
+    // Rising out of the ground it is drawn at OBJ priority 0 - behind
+    // every layer, so the ground band covers it - until its box has
+    // cleared the ground line.
+    let mut base: u16 = HELI_ATTR;
+    if heli_rising != 0 && heli_y + (HELI_H << 8) > (GROUND_Y << 8) { base = HELI_ATTR & 0x0FFF; }
+    let mut attr: u16 = base;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;
     if face != 0 {
-        attr = HELI_ATTR | 0x4000;        // OAM hflip
+        attr = base | 0x4000;             // OAM hflip
         near = tile + 2;
         far_ = tile;
     }

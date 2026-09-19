@@ -64,6 +64,15 @@ assets/gfx/bg%.chr: assets/src/bg%.bmp
 	@mkdir -p assets/gfx
 	$(R65X) bmp2chr $< -o $@ -b2 -p -t
 
+# The ground band's tilemap carries the per-tile priority bit (bit 13). In
+# Mode 0 a priority-0 sprite still draws over a low-priority BG3/BG4, so
+# without it the airframe rising out of the ground (heli.r65) would sit on
+# top of the dirt instead of under it. Transparent pixels are unaffected.
+assets/gfx/bg4.chr: assets/src/bg4.bmp
+	@mkdir -p assets/gfx
+	$(R65X) bmp2chr $< -o $@ -b2 -p -t
+	python3 -c "p='assets/gfx/bg4.tilemap'; d=bytearray(open(p,'rb').read()); d[1::2]=bytes(b|0x20 for b in d[1::2]); open(p,'wb').write(d)"
+
 # -f writes the whole bitmap; without it bmp2chr stops at the size of any
 # existing destination file, silently truncating the sheet when it grows.
 assets/gfx/obj.chr: assets/src/obj.bmp
