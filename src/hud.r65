@@ -28,6 +28,17 @@ const GLYPH_RBRACKET: u16 = 12;
 const GLYPH_ICON:     u16 = 13;           // + Order, in ring order
 // Capitals on the row below: tile (HUD_LETTER_ROW * 32 + c - 'A').
 const HUD_LETTER_ROW: u16 = 29;
+// And the order overlay's box on the row below that, in this order.
+const HUD_BOX_ROW: u16 = 30;
+const BOX_TL: u16 = 0;
+const BOX_TR: u16 = 1;
+const BOX_BL: u16 = 2;
+const BOX_BR: u16 = 3;
+const BOX_T:  u16 = 4;
+const BOX_B:  u16 = 5;
+const BOX_L:  u16 = 6;
+const BOX_R:  u16 = 7;
+const BOX_CURSOR: u16 = 8;
 
 // Row 0 layout, in tile columns.
 const HUD_COL_FUNDS: u16 = 1;             // "$NN"
@@ -69,6 +80,8 @@ far fn hud_init() {
     hud_sel = 0xFF;
     hud_dirty = 0;
     hud_msg_dirty = 0;
+    hud_ov_dirty = 0;
+    hud_ov_shown = 0;
     hud_update();
 }
 
@@ -132,8 +145,123 @@ far fn hud_message(text: *u8, len: u16) {
     hud_msg_dirty = 1;
 }
 
+// -------------------------------------------------------------- overlay ---
+// The order dialog, shown while L is held: a box on map rows OV_ROW.. of
+// BG1 - under the strip, over the sky - one line per unit type with its
+// icon, name and cost, the highlighted line marked by a cursor. The rows
+// are composed into one 8-row shadow and DMA'd as a block when it changes:
+// once to show, once per cursor move, once to clear. Rows 3-10 are
+// transparent in the art, so clearing writes the transparent tile back;
+// row 10 is also the battle-over line's, which is why game_over hides the
+// overlay before it writes.
+//
+// Line layout, 18 columns from OV_COL: border, cursor, icon, space, an
+// eight-letter name, space, '$', two digits, space, border.
+const OV_ROW:  u16 = 3;
+const OV_ROWS: u16 = 8;                   // border + six lines + border
+const OV_COL:  u16 = 7;
+const OV_W:    u16 = 18;
+
+// Names in ring order, eight capitals each padded with spaces.
+static ov_names: [u8; 48] = "VAN     LAUNCHERTANK    INFANTRYENGINEERHELI    ";
+
+#[lowram] static mut hud_ov:       [u16; 256];   // OV_ROWS map rows
+#[lowram] static mut hud_ov_dirty: u8;
+#[lowram] static mut hud_ov_shown: u8;
+#[lowram] static mut hud_ov_sel:   u8;           // the line the cursor is on
+
+// hud_box - the tile word for box piece *n*.
+fn hud_box(n: u16) -> u16 {
+    let i: u16 = ((HUD_BOX_ROW << 5) + n) << 1;
+    return (BG1_MAP[i] as u16) | ((BG1_MAP[i + 1] as u16) << 8);
+}
+
+// hud_ov_cursor - put *tile* in the cursor column of line *k*.
+fn hud_ov_cursor(k: u16, tile: u16) {
+    hud_ov[((k + 1) << 5) + OV_COL + 1] = tile;
+}
+
+// hud_ov_compose - the whole box, cursor on the current selection.
+fn hud_ov_compose() {
+    let clear: u16 = hud_clear_tile();
+    for c in 0..256 {
+        hud_ov[c] = clear;
+    }
+    // Top and bottom edges.
+    hud_ov[OV_COL] = hud_box(BOX_TL);
+    hud_ov[OV_COL + OV_W - 1] = hud_box(BOX_TR);
+    let bot: u16 = (OV_ROWS - 1) << 5;
+    hud_ov[bot + OV_COL] = hud_box(BOX_BL);
+    hud_ov[bot + OV_COL + OV_W - 1] = hud_box(BOX_BR);
+    for c in 1..(OV_W - 1) {
+        hud_ov[OV_COL + c] = hud_box(BOX_T);
+        hud_ov[bot + OV_COL + c] = hud_box(BOX_B);
+    }
+    // One line per entry.
+    for k in 0..(ORDER_RING as u16) {
+        let at: u16 = ((k + 1) << 5) + OV_COL;
+        hud_ov[at] = hud_box(BOX_L);
+        hud_ov[at + OV_W - 1] = hud_box(BOX_R);
+        hud_ov[at + 1] = HUD_BLANK;
+        hud_ov[at + 2] = hud_glyph(GLYPH_ICON + k);
+        hud_ov[at + 3] = HUD_BLANK;
+        for c in 0..8 {
+            // Padding is the strip's navy, not a hole in the box.
+            let ch: u8 = ov_names[(k << 3) + c];
+            let mut t: u16 = HUD_BLANK;
+            if ch != 0x20 { t = hud_letter(ch); }
+            hud_ov[at + 4 + c] = t;
+        }
+        hud_ov[at + 12] = HUD_BLANK;
+        hud_ov[at + 13] = hud_glyph(GLYPH_DOLLAR);
+        let cost: u8 = order_stats[k].cost;
+        let tens: u8 = div8(cost, 10);
+        hud_ov[at + 14] = HUD_BLANK;                   // no leading zero
+        if tens != 0 { hud_ov[at + 14] = hud_glyph(GLYPH_DIGIT + (tens as u16)); }
+        hud_ov[at + 15] = hud_glyph(GLYPH_DIGIT + ((cost - mul8(tens, 10)) as u16));
+        hud_ov[at + 16] = HUD_BLANK;
+    }
+    hud_ov_sel = order_sel;
+    hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
+    hud_ov_dirty = 1;
+}
+
+// hud_overlay - one tick: *want* is whether L is down. Shows, follows the
+// selection, and hides; costs nothing on a frame where none of that moved.
+far fn hud_overlay(want: u8) {
+    if want != 0 {
+        if hud_ov_shown == 0 {
+            hud_ov_shown = 1;
+            hud_ov_compose();
+        } else {
+            if hud_ov_sel != order_sel {
+                hud_ov_cursor(hud_ov_sel as u16, HUD_BLANK);
+                hud_ov_sel = order_sel;
+                hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
+                hud_ov_dirty = 1;
+            }
+        }
+    } else {
+        if hud_ov_shown != 0 { hud_overlay_hide(); }
+    }
+}
+
+// hud_overlay_hide - the rows back to transparent.
+far fn hud_overlay_hide() {
+    hud_ov_shown = 0;
+    let clear: u16 = hud_clear_tile();
+    for c in 0..256 {
+        hud_ov[c] = clear;
+    }
+    hud_ov_dirty = 1;
+}
+
 // hud_flush - push the rows to VRAM. Vblank only.
 far fn hud_flush() {
+    if hud_ov_dirty != 0 {
+        hud_ov_dirty = 0;
+        dma_copy_vram(1, &hud_ov as far *u8, VRAM_BG1 + (OV_ROW << 5), 512);
+    }
     if hud_dirty != 0 {
         hud_dirty = 0;
         dma_copy_vram(1, &hud_row as far *u8, VRAM_BG1, 64);

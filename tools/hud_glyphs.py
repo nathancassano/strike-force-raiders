@@ -79,6 +79,23 @@ LETTERS = {
     'Z': ["######..", ".....#..", "....#...", "...#....", "..#.....", ".#......", "######..", "........"],
 }
 
+# The order overlay's box, on the row below the letters (BOX_ROW), in the
+# order hud.r65's BOX_* constants name: the four corners, the top/bottom
+# edge, the left/right edge, and the cursor that marks the highlighted
+# line. Drawn white on the strip's navy so they compose with the glyphs.
+BOX_ROW = 30
+BOX = [
+    ["........", ".#######", ".#......", ".#......", ".#......", ".#......", ".#......", ".#......"],  # top-left
+    ["........", "#######.", "......#.", "......#.", "......#.", "......#.", "......#.", "......#."],  # top-right
+    [".#......", ".#......", ".#......", ".#......", ".#......", ".#......", ".#######", "........"],  # bottom-left
+    ["......#.", "......#.", "......#.", "......#.", "......#.", "......#.", "#######.", "........"],  # bottom-right
+    ["........", "########", "........", "........", "........", "........", "........", "........"],  # top edge
+    ["........", "........", "........", "........", "........", "........", "########", "........"],  # bottom edge
+    [".#......", ".#......", ".#......", ".#......", ".#......", ".#......", ".#......", ".#......"],  # left edge
+    ["......#.", "......#.", "......#.", "......#.", "......#.", "......#.", "......#.", "......#."],  # right edge
+    ["........", ".#......", ".###....", ".#####..", ".###....", ".#......", "........", "........"],  # cursor
+]
+
 PIX = {'.': 1, '#': 2, '+': 3}
 
 
@@ -100,9 +117,11 @@ def main():
         stamp(px, col, rows)
     for col, letter in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
         stamp(px, col, LETTERS[letter], LETTER_ROW)
+    for col, rows in enumerate(BOX):
+        stamp(px, col, rows, BOX_ROW)
     im.save(BMP)
     print(f"{len(glyphs)} glyphs stamped on tile row {GLYPH_ROW}, "
-          f"26 letters on row {LETTER_ROW} of {BMP}")
+          f"26 letters on row {LETTER_ROW}, {len(BOX)} box tiles on row {BOX_ROW} of {BMP}")
 
 
 if __name__ == '__main__':
