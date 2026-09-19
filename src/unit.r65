@@ -99,7 +99,8 @@ const LAUNCHER_RANGE: u16 = 224;
 // never touched; it belongs to Tank now. The kinds with nothing of their
 // own are plain variants.
 #[soa] struct Tank     { reload: u8,      // frames until the main gun is ready
-                         hold:   u8 }     // 1 while a building is under fire
+                         hold:   u8,      // 1 while a building is under fire
+                         target: u8 }     // the last sweep's nearest opposing unit
 #[soa] struct Launcher { armed: u8 }      // 1 until its one missile is away
 #[soa] struct Infantry { reload: u8,      // frames until the rifle is ready
                          pose:   u8 }     // 1 on the frame a shot is fired
@@ -250,7 +251,7 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 // loaded; the other kinds carry nothing to initialise. A
                 // helicopter is not a ground unit and never reaches here.
                 match kind {
-                    Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0, hold: 0 }); }
+                    Order::Tank     => { units[i].kind = UnitType::Tank(Tank { reload: 0, hold: 0, target: UNIT_MAX as u8 }); }
                     Order::Van      => { units[i].kind = UnitType::Van; }
                     Order::Launcher => { units[i].kind = UnitType::Launcher(Launcher { armed: 1 }); }
                     Order::Infantry => { units[i].kind = UnitType::Infantry(Infantry { reload: 0, pose: 0 }); }
@@ -313,7 +314,8 @@ far fn unit_count(kind: Order, owner: u8) -> u8 {
 // as a column. At the line it is the front itself - an advancing column
 // meeting an opposing one halts and fights instead of the two sliding
 // through each other. So this deliberately does not care whose unit is
-// ahead, only that something is.
+// ahead, only that something is. (A tank is the exception - see
+// unit_blocked_tank.)
 fn unit_blocked(self_i: u16) -> u8 {
     let x: u16 = units[self_i].x_px;
     let lane: u8 = units[self_i].lane;
@@ -333,6 +335,39 @@ fn unit_blocked(self_i: u16) -> u8 {
             } else {
                 if x > units[j].x_px {
                     if x - units[j].x_px < reach { return 1; }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// unit_blocked_tank - unit_blocked for a tank: the same test, except that
+// a same-lane hit that is one of the other side's men does not stop it -
+// a tank drives over men (unit_fire's crush). A copy rather than a flag
+// in unit_blocked: any extra shape in that function cost the hot loop
+// its register-promoted counter (measured: 340 frames in 3665).
+fn unit_blocked_tank(self_i: u16) -> u8 {
+    let x: u16 = units[self_i].x_px;
+    let lane: u8 = units[self_i].lane;
+    let mine: u8 = units[self_i].owner;
+    let reach: u16 = UNIT_W + UNIT_GAP;
+
+    for j in 0..UNIT_MAX {
+        if units[j].lane == lane {
+            if mine == SIDE_PLAYER {
+                if units[j].x_px > x {
+                    if units[j].x_px - x < reach {
+                        if units[j].owner == mine { return 1; }
+                        if units[j].kind as u8 < UnitType::Infantry as u8 { return 1; }
+                    }
+                }
+            } else {
+                if x > units[j].x_px {
+                    if x - units[j].x_px < reach {
+                        if units[j].owner == mine { return 1; }
+                        if units[j].kind as u8 < UnitType::Infantry as u8 { return 1; }
+                    }
                 }
             }
         }
@@ -439,7 +474,9 @@ fn unit_fire(i: u16) {
                 t.reload = t.reload - 1;
             } else {
                 t.hold = struct_tank_target(units[i].x_px, units[i].owner, TANK_RANGE);
-                if t.hold == 0 && unit_target(i, TANK_RANGE) >= UNIT_MAX {
+                let j: u16 = unit_target(i, TANK_RANGE);
+                t.target = j as u8;
+                if t.hold == 0 && j >= UNIT_MAX {
                     // Nothing in reach. Wait before sweeping the pool again
                     // rather than paying for a scan on every frame of an
                     // empty field.
@@ -457,6 +494,25 @@ fn unit_fire(i: u16) {
                                   + 4) << 8;
                     muni_spawn(MUNI_SHELL, mx, y, v, Q10(0), SHELL_LIFE,
                                units[i].owner);
+                }
+            }
+            if t.target < UNIT_MAX as u8 {
+                let j: u16 = t.target as u16;
+                if units[j].kind as u8 == UnitType::Free as u8 {
+                    // The target fell (a shell, or these tracks) with the
+                    // gun still reloading: pick the next one now rather
+                    // than drive through a column blind for 90 frames.
+                    t.target = unit_target(i, TANK_RANGE) as u8;
+                } else {
+                    if units[j].owner != units[i].owner
+                       && units[j].kind as u8 >= UnitType::Infantry as u8 {
+                        let x: u16 = units[i].x_px;
+                        let ux: u16 = units[j].x_px;
+                        if ux + UNIT_MAN_W > x && ux < x + UNIT_W {
+                            unit_free(j);
+                            t.target = unit_target(i, TANK_RANGE) as u8;
+                        }
+                    }
                 }
             }
         }
@@ -523,7 +579,7 @@ far fn unit_update() {
         let i: u16 = unit_slice;
         match units[i].kind {
             UnitType::Free    => {}
-            UnitType::Tank(t) => { units[i].block = unit_blocked(i) | t.hold; }
+            UnitType::Tank(t) => { units[i].block = unit_blocked_tank(i) | t.hold; }
             _                 => { units[i].block = unit_blocked(i); }
         };
         unit_slice = (unit_slice + 1) & UNIT_MASK;
