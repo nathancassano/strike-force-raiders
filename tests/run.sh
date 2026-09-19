@@ -303,31 +303,47 @@ fi
 #
 # The player's deck spans world x 1024..1071, so the airframe's centre has
 # to be inside that window - x 1008..1055 - when it touches the floor.
+# Since the airlift, a powered descent lands anywhere on the ground; only
+# a deck rearms (heli_on_pad). Touching down faster than HELI_CRASH_VY
+# (2.5 px/frame) is a crash, so every landing here eases off: 30 frames
+# of Down from hover height and a coast arrives under it; 32 does not,
+# and a full-stick descent hits at 4. The flight figures are the inertia
+# rework's: right180 and a 60-frame coast puts the airframe at x 1014.
 # ---------------------------------------------------------------------------
 LAND=$(ramaddr heli_landed)
+ONPAD=$(ramaddr heli_on_pad)
 FUEL=$(ramaddr heli_fuel)
 if [ -z "$LAND" ] || [ -z "$FUEL" ]; then
     echo "FAIL pad:addr (heli_landed/heli_fuel not found in build/main.asm)"
     fail=$((fail+1))
 else
-    # Descending onto the deck lands; stopping short or overshooting does not.
-    run_case pad_land      "wait20,right190,down80,shot"  --check-mem 0x$LAND=0x01
-    run_case pad_short     "wait20,right120,down80,shot"  --check-mem 0x$LAND=0x00 --check-mem16 0x$HY=0x9800
-    run_case pad_over      "wait20,right210,down80,shot" --check-mem 0x$LAND=0x00
+    # Descending onto the deck lands on it; stopping short (x 714) or
+    # overshooting (x 1314) lands on open ground - down, but no deck.
+    run_case pad_land      "wait20,right180,wait60,down30,wait40,shot"  --check-mem 0x$LAND=0x01 \
+                                                                 --check-mem 0x$ONPAD=0x01
+    run_case pad_short     "wait20,right120,wait60,down30,wait40,shot"  --check-mem 0x$LAND=0x01 \
+                                     --check-mem 0x$ONPAD=0x00 --check-mem16 0x$HY=0x9800
+    run_case pad_over      "wait20,right240,wait60,down30,wait40,shot"  --check-mem 0x$LAND=0x01 \
+                                                                 --check-mem 0x$ONPAD=0x00
 
-    # "Land only while descending." Reaching the floor first and then sliding
-    # sideways onto the deck arrives with vy already zeroed by the clamp, so
-    # it must not count - this is the case a naive overlap test gets wrong.
-    run_case pad_slide     "wait20,down80,right190,shot"  --check-mem 0x$LAND=0x00
+    # A landed airframe does not slide: down at the start, then held right
+    # for 190 frames, it is still at x 64 on open ground, not on the deck.
+    run_case pad_slide     "wait20,down30,wait40,right190,shot"  --check-mem 0x$LAND=0x01 \
+                                     --check-mem 0x$ONPAD=0x00 --check-mem16 0x$HX=0x0040
 
-    run_case pad_takeoff   "wait20,right190,down80,up20,shot" --check-mem 0x$LAND=0x00
+    run_case pad_takeoff   "wait20,right180,wait60,down30,wait40,up20,shot" --check-mem 0x$LAND=0x00
+
+    # Too fast: a full-stick descent onto the deck is a crash - a life gone.
+    LIVES=$(ramaddr heli_lives)
+    run_case pad_crash     "wait20,right180,wait60,down80,shot" --check-mem 0x$LIVES=0x03 \
+                                                                --check-mem 0x$LAND=0x00
 
     # Full rearm: fuel back to 100, and the reload countdowns give back rounds
     # at 20 frames each and bombs at 10 while the airframe sits.
-    run_case pad_rearm "wait20,b60,a1,right190,down80,wait120,shot" \
+    run_case pad_rearm "wait20,b60,a1,right180,wait60,down30,wait40,wait120,shot" \
                                              --check-mem 0x$LAND=0x01 \
                                              --check-mem 0x$FUEL=0x64 \
-                                             --check-mem 0x$GUN=0x3E \
+                                             --check-mem 0x$GUN=0x3D \
                                              --check-mem 0x$BOMBS=0x0A
 
     # One unit per 64 frames aloft.
@@ -409,11 +425,15 @@ else
     # The tanks' building sweep (a walk of the sorted structure pool from
     # the tank's own end, every sixteen idle frames) is another 50, and
     # the riflemen's sweep and pose 23 more, the camera lookahead and the
-    # super bunker's ground gun 4, the riflemen's turret fallback 20: 0.955.
+    # super bunker's ground gun 4, the riflemen's turret fallback 20, the
+    # airlift's calls and the L overlay mask 5, and the eight order dialogs
+    # this movie opens and closes (a compose and two 512-byte flushes each)
+    # 12, the tanks' crush check (one remembered unit a frame) 31: 0.942.
+    # Steady-state the dialog costs nothing.
     # The next cycles are in unit_advance's call and the traffic scan.
-    EIGHT_TANKS="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3"
+    EIGHT_TANKS="l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3"
     run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0DAC
+                                                      --check-mem16 0x$FLOOP=0x0D7C
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -425,8 +445,8 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 7 - economy and ordering.
 #
-# Funds grow with the helicopter's distance from the west edge; L/R walk the
-# order ring and X buys. Every check is on the ROM's own state: the purse,
+# Funds grow with the helicopter's distance from the west edge; with L held,
+# Left/Right walk the order ring and A buys (X is the paratroop drop). Every check is on the ROM's own state: the purse,
 # the selection, and what came out of the base.
 # ---------------------------------------------------------------------------
 FUNDS=$(ramaddr funds)
@@ -443,23 +463,23 @@ else
 
     # One press buys one tank: it comes out of the player's base at x=512
     # marching east, and the cost comes off at once.
-    run_case order_tank "x3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
+    run_case order_tank "l+a3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
         --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$UO=0x00 --check-mem16 0x$UX=0x0211
 
-    # R moves the ring to infantry; one order is five men, ten frames apart,
+    # Right moves the ring to infantry; one order is five men, ten frames apart,
     # all out within the minute and the emitter idle again.
-    run_case order_infantry "r3,wait3,x3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
+    run_case order_infantry "l+right3,wait3,l+a3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
         --check-mem 0x$(at "$UK" 0)=0x04 --check-mem 0x$(at "$UK" 4)=0x04 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$QMEN=0x00
 
-    # L twice wraps to the van. Its cap is six: the seventh press is refused
+    # Left twice wraps to the van. Its cap is six: the seventh press is refused
     # and costs nothing, so the purse is 32 - 6*2.
-    SEVEN="x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3,wait3,x3"
-    run_case order_cap "l3,wait3,l3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
+    SEVEN="l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3"
+    run_case order_cap "l+left3,wait3,l+left3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
         --check-mem 0x$SEL=0x00 --check-mem 0x$(at "$UK" 5)=0x02
 
-    # R three times from the tank is the helicopter: an extra life for 20.
-    run_case order_heli "r3,wait3,r3,wait3,r3,wait3,x3,wait10,shot" \
+    # Right three times from the tank is the helicopter: an extra life for 20.
+    run_case order_heli "l+right3,wait3,l+right3,wait3,l+right3,wait3,l+a3,wait10,shot" \
         --check-mem 0x$FUNDS=0x0C --check-mem 0x$LIVES=0x05 --check-mem 0x$SEL=0x05
 
     # Income. A push to the far end and a wait there pays out; the exact
@@ -485,9 +505,11 @@ else
     # approaching airframe: 20 hp becomes 14 on the way in.
     run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
 
-    # Descend to its height and fire back: a round is a point off its 62.
-    run_case turret_gunfire "wait20,right1290,down40,wait10,b90,shot" \
-        --check-mem 0x$(at "$SHP" 12)=0x2F --check-mem 0x$HHP=0x09
+    # Land in front of it and fire back: a round is a point off its 62 -
+    # eleven of the fifteen fired land in this time (the rest are still in
+    # flight or lost to its self-repair between), and its fire keeps coming.
+    run_case turret_gunfire "wait20,right1290,down30,wait40,b90,shot" \
+        --check-mem 0x$(at "$SHP" 12)=0x33 --check-mem 0x$HHP=0x0B
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact, at frame 421 of this climb: a life gone, the airframe
@@ -544,9 +566,15 @@ else
     # launcher fires at nothing on the ground, so the last man is unhurt.
     # The wait is in vblanks and the loop drops a few percent of them, so
     # the meeting drifts ~60 frames later per slower build; hence the slack.
-    run_case rifle_fire "r3,wait3,x3,wait9800,shot" --timeout 400000 \
+    run_case rifle_fire "l+right3,wait3,l+a3,wait9800,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(at "$UK" 6)=0x01 \
         --check-mem 0x$(hp 6)=0x19 --check-mem 0x$(hp 4)=0x05
+    # ... and a tank does not stop for the other side's men: it drives
+    # over them. Three hundred frames on, the same tank has rolled through
+    # the column - all five slots free, the tank untouched and past them.
+    run_case tank_crush "l+right3,wait3,l+a3,wait10100,shot" --timeout 400000 \
+        --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
+        --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(hp 6)=0x19
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -572,6 +600,59 @@ else
     SMEN=$(ramaddr structs__men)
     run_case super_manned "wait18000,shot" --timeout 600000 \
         --check-mem 0x$(at "$SMEN" 7)=0x01 --check-mem 0x$(at "$SOWN" 7)=0x01
+fi
+
+# ---------------------------------------------------------------------------
+# The order overlay (design.md): shown while L is held, on BG1 rows 3-10.
+# Right with L down moves the highlight from the tank to the infantry and
+# leaves the airframe where it was; letting go of L hides the box and
+# keeps the selection. The snapshot itself is taken with L still down in
+# the first case (Select combined with L).
+# ---------------------------------------------------------------------------
+OVS=$(ramaddr hud_ov_shown)
+if [ -z "$OVS" ]; then
+    echo "FAIL overlay:addr (hud_ov_shown not found in build/main.asm)"; fail=$((fail+1))
+else
+    run_case overlay_show "wait30,l20,l+right3,l+select3" \
+        --check-mem 0x$OVS=0x01 --check-mem 0x$SEL=0x03 --check-mem16 0x$HX=0x0040
+    run_case overlay_hide "wait30,l20,l+right3,l10,wait5,shot" \
+        --check-mem 0x$OVS=0x00 --check-mem 0x$SEL=0x03 --check-mem16 0x$HX=0x0040
+fi
+
+# ---------------------------------------------------------------------------
+# The airlift (design.md, decided after phase 9).
+#
+# Five men are bought and the airframe lands on the player's pad facing
+# east, so its tail is west and the men walk up behind it: each boards
+# within 5 px of the tail. Lifted off, X drops one per press; a chute
+# takes ~20 frames from this height, and a landed man is an infantryman
+# again. The RNG is consumed by nothing else, so from a cold boot the
+# sequence is fixed: the third and fourth chutes are the ones in ten that
+# fail (an unlucky stretch of the LFSR), so three men of five reach the
+# ground, in the pool slots the cursor hands out.
+# ---------------------------------------------------------------------------
+MEN=$(ramaddr heli_men)
+if [ -z "$MEN" ]; then
+    echo "FAIL para:addr (heli_men not found in build/main.asm)"; fail=$((fail+1))
+else
+    BOARD="l+right3,wait3,l+a3,wait20,right180,wait60,down30,wait40,wait2200"
+    run_case airlift_board "$BOARD,shot" --timeout 200000 \
+        --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 \
+        --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 4)=0x00
+    # In the field: landed on open ground at x 714 facing east, the men walk
+    # up behind the tail from the base and board there too; no deck needed.
+    run_case airlift_field "l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1200,shot" \
+        --timeout 200000 --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 --check-mem 0x$ONPAD=0x00
+    # Men aboard go down with the airframe: five aboard, then a balloon
+    # (the player's own bunker's, at x=2048) and the next airframe has none.
+    run_case airlift_lost "$BOARD,up+right36,right220,shot" --timeout 200000 \
+        --check-mem 0x$MEN=0x00 --check-mem 0x$LIVES=0x03
+    DROPS="x3,wait40,x3,wait40,x3,wait40,x3,wait40,x3"
+    run_case airlift_drop "$BOARD,up20,right40,$DROPS,wait140,shot" --timeout 200000 \
+        --check-mem 0x$MEN=0x00 \
+        --check-mem 0x$(at "$UK" 21)=0x04 --check-mem 0x$(at "$UK" 22)=0x04 \
+        --check-mem 0x$(at "$UK" 23)=0x04 --check-mem 0x$(at "$UK" 24)=0x00 \
+        --check-mem 0x$(at "$UO" 21)=0x00
 fi
 
 # ---------------------------------------------------------------------------

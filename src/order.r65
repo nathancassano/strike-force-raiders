@@ -124,9 +124,10 @@ far fn order_place() -> u8 {
     // Engineers share the infantry cap, and `unit_count` already folds the
     // two together; fold the queue the same way.
     let kind: Order = order_sel as Order;
+    // Men aboard the airframe are men too.
     let mut have: u8 = unit_count(kind, SIDE_PLAYER) + order_queued(kind);
-    if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer); }
-    if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry); }
+    if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer) + heli_men; }
+    if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry) + heli_men; }
     if have + order_stats[k].men > order_stats[k].cap { return 0; }
 
     if order_tail - order_head >= ORDER_QUEUE { return 0; }
@@ -136,17 +137,20 @@ far fn order_place() -> u8 {
     return 1;
 }
 
-// order_input - L/R walk the ring, X buys.
-far fn order_input(trig: u16) {
-    if (trig & JOY_R) != 0 {
+// order_input - with L held, Left/Right walk the ring and A buys. (The
+// overlay's drawing arrives with the HUD; the strip's ring is the
+// display until then.)
+far fn order_input(held: u16, trig: u16) {
+    if (held & JOY_L) == 0 { return; }
+    if (trig & JOY_RIGHT) != 0 {
         order_sel = order_sel + 1;
         if order_sel >= ORDER_RING { order_sel = 0; }
     }
-    if (trig & JOY_L) != 0 {
+    if (trig & JOY_LEFT) != 0 {
         if order_sel == 0 { order_sel = ORDER_RING; }
         order_sel = order_sel - 1;
     }
-    if (trig & JOY_X) != 0 {
+    if (trig & JOY_A) != 0 {
         order_place();
     }
 }

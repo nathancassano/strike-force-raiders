@@ -98,7 +98,8 @@ Costs are the 1984/1991 values, unchanged across both games — strong evidence 
 | Helicopter | 20 | 1 | 20 | — | Extra life. |
 
 **Damage asymmetries — preserve these, they are what make composition matter:**
-- Infantry gunfire cannot hurt tanks at all. *Decided:* infantry fire at opposing ground units
+- Infantry gunfire cannot hurt tanks at all, and **a tank that touches the other side's men
+  kills them** - it does not stop for them. *Decided:* infantry fire at opposing ground units
   and turrets (the 0.5 below), never at helicopters. A man's shot is instant - no round, a
   one-frame firing pose - 64 px reach, one shot per 48 frames, 2 damage.
 - Helicopter gunfire cannot hurt end/super bunkers — only tanks can.
@@ -139,7 +140,8 @@ emergent from queuing several in a row.
 - **No gravity while powered.** Gravity applies only at zero fuel. **No ejection** - the pilot
   goes with the airframe.
 - **Zero fuel is a crash landing**: the dead-stick descent ends on ground contact with the
-  airframe lost, a life gone.
+  airframe lost, a life gone. So is **touching down faster than 2.5 px/frame** (`HELI_CRASH_VY`),
+  deck or not - a full-stick descent has to be eased off a dozen frames out.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
 - Ammo: **64 rounds, 10 bombs, 2 smart missiles, up to 5 men.**
 - **Smart missiles** (Y): a missile seeks the nearest enemy helicopter, or failing that the
@@ -176,7 +178,7 @@ emergent from queuing several in a row.
 | Bunker | 69 | Captured by **infantry** on contact (not engineers). Moors a barrage balloon on a chain. Tank shells bring it down; at 0 hp it is nobody's and balloonless, but **still capturable** - the man who takes it brings it back. |
 | Super Bunker | 5 | **HP literally = infantry inside.** Cannot be destroyed — at 0 it goes *hostile-neutral*. Its gun fires on **all opposing units** — helicopters and ground units of any other side — faster the more men it holds. *Decided:* an empty one fires on helicopters only, or nobody could ever walk in and man it; a manned one fires on the ground too, so it is taken by shelling the garrison out with tanks first. Only tank fire damages it. Units inside its box are immune to its fire (ground rounds leave from the wall facing the target). |
 | Turret | 62 (AA's 31, doubled) | 340 px scan, self-repairs unless fully destroyed. Fire rate is **the difficulty dial**: 15/12/6/2/1 frames across tiers — a 12× swing. *Decided:* the rate is **capped at 6 frames** - the two hottest tiers would need more rounds than the 16-slot shared munition pool holds; difficulty above that comes from the other dials. |
-| Landing Pad | — | Land only while descending. Full rearm. |
+| Landing Pad | — | Land only while descending. Full rearm. *Decided with the airlift:* a powered descent **lands anywhere** on the ground (that is how men are picked up in the field); only a deck rearms, and a dead stick on open ground is the crash above. |
 | Base | — | Fires smart missiles at helicopters within 320 px every 2 frames — a genuine no-fly zone. Immune to everything but a van. |
 | End Bunker (bank) | 10 | Holds your funds. Two tank hits silence its guns. Enemy infantry steals 50%. |
 
@@ -714,6 +716,13 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    hidden glyph row and read back from the tilemap like the digits. Start resets by re-running
    every subsystem's init. *Verified: the loss and the reset by suite (five passes into the
    enemy base's missiles); the van end by planting one at the enemy base with the debugger.*
+9b. ~~**The airlift.**~~ **DONE.** `src/para.r65`: boarding within 5 px behind a landed
+   airframe's tail, X drops paratroopers from an 8-slot pool with its own y, one chute in ten
+   fails, a landed man is an infantryman again; men aboard count against the cap. With it the
+   order controls moved to the overlay scheme - hold L, Left/Right, A - freeing X, and the
+   overlay itself is a BG1 dialog under the strip: icon, name and cost per line, a cursor on the
+   highlighted one. The canopy is tile 72 on the sheet. *Verified: `airlift_board` (five men aboard off the pad) and
+   `airlift_drop` (five drops, the fixed RNG's two failures, three men back on the field).*
 10. **CPU opponent.** Convoy table, AI flag table, helicopter priority state machine.
 11. **Campaign.** Mission table, briefing and after-action screens, SRAM persistence.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in

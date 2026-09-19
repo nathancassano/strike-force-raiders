@@ -36,6 +36,7 @@ include!("pad.r65")
 include!("struct.r65")
 include!("muni.r65")
 include!("unit.r65")
+include!("para.r65")
 include!("order.r65")
 include!("hud.r65")
 include!("game.r65")
@@ -85,6 +86,7 @@ fn boot_load() {
     heli_init();
     muni_init();
     unit_init();
+    para_init();
     struct_init();
     econ_init();
     order_init();
@@ -123,14 +125,26 @@ fn main() -> ! {
         let trig: u16 = pad_poll_trigger();
 
         if game_state == GAME_PLAYING {
-            heli_update(held);
-            heli_fire(held, trig);
+            // Holding L is the order overlay: the d-pad walks the ring and
+            // A buys, and neither reaches the airframe while it is down.
+            let mut fly_held: u16 = held;
+            let mut fly_trig: u16 = trig;
+            if (held & JOY_L) != 0 {
+                fly_held = held & ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT);
+                fly_trig = trig & ~JOY_A;
+            }
+            heli_update(fly_held);
+            heli_fire(fly_held, fly_trig);
             econ_tick();
-            order_input(trig);
+            order_input(held, trig);
             order_tick();
             hud_update();
+            let mut want: u8 = 0;
+            if (held & JOY_L) != 0 { want = 1; }
+            hud_overlay(want);
             muni_update();
             unit_update();
+            para_update();
             struct_update();
             unit_collide();
             struct_collide();
@@ -147,6 +161,7 @@ fn main() -> ! {
         oam_begin();
         heli_draw();
         muni_draw();
+        para_draw();
         struct_draw();
         pad_draw();
         unit_draw();

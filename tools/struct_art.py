@@ -24,6 +24,9 @@ Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
     row  4-5   col 6: the infantryman firing (tile 70, unit.r65
                UNIT_TILE_INFANTRY_FIRE) - the standing man with the rifle
                levelled and a flash at the muzzle
+               col 8: the parachute canopy (tile 72, para.r65 PARA_TILE):
+               drawn over the standing man's cell, lines meeting at his
+               shoulders in the cell below
 
 Palette indices: 1 black, 2 dark green, 3 green, 4 light blue, 5 light
 grey, 6 orange, 7 darker green, 8 mid green, 9 charcoal, 10 blue-grey,
@@ -276,6 +279,29 @@ INFANTRY_FIRE = [
 ]
 
 
+# The canopy, one cell, sitting directly above the man's cell (tile 68):
+# a domed chute with the shroud lines converging on the man's shoulders
+# at columns 3-5 of the cell below.
+PARACHUTE = [
+    "......wwww......",
+    "....wwwwwwww....",
+    "...wwwwwwwwww...",
+    "..wwwwwwwwwwww..",
+    "..wcwwwwcwwwwcw.",
+    "..wwwwwwwwwwww..",
+    "..kwwwwwwwwwwk..",
+    "...kk......kk...",
+    "....k......k....",
+    "....k.....k.....",
+    ".....k....k.....",
+    ".....k...k......",
+    "......k..k......",
+    "......k.k.......",
+    ".......kk.......",
+    "................",
+]
+
+
 def save_bmp4(im, path):
     """Write a 16-colour indexed image as a 4-bit BMP.
 
@@ -324,6 +350,7 @@ def main():
     stamp(px, 32, 112, TURN_HEAD)
     stamp(px, 64, 112, TURN_SLIGHT)
     stamp(px, 48, 32, INFANTRY_FIRE)            # tile 70
+    stamp(px, 64, 32, PARACHUTE)                # tile 72
     stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
     stamp(px, 104, 8, MISSILE_NE)
     stamp(px, 112, 8, MISSILE_N)
