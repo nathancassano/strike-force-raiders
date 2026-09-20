@@ -131,8 +131,9 @@ while it is held the **d-pad moves the highlight** between unit types and **A bu
 highlighted one; releasing L hides it. The battle keeps running underneath - the d-pad steers
 the overlay, not the airframe, for as long as L is down. *Decided after phase 9, replacing L/R
 cycling with X to buy (X is now the paratroop drop).* Cost deducted immediately; insufficient funds = order ignored with a click. Units
-emerge from the base in sequence, 10 frames apart within a multi-man order — a "convoy" is
-emergent from queuing several in a row.
+emerge from the base in sequence, each waiting for the last to clear the gate by a convoy
+space — a "convoy" is emergent from queuing several in a row. *(Was 10 frames apart; at a
+man's pace that put five in a heap.)*
 
 ## Helicopter
 
@@ -251,7 +252,7 @@ L overlay:
 |---|---|
 | 0 | `$` purse · lives · health bar · fuel bar |
 | 1 | gun / bombs / missiles / men-aboard counts |
-| 2 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes - no OAM. Friendly and enemy dots, buildings as ticks, the camera window as a bracket; a jammed span reads as static. |
+| 2 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
 
 Plus an **avatar pop-in at the bottom right** of the screen: a character portrait that slides in
 to deliver briefings and in-battle warnings (van approaching, bank robbed, low fuel).
@@ -391,9 +392,11 @@ Four mitigations, designed in from the start:
    not usable here: the pool index says nothing about what matters this frame.
 3. **OAM priority rotation** (OAMADDR bit 15) so overflow *flickers* frame to frame instead of
    silently vanishing. Standard-era technique, and it degrades gracefully.
-4. **2–3 shallow ground lanes.** Stagger unit Y by ~8 px. Sprites are 16 px tall so adjacent
+4. ~~**2–3 shallow ground lanes.** Stagger unit Y by ~8 px. Sprites are 16 px tall so adjacent
    lanes still share ~8 scanlines — this buys perhaps a third, not a half. Worth having, but it
-   is not a substitute for 1–3.
+   is not a substitute for 1–3.~~ *Removed after phase 9:* three 4 px lanes bought little and let
+   opposing columns in different lanes walk through each other. Everything stands on one line;
+   convoy spacing caps a window at eight vehicles (16 sprites / 24 tiles), inside the limits.
 
 **Halved inventory limits** (roster table above) exist for this reason and should not be raised
 without re-running the arithmetic.
@@ -723,6 +726,14 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    overlay itself is a BG1 dialog under the strip: icon, name and cost per line, a cursor on the
    highlighted one. The canopy is tile 72 on the sheet. *Verified: `airlift_board` (five men aboard off the pad) and
    `airlift_drop` (five drops, the fixed RNG's two failures, three men back on the field).*
+9c. ~~**HUD rows and radar.**~~ **DONE.** `src/hud.r65` rows 0-1 as decided (purse, lives,
+   health and fuel bars of six glyph cells; rounds, bombs, men aboard - missiles when they
+   exist); `src/radar.r65` row 2, a 256x8 bitmap in 32 tiles the game owns past the art's,
+   redrawn every 16th frame from a base image of building ticks: vehicle dots by side (blue
+   ours, red theirs, in the row's own sub-palette; men are not shown), the airframe, and noise
+   when an enemy van is within RADAR_JAM px; the camera window is a sprite over the row, so it
+   moves every frame.
+   *Verified: `radar_boot`/`radar_flown` byte for byte, the gauges by their white on screen.*
 10. **CPU opponent.** Convoy table, AI flag table, helicopter priority state machine.
 11. **Campaign.** Mission table, briefing and after-action screens, SRAM persistence.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in

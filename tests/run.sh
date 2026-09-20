@@ -209,7 +209,7 @@ else
     # and the ground at y=168.
     run_case heli_wall  "wait20,left60,shot"  --check-mem16 0x$HX=0x0000
     run_case heli_ceil  "wait20,up30,shot"    --check-mem16 0x$HY=0x1000
-    run_case heli_floor "wait20,down60,shot"  --check-mem16 0x$HY=0x9800
+    run_case heli_floor "wait20,down30,wait40,shot"  --check-mem16 0x$HY=0x9800
 
     # Tilt is cosmetic and derived from velocity ALONG THE NOSE: OAM sprite
     # 0's tile selects the frame (0 nose-down, 4 level, 8 nose-up). Using the
@@ -385,7 +385,7 @@ else
     # tagged enum, so slot 0's kind is the first byte of its tag plane.
     UO=$(ramaddr units__owner)
     run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x01 --check-mem 0x$UO=0x01
-    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x1D07
+    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x1D08
 
     # A spawn order of Kind values becomes a variant, and the hit points
     # come from that variant's row of unit_stats. Slots 0..3 are the tank,
@@ -428,12 +428,23 @@ else
     # super bunker's ground gun 4, the riflemen's turret fallback 20, the
     # airlift's calls and the L overlay mask 5, and the eight order dialogs
     # this movie opens and closes (a compose and two 512-byte flushes each)
-    # 12, the tanks' crush check (one remembered unit a frame) 31: 0.942.
-    # Steady-state the dialog costs nothing.
+    # 12, the tanks' crush check (one remembered unit a frame) 31: 0.942;
+    # the radar (a 512-byte copy, a plot per unit and a 512-byte DMA every
+    # sixteenth frame, spread over four of them - about 2.5% of a frame on
+    # average) 269: 0.868, and its camera bracket as a sprite - one OAM
+    # entry a frame - another 67: 0.850; and the end of lanes, every unit
+    # on one line halting for anything ahead, 102: 0.822 - the columns
+    # bunch tighter at the front and more of the pool is on screen at
+    # once. That last step is the nonlinearity of this
+    # measure, not the radar's real cost: this movie sits on the budget
+    # line, and a frame over it by a hair drops whole; an idle frame with
+    # the radar drops nothing. (frames_nmi is two lower than it was: the
+    # probe now resets right before the NMI is enabled, so the inits no
+    # longer count.) Steady-state the dialog costs nothing.
     # The next cycles are in unit_advance's call and the traffic scan.
     EIGHT_TANKS="l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3"
-    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0D7C
+    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
+                                                      --check-mem16 0x$FLOOP=0x0BC9
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -466,17 +477,19 @@ else
     run_case order_tank "l+a3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
         --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$UO=0x00 --check-mem16 0x$UX=0x0211
 
-    # Right moves the ring to infantry; one order is five men, ten frames apart,
-    # all out within the minute and the emitter idle again.
+    # Right moves the ring to infantry; one order is five men, and the gate
+    # lets the next out only when the last is a convoy space (32 px, 128
+    # frames at a man's pace) clear of it: a minute in, one is on the field
+    # and four still wait in the emitter.
     run_case order_infantry "l+right3,wait3,l+a3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
-        --check-mem 0x$(at "$UK" 0)=0x04 --check-mem 0x$(at "$UK" 4)=0x04 \
-        --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$QMEN=0x00
+        --check-mem 0x$(at "$UK" 0)=0x04 --check-mem 0x$QMEN=0x04
 
-    # Left twice wraps to the van. Its cap is six: the seventh press is refused
-    # and costs nothing, so the purse is 32 - 6*2.
+    # Left twice wraps to the van. Its cap is six, counted on the field and
+    # in the queue: the seventh press is refused and costs nothing, so the
+    # purse is 32 - 6*2, and the first van is out.
     SEVEN="l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3"
     run_case order_cap "l+left3,wait3,l+left3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
-        --check-mem 0x$SEL=0x00 --check-mem 0x$(at "$UK" 5)=0x02
+        --check-mem 0x$SEL=0x00 --check-mem 0x$(at "$UK" 0)=0x02
 
     # Right three times from the tank is the helicopter: an extra life for 20.
     run_case order_heli "l+right3,wait3,l+right3,wait3,l+right3,wait3,l+a3,wait10,shot" \
@@ -506,10 +519,10 @@ else
     run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
 
     # Land in front of it and fire back: a round is a point off its 62 -
-    # eleven of the fifteen fired land in this time (the rest are still in
+    # twelve of the fifteen fired land in this time (the rest are still in
     # flight or lost to its self-repair between), and its fire keeps coming.
     run_case turret_gunfire "wait20,right1290,down30,wait40,b90,shot" \
-        --check-mem 0x$(at "$SHP" 12)=0x33 --check-mem 0x$HHP=0x0B
+        --check-mem 0x$(at "$SHP" 12)=0x32 --check-mem 0x$HHP=0x0B
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact, at frame 421 of this climb: a life gone, the airframe
@@ -557,24 +570,28 @@ else
         --check-mem 0x$(at "$SHP" 3)=0x00 --check-mem 0x$(at "$SOWN" 3)=0x02
 
     # Infantry gunfire: no round, the sweep that finds a target lands the
-    # hit. Five men ordered at once walk east and meet the enemy column's
-    # first launcher (slot 5) around frame 9640 at x~2900 - past the
+    # hit. Five men are ordered; the gate lets them out 128 frames apart,
+    # so the first (slot 0) walks east alone and meets the enemy column's
+    # first launcher (slot 1) around frame 10600 at x~2900 - past the
     # player's turret's reach, so nothing else can be shooting it - and
-    # four hits of 2 finish its 8 hp. The column's tank (slot 6) arrives
-    # on their heels and is not scratched: rifle_dmg against armour is 0,
-    # and its 25 hp say so while its shells start on the front men. A
-    # launcher fires at nothing on the ground, so the last man is unhurt.
-    # The wait is in vblanks and the loop drops a few percent of them, so
-    # the meeting drifts ~60 frames later per slower build; hence the slack.
-    run_case rifle_fire "l+right3,wait3,l+a3,wait9800,shot" --timeout 400000 \
-        --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(at "$UK" 6)=0x01 \
-        --check-mem 0x$(hp 6)=0x19 --check-mem 0x$(hp 4)=0x05
+    # four hits of 2 finish its 8 hp. The column's tank (slot 3) is behind
+    # it and is not scratched: rifle_dmg against armour is 0, and its 25 hp
+    # say so. A launcher fires at nothing on the ground, so the second man
+    # (slot 4, still on his way) is unhurt. The wait is in vblanks and the
+    # loop drops a couple of percent of them under the enemy column, so the
+    # meeting drifts later with every heavier build; re-measure when it
+    # moves.
+    run_case rifle_fire "l+right3,wait3,l+a3,wait10800,shot" --timeout 400000 \
+        --check-mem 0x$(at "$UK" 1)=0x00 --check-mem 0x$(at "$UK" 3)=0x01 \
+        --check-mem 0x$(hp 3)=0x19 --check-mem 0x$(hp 4)=0x05
     # ... and a tank does not stop for the other side's men: it drives
-    # over them. Three hundred frames on, the same tank has rolled through
-    # the column - all five slots free, the tank untouched and past them.
-    run_case tank_crush "l+right3,wait3,l+a3,wait10100,shot" --timeout 400000 \
+    # over them. Nine hundred frames on, the same tank has rolled through
+    # the whole file of five - every one of their slots free, the tank
+    # untouched and past them.
+    run_case tank_crush "l+right3,wait3,l+a3,wait11700,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
-        --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(hp 6)=0x19
+        --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(at "$UK" 6)=0x00 \
+        --check-mem 0x$(at "$UK" 8)=0x00 --check-mem 0x$(hp 3)=0x19
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -600,6 +617,43 @@ else
     SMEN=$(ramaddr structs__men)
     run_case super_manned "wait18000,shot" --timeout 600000 \
         --check-mem 0x$(at "$SMEN" 7)=0x01 --check-mem 0x$(at "$SOWN" 7)=0x01
+fi
+
+# ---------------------------------------------------------------------------
+# The HUD rows and the radar (design.md). The strip's rows are composed
+# from the glyph rows so their tile IDs are whatever bmp2chr decided;
+# the radar is the game's own bitmap and can be checked byte for byte.
+# At boot, once it has drawn (every 16th frame): tile 0 carries the
+# airframe's 2x2 (blue) at radar x 2-3 on rows 1-2 ($30 of each plane byte) and
+# the bank's tick at x 3 on rows 3-5; row 0 is plain navy, and so is row 7,
+# the vehicles' line, with none out. The camera
+# window is a sprite over the row, in the slot after the airframe's two:
+# at boot x 0, y 16 (the row's first scanline), the bracket tile.
+# ---------------------------------------------------------------------------
+RB=$(ramaddr radar_buf)
+if [ -z "$RB" ]; then
+    echo "FAIL radar:addr (radar_buf not found in build/main.asm)"; fail=$((fail+1))
+else
+    rb() { printf '%X' $((0x$RB + $1)); }
+    run_case radar_boot "wait16,shot" \
+        --check-mem 0x$(rb 0)=0xFF --check-mem 0x$(rb 1)=0x00 \
+        --check-mem 0x$(rb 2)=0xCF --check-mem 0x$(rb 3)=0x30 \
+        --check-mem 0x$(rb 4)=0xCF --check-mem 0x$(rb 5)=0x30 \
+        --check-mem 0x$(rb 6)=0xEF --check-mem 0x$(rb 7)=0x10 \
+        --check-mem 0x$(rb 10)=0xEF --check-mem 0x$(rb 11)=0x10 \
+        --check-mem 0x$(rb 14)=0xFF --check-mem 0x$(rb 15)=0x00 \
+        --check-mem 0x$(printf '%X' $((0x$OAMB + 8)))=0x00 \
+        --check-mem 0x$(printf '%X' $((0x$OAMB + 9)))=0x10 \
+        --check-mem 0x$(printf '%X' $((0x$OAMB + 10)))=0x1F
+    # Flown east 240 frames: the airframe's block has left tile 0, so the
+    # bank's tick stands alone, and the bracket sprite is at camera_x/32.
+    run_case radar_flown "wait20,right240,wait20,shot" \
+        --check-mem 0x$(rb 2)=0xFF --check-mem 0x$(rb 3)=0x00 \
+        --check-mem 0x$(rb 6)=0xEF --check-mem 0x$(rb 7)=0x10 \
+        --check-mem 0x$(printf '%X' $((0x$OAMB + 8)))=0x25
+    # The strip itself: the two white gauges on row 0 are what puts this
+    # much white across the top 8 lines of the screen.
+    expect_snes radar_boot "28,30,31" 0.9
 fi
 
 # ---------------------------------------------------------------------------
@@ -635,13 +689,13 @@ MEN=$(ramaddr heli_men)
 if [ -z "$MEN" ]; then
     echo "FAIL para:addr (heli_men not found in build/main.asm)"; fail=$((fail+1))
 else
-    BOARD="l+right3,wait3,l+a3,wait20,right180,wait60,down30,wait40,wait2200"
+    BOARD="l+right3,wait3,l+a3,wait20,right180,wait60,down30,wait40,wait2800"
     run_case airlift_board "$BOARD,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 4)=0x00
     # In the field: landed on open ground at x 714 facing east, the men walk
     # up behind the tail from the base and board there too; no deck needed.
-    run_case airlift_field "l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1200,shot" \
+    run_case airlift_field "l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1600,shot" \
         --timeout 200000 --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 --check-mem 0x$ONPAD=0x00
     # Men aboard go down with the airframe: five aboard, then a balloon
     # (the player's own bunker's, at x=2048) and the next airframe has none.

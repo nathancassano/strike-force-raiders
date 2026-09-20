@@ -2,14 +2,18 @@
 //
 // Every unit sits on the same ground line, so they all compete for the same
 // scanlines. That is the hardest constraint in the project, and it shapes
-// three things here: units are culled to the camera window before they are
-// given OAM slots, the slots come from the shared importance-ordered
-// allocator rather than a static base, and units are staggered across a few
-// shallow lanes so adjacent ranks do not overlap perfectly.
+// two things here: units are culled to the camera window before they are
+// given OAM slots, and the slots come from the shared importance-ordered
+// allocator rather than a static base. Convoy spacing does the rest: at
+// width + gap a 256 px window holds at most eight vehicles, sixteen
+// sprites and twenty-four tiles on the line against the PPU's 32 and 34.
+// (There were three 4 px lanes once, to stagger the rows; they bought
+// little and let opposing columns in different lanes walk through each
+// other, so they went.)
 //
 // A unit is three declarations that share one index:
 //
-//   Unit           what changes as it moves - position, hp, owner, lane -
+//   Unit           what changes as it moves - position, hp, owner -
 //                  plus its `kind`. One `#[soa]` record per pool slot.
 //   UnitType       what it is: a tagged enum whose payload is that kind's
 //                  own struct, so the payload plane holds whatever only that
@@ -39,17 +43,11 @@ const UNIT_H:      u16 = 16;
 // The plan puts the look-ahead at about a third of a unit width.
 const UNIT_GAP: u16 = 8;
 
-// Lanes stagger units vertically so a bunched column does not stack every
-// sprite on identical scanlines. Sprites are 16 px tall and the lanes are
-// 4 apart, so neighbours still share most of their rows - this buys perhaps
-// a third of the budget, not half, and is not a substitute for culling.
-// Spacing is a shift because `*` only takes power-of-two constants.
-const UNIT_LANES:      u16 = 3;
-const UNIT_LANE_SHIFT: u16 = 2;           // 4 px between lanes
+// Every unit stands with its feet on the ground line.
 const UNIT_BASE_Y:     u16 = GROUND_Y - UNIT_H;
-// The scanline band every ground unit occupies, lanes included.
+// The scanline band every ground unit occupies.
 const UNIT_BAND_TOP:   u16 = GROUND_Y - UNIT_H;
-const UNIT_BAND_BOT:   u16 = GROUND_Y + (UNIT_LANES << UNIT_LANE_SHIFT);
+const UNIT_BAND_BOT:   u16 = GROUND_Y;
 
 // OBJ tiles: left cell of each 24x16 vehicle, right cell is +2.
 const UNIT_TILE_TANK:     u8 = 38;
@@ -183,7 +181,6 @@ struct Unit {
     x_sub: u8,           // 1/256 px accumulator
     hp:    u8,
     owner: u8,
-    lane:  u8,
     block: u8,           // cached traffic-control flag
     rank:  u8,           // the plan's promotion count; nothing earns it yet
     kind:  UnitType,
@@ -193,7 +190,6 @@ struct Unit {
 
 #[lowram] static mut unit_cursor: u16;
 #[lowram] static mut unit_slice: u16;         // rolling traffic-control cursor
-#[lowram] static mut unit_lane_rr: u16;       // round-robin lane assignment
 
 // Traffic control is O(n^2) over the pool. Measured on hardware, a full
 // pass every frame costs more than a whole frame: with a 16-slot pool
@@ -206,14 +202,10 @@ const UNIT_SLICE: u16 = 4;
 
 // Neither pool takes an initializer, so both are garbage at power-on and
 // every element must be written before anything matches on it.
-// unit_free - retire a slot. The lane goes to a value no live unit has,
-// so the traffic scan rejects the slot on its lane compare and never has
-// to ask whether it is Free.
-const UNIT_NO_LANE: u8 = 0xFF;
-
+// unit_free - retire a slot. `Free` is tag 0, so every liveness test in
+// the hot loops is one load of the tag plane and a branch on zero.
 fn unit_free(i: u16) {
     units[i].kind = UnitType::Free;
-    units[i].lane = UNIT_NO_LANE;
     unit_side_count[units[i].owner as u16] = unit_side_count[units[i].owner as u16] - 1;
 }
 
@@ -223,24 +215,23 @@ fn unit_free(i: u16) {
 far fn unit_init() {
     for i in 0..UNIT_MAX {
         units[i].kind = UnitType::Free;
-        units[i].lane = UNIT_NO_LANE;
     }
     unit_side_count[0] = 0;
     unit_side_count[1] = 0;
     unit_cursor = 0;
     unit_slice = 0;
-    unit_lane_rr = 0;
     spawn_t = SPAWN_PERIOD;
     spawn_seq = 0;
 }
 
 // unit_spawn - put a unit on the field. Returns 1, or 0 with nothing
-// placed when the pool is full or the side has its UNIT_SIDE_MAX out, so
-// an order can wait for a slot rather than be lost. Lanes are handed out
-// round-robin so a column of one kind spreads across all three rather
-// than stacking.
+// placed when the pool is full, the side has its UNIT_SIDE_MAX out, or
+// the gate is still occupied - a unit of that side within a convoy
+// space of the spawn point - so an order waits rather than being lost,
+// and men leave the base one at a time instead of five in a heap.
 far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
     if unit_side_count[owner as u16] >= UNIT_SIDE_MAX { return 0; }
+    if unit_gate_busy(owner, x_px) != 0 { return 0; }
     let mut i: u16 = unit_cursor;
     let mut n: u16 = 0;
     let mut placed: u8 = 0;
@@ -264,9 +255,6 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 units[i].hp = unit_stats[units[i].kind as u16].max_hp;
                 units[i].block = 0;
                 units[i].rank = 0;
-                units[i].lane = unit_lane_rr as u8;
-                unit_lane_rr = unit_lane_rr + 1;
-                if unit_lane_rr >= UNIT_LANES { unit_lane_rr = 0; }
                 unit_cursor = (i + 1) & UNIT_MASK;
                 unit_side_count[owner as u16] = unit_side_count[owner as u16] + 1;
                 placed = 1;
@@ -279,6 +267,22 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
         };
     }
     return placed;
+}
+
+// unit_gate_busy - is a unit of *owner* still within UNIT_W + UNIT_GAP of
+// *x*? The base's gate: the next one out waits for it to clear.
+fn unit_gate_busy(owner: u8, x: u16) -> u8 {
+    for j in 0..UNIT_MAX {
+        if units[j].kind as u8 != UnitType::Free as u8 {
+            if units[j].owner == owner {
+                let ux: u16 = units[j].x_px;
+                let mut d: u16 = 0;
+                if ux > x { d = ux - x; } else { d = x - ux; }
+                if d < UNIT_W + UNIT_GAP { return 1; }
+            }
+        }
+    }
+    return 0;
 }
 
 // unit_count - how many of a kind one side has on the field. `Free` is
@@ -307,7 +311,7 @@ far fn unit_count(kind: Order, owner: u8) -> u8 {
     return n;
 }
 
-// unit_blocked - is another unit close ahead in the same lane?
+// unit_blocked - is another unit close ahead?
 //
 // Two jobs in one test. Behind the line it is convoy spacing: units stop
 // rather than walking through each other, which is what makes a column read
@@ -318,16 +322,16 @@ far fn unit_count(kind: Order, owner: u8) -> u8 {
 // unit_blocked_tank.)
 fn unit_blocked(self_i: u16) -> u8 {
     let x: u16 = units[self_i].x_px;
-    let lane: u8 = units[self_i].lane;
     let mine: u8 = units[self_i].owner;
     let reach: u16 = unit_stats[units[self_i].kind as u16].width + UNIT_GAP;
 
-    // The lane compare is the whole filter: a free slot carries
-    // UNIT_NO_LANE, and a unit is never strictly ahead of itself, so
-    // neither needs a test of its own. This is the hottest loop in the
-    // game - O(n) per unit, UNIT_SLICE units a frame.
+    // The tag load is the whole filter: a free slot is tag 0, and a unit
+    // is never strictly ahead of itself, so neither needs a test of its
+    // own. This is the hottest loop in the game - O(n) per unit,
+    // UNIT_SLICE units a frame - and its shape is what keeps the counter
+    // in a register; change it and measure (unit_budget).
     for j in 0..UNIT_MAX {
-        if units[j].lane == lane {
+        if units[j].kind as u8 != UnitType::Free as u8 {
             if mine == SIDE_PLAYER {
                 if units[j].x_px > x {
                     if units[j].x_px - x < reach { return 1; }
@@ -343,18 +347,17 @@ fn unit_blocked(self_i: u16) -> u8 {
 }
 
 // unit_blocked_tank - unit_blocked for a tank: the same test, except that
-// a same-lane hit that is one of the other side's men does not stop it -
-// a tank drives over men (unit_fire's crush). A copy rather than a flag
-// in unit_blocked: any extra shape in that function cost the hot loop
-// its register-promoted counter (measured: 340 frames in 3665).
+// a hit that is one of the other side's men does not stop it - a tank
+// drives over men (unit_fire's crush). A copy rather than a flag in
+// unit_blocked: any extra shape in that function cost the hot loop its
+// register-promoted counter (measured: 340 frames in 3665).
 fn unit_blocked_tank(self_i: u16) -> u8 {
     let x: u16 = units[self_i].x_px;
-    let lane: u8 = units[self_i].lane;
     let mine: u8 = units[self_i].owner;
     let reach: u16 = UNIT_W + UNIT_GAP;
 
     for j in 0..UNIT_MAX {
-        if units[j].lane == lane {
+        if units[j].kind as u8 != UnitType::Free as u8 {
             if mine == SIDE_PLAYER {
                 if units[j].x_px > x {
                     if units[j].x_px - x < reach {
@@ -489,9 +492,7 @@ fn unit_fire(i: u16) {
                         v = Q10(0) - SHELL_SPEED;
                         mx = units[i].x_px;
                     }
-                    let y: u16 = (UNIT_BASE_Y
-                                  + ((units[i].lane as u16) << UNIT_LANE_SHIFT)
-                                  + 4) << 8;
+                    let y: u16 = (UNIT_BASE_Y + 4) << 8;
                     muni_spawn(MUNI_SHELL, mx, y, v, Q10(0), SHELL_LIFE,
                                units[i].owner);
                 }
@@ -619,8 +620,7 @@ far fn unit_update() {
 #[lowram] static mut draw_far:  [u8; 32];
 
 fn unit_draw_one(i: u16, sx: u16) {
-    let y: u8 = (UNIT_BASE_Y
-                 + ((units[i].lane as u16) << UNIT_LANE_SHIFT)) as u8;
+    let y: u8 = UNIT_BASE_Y as u8;
     let mut tile: u8 = unit_stats[units[i].kind as u16].tile;
     let cells: u8 = unit_stats[units[i].kind as u16].cells;
     match units[i].kind {
@@ -669,7 +669,7 @@ far fn unit_draw() {
     let mut n_near: u16 = 0;
     let mut n_far: u16 = 0;
     for i in 0..UNIT_MAX {
-        if units[i].lane != UNIT_NO_LANE {
+        if units[i].kind as u8 != UnitType::Free as u8 {
             let sx: u16 = units[i].x_px - camera_x;
             // On screen if the left edge is inside the window, or the unit
             // straddles the window's left edge: sx has wrapped to $FFxx and
@@ -803,20 +803,13 @@ far fn unit_collide() {
                             UnitType::Free => {}
                             _ => {
                                 if units[i].owner != muni_owner[m] {
-                                    let uy: u16 = UNIT_BASE_Y
-                                        + ((units[i].lane as u16) << UNIT_LANE_SHIFT);
                                     let ux: u16 = units[i].x_px;
-                                    // Lane band first: it is a plain compare
-                                    // and rejects most of the pool, which
-                                    // keeps the dispatch off the hot path.
-                                    if my >= uy {
-                                        if my < uy + UNIT_H {
-                                            if mx >= ux {
-                                                if mx < ux + unit_stats[units[i].kind as u16].width {
-                                                    unit_hit(i, unit_damage_for(mk, i));
-                                                    muni_kind[m] = MUNI_FREE;
-                                                }
-                                            }
+                                    // The band was tested once above; the
+                                    // x extent is all that is left.
+                                    if mx >= ux {
+                                        if mx < ux + unit_stats[units[i].kind as u16].width {
+                                            unit_hit(i, unit_damage_for(mk, i));
+                                            muni_kind[m] = MUNI_FREE;
                                         }
                                     }
                                 }
