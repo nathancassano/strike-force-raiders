@@ -197,18 +197,18 @@ else
     # Rest: heli_init's spawn, untouched by a frame of no input.
     run_case heli_rest  "shot"                --check-mem16 0x$HX=0x0040 \
                                               --check-mem16 0x$HY=0x6000
-    run_case heli_right "wait20,right30,shot" --check-mem16 0x$HX=0x007D
+    run_case heli_right "wait20,right30,shot" --check-mem16 0x$HX=0x00AB
 
     # Leftward travel exercises the borrow path in heli_move_x. `>>` is a
     # logical shift even on signed types, so a negative delta cannot be
     # shifted apart - a round trip that lands mid-world proves the explicit
     # sign branch, where a clamp at 0 would not.
-    run_case heli_back  "wait20,right240,left60,shot" --check-mem16 0x$HX=0x04D3
+    run_case heli_back  "wait20,right240,left60,shot" --check-mem16 0x$HX=0x0452
 
     # All four clamps: world edge, and the flyable box between the HUD strip
     # and the ground at y=168.
     run_case heli_wall  "wait20,left60,shot"  --check-mem16 0x$HX=0x0000
-    run_case heli_ceil  "wait20,up30,shot"    --check-mem16 0x$HY=0x1000
+    run_case heli_ceil  "wait20,up60,shot"    --check-mem16 0x$HY=0x1000
     run_case heli_floor "wait20,down30,wait40,shot"  --check-mem16 0x$HY=0x9800
 
     # Tilt is cosmetic and derived from velocity ALONG THE NOSE: OAM sprite
@@ -381,31 +381,33 @@ if [ -z "$UK" ] || [ -z "$UX" ] || [ -z "$FNMI" ]; then
 else
     # The player's base only sends what is ordered (phase 7), so the rotating
     # placeholder column comes from the enemy base alone until the CPU
-    # opponent lands: a tank first, marching west from x=7680. The pool is a
+    # opponent lands: a launcher first (the rotation is the launcher-heavy
+    # one SPAWN_ORDER carries), marching west from x=7680. The pool is a
     # tagged enum, so slot 0's kind is the first byte of its tag plane.
     UO=$(ramaddr units__owner)
-    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x01 --check-mem 0x$UO=0x01
+    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x03 --check-mem 0x$UO=0x01
     run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x1D08
 
     # A spawn order of Kind values becomes a variant, and the hit points
-    # come from that variant's row of unit_stats. Slots 0..3 are the tank,
-    # infantry, van and launcher of the enemy rotation, one every 120
-    # frames; each is checked against its tag and its hp.
+    # come from that variant's row of unit_stats. Slots 0..3 are the
+    # launcher, tank, launcher and infantryman of the enemy rotation, one
+    # every 120 frames; each is checked against its tag and its hp.
     #
     # The last check is the tank's payload: its gun reload lives in the
-    # Tank variant, not in a pool-wide array, so units__data[0] is the only
-    # place the countdown exists. With nothing in range it cycles 0..16
+    # Tank variant, not in a pool-wide array, so units__data[1] is the only
+    # place the countdown exists. With nothing in range it cycles 16..0
     # every seventeen frames (TANK_SCAN), which makes the value here a
-    # phase - re-baseline it if a change shifts the pool by a frame, but do
-    # not delete it.
+    # phase - the frame is chosen so it reads TANK_SCAN, freshly reset,
+    # rather than a 0 that an unwritten byte would also show. Re-baseline
+    # it if a change shifts the pool by a frame, but do not delete it.
     at() { printf '%X' $((0x$1 + $2)); }            # tag plane: one byte per slot
     hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
-    run_case unit_kinds "wait600,shot" \
-        --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$(hp 0)=0x19 \
-        --check-mem 0x$(at "$UK" 1)=0x04 --check-mem 0x$(hp 1)=0x05 \
-        --check-mem 0x$(at "$UK" 2)=0x02 --check-mem 0x$(hp 2)=0x0C \
-        --check-mem 0x$(at "$UK" 3)=0x03 --check-mem 0x$(hp 3)=0x08 \
-        --check-mem 0x$(at "$UD" 0)=0x0D
+    run_case unit_kinds "wait601,shot" \
+        --check-mem 0x$(at "$UK" 0)=0x03 --check-mem 0x$(hp 0)=0x08 \
+        --check-mem 0x$(at "$UK" 1)=0x01 --check-mem 0x$(hp 1)=0x19 \
+        --check-mem 0x$(at "$UK" 2)=0x03 --check-mem 0x$(hp 2)=0x08 \
+        --check-mem 0x$(at "$UK" 3)=0x04 --check-mem 0x$(hp 3)=0x05 \
+        --check-mem 0x$(at "$UD" 1)=0x10
 
     # Frame budget. The NMI counts real frames and the loop counts ticks it
     # finished; a full field must still keep up. The opening buys the whole
@@ -499,7 +501,7 @@ else
     # figure is the threshold's - and, since phase 8, the no-fly zone's:
     # the enemy base's missiles send the airframe home part way, which is
     # why it is less than it was.
-    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x29
+    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x27
 fi
 
 # ---------------------------------------------------------------------------
@@ -602,11 +604,17 @@ else
     run_case base_missile "wait20,right1500,wait200,shot" --check-mem 0x$LIVES=0x03 \
                                                           --check-mem 0x$HHP=0x14
 
-    # The enemy column's launcher (the rotation's fourth, slot 3) fires its
-    # one homing missile at an airframe inside 224 px and is spent doing
-    # so: the slot is free, and the missile lands for 10 of the 20 hp.
-    run_case launcher_fire "wait20,right1400,wait80,shot" \
-        --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$HHP=0x0A
+    # The enemy column's first launcher (the rotation's first, slot 0)
+    # fires its one homing missile at an airframe inside 224 px and is
+    # spent doing so: the slot is free, and the missile lands for 10 of
+    # the 20 hp. The stick is released just as it comes into range so the
+    # second launcher (slot 2, 120 px behind) is still out of reach and
+    # armed, and no life is lost. The turret at 6656 gets one round in on
+    # the way past, three frames before the missile lands, hence 9.
+    run_case launcher_fire "wait20,right1354,wait60,shot" \
+        --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$HHP=0x09 \
+        --check-mem 0x$(at "$UK" 2)=0x03 --check-mem 0x$(at "$UD" 2)=0x01 \
+        --check-mem 0x$LIVES=0x04
 
     # The super bunker (level entry 7, dead centre) starts empty and nobody's.
     # The second enemy infantryman to walk the field - the first is spent on
