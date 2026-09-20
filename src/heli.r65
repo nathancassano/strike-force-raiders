@@ -80,6 +80,11 @@ const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 // Where a round leaves the airframe: the nose when facing right, the tail
 // end of the same box when facing left, and level with the cabin.
 const HELI_MUZZLE_Y: u16 = 7;
+// Driving forward the nose drops (HELI_TILT_ON, the same test heli_draw
+// uses to pick the frame) and the gun fires along it: 1 px down for every
+// 8 forward, about 7 degrees, so a strafing run walks rounds into the
+// ground ahead instead of over everything.
+const HELI_GUN_DROP: Q10 = 64;            // 1 px/frame
 
 // ----------------------------------------------------------- fuel & pad ---
 // Fuel is a 0-100 gauge; the plan's AI reads "fuel < 30" as its low mark.
@@ -273,12 +278,17 @@ far fn heli_fire(held: u16, trig: u16) {
                 heli_gun_cd = HELI_GUN_RATE;
                 let mut mx: u16 = heli_x_px + HELI_W;
                 let mut v: Q10 = BULLET_SPEED;
+                let mut fwd: Q10 = heli_vx;
                 if heli_face_left != 0 {
                     mx = heli_x_px;
                     v = Q10(0) - BULLET_SPEED;
+                    fwd = Q10(0) - heli_vx;
                 }
+                // Nose down: the round leaves at a slight downward angle.
+                let mut vy: Q10 = 0;
+                if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
                 muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
-                           v, Q10(0), BULLET_LIFE, SIDE_PLAYER);
+                           v, vy, BULLET_LIFE, SIDE_PLAYER);
             }
         }
     }
