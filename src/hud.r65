@@ -1,14 +1,16 @@
 // hud - the strip along the top of the screen.
 //
 // BG1 is a 32x32 map DMA'd from ROM at boot; the strip is its top three
-// tile rows. Row 0 carries the text: the purse at the left, the order ring
-// in the middle with brackets around the selection, and the selected
-// entry's cost at the right. Rows 1 and 2 are the ruler and the rule, and
-// are left as the art has them.
+// tile rows, laid out as design.md decided:
 //
-// The row is composed into a shadow and DMA'd to VRAM in vblank when it
-// changed - 64 bytes, so the cost is nothing, but there is no reason to
-// pay it on a frame where nothing moved.
+//   row 0   $ purse, lives, the health bar, the fuel bar
+//   row 1   gun rounds, bombs, men aboard
+//   row 2   the radar (radar.r65): a row of tiles the game draws into
+//
+// The order ring that used to sit on row 0 is the L dialog's now. Rows 0
+// and 1 are composed into one shadow and DMA'd to VRAM in vblank when
+// something on them changed - 128 bytes, so the cost is nothing, but
+// there is no reason to pay it on a frame where nothing moved.
 //
 // Glyphs live on map row HUD_GLYPH_ROW of bg1.bmp, below the 224 scanlines
 // the screen shows. bmp2chr de-duplicates tiles, so their IDs are whatever
@@ -39,19 +41,33 @@ const BOX_B:  u16 = 5;
 const BOX_L:  u16 = 6;
 const BOX_R:  u16 = 7;
 const BOX_CURSOR: u16 = 8;
+const BOX_BAR:    u16 = 9;                // + 0..4: a cell 0/2/4/6/8 px full
 
-// Row 0 layout, in tile columns.
-const HUD_COL_FUNDS: u16 = 1;             // "$NN"
-const HUD_COL_RING:  u16 = 12;            // six icons two columns apart
-const HUD_COL_COST:  u16 = 26;            // "$NN"
+// Row 0 layout, in tile columns: "$NN", the airframe icon and lives,
+// "H[......]" and "F[......]" - six-cell bars, 48 px each.
+const HUD_COL_FUNDS:  u16 = 0;
+const HUD_COL_LIVES:  u16 = 4;
+const HUD_COL_HEALTH: u16 = 7;
+const HUD_COL_FUEL:   u16 = 17;
+const HUD_BAR_CELLS:  u16 = 6;
+// Row 1: "G NN", "B NN", the man icon and the men aboard.
+const HUD_COL_GUN:    u16 = 0;
+const HUD_COL_BOMBS:  u16 = 6;
+const HUD_COL_MEN:    u16 = 12;
 
 // The blank tile is whatever the art has at (0,0): plain navy.
 const HUD_BLANK: u16 = 0;
 
-#[lowram] static mut hud_row:   [u16; 32];
+#[lowram] static mut hud_row:   [u16; 64];    // rows 0 and 1
 #[lowram] static mut hud_dirty: u8;
-#[lowram] static mut hud_funds: u8;       // what the row currently shows ...
-#[lowram] static mut hud_sel:   u8;       // ... so a frame with no change is free
+// What the rows currently show, so a frame with no change is free.
+#[lowram] static mut hud_funds: u8;
+#[lowram] static mut hud_lives: u8;
+#[lowram] static mut hud_hp:    u8;
+#[lowram] static mut hud_fuel:  u8;
+#[lowram] static mut hud_gun:   u8;
+#[lowram] static mut hud_bombs: u8;
+#[lowram] static mut hud_men:   u8;
 
 // hud_glyph - the tile word for glyph *n*, out of the map row in ROM.
 fn hud_glyph(n: u16) -> u16 {
@@ -66,44 +82,89 @@ fn hud_put2(col: u16, v: u8) {
     hud_row[col + 1] = hud_glyph(GLYPH_DIGIT + ((v - mul8(tens, 10)) as u16));
 }
 
+// hud_bar - six bar cells at *col*, *px* of 48 filled.
+fn hud_bar(col: u16, px: u16) {
+    let mut left: u16 = px;
+    if left > (HUD_BAR_CELLS << 3) { left = HUD_BAR_CELLS << 3; }
+    for c in 0..HUD_BAR_CELLS {
+        let mut n: u16 = left;
+        if n > 8 { n = 8; }
+        hud_row[col + c] = hud_box(BOX_BAR + (n >> 1));
+        left = left - n;
+    }
+}
+
 far fn hud_init() {
-    for c in 0..32 {
+    for c in 0..64 {
         hud_row[c] = HUD_BLANK;
     }
-    for k in 0..(ORDER_RING as u16) {
-        hud_row[HUD_COL_RING + (k << 1)] = hud_glyph(GLYPH_ICON + k);
-    }
+    // The fixed parts: labels, brackets, icons.
     hud_row[HUD_COL_FUNDS] = hud_glyph(GLYPH_DOLLAR);
-    hud_row[HUD_COL_COST]  = hud_glyph(GLYPH_DOLLAR);
+    hud_row[HUD_COL_LIVES] = hud_glyph(GLYPH_ICON + (Order::Heli as u16));
+    hud_row[HUD_COL_HEALTH] = hud_letter(0x48);                 // H
+    hud_row[HUD_COL_HEALTH + 1] = hud_glyph(GLYPH_LBRACKET);
+    hud_row[HUD_COL_HEALTH + 2 + HUD_BAR_CELLS] = hud_glyph(GLYPH_RBRACKET);
+    hud_row[HUD_COL_FUEL] = hud_letter(0x46);                   // F
+    hud_row[HUD_COL_FUEL + 1] = hud_glyph(GLYPH_LBRACKET);
+    hud_row[HUD_COL_FUEL + 2 + HUD_BAR_CELLS] = hud_glyph(GLYPH_RBRACKET);
+    hud_row[32 + HUD_COL_GUN] = hud_letter(0x47);               // G
+    hud_row[32 + HUD_COL_BOMBS] = hud_letter(0x42);             // B
+    hud_row[32 + HUD_COL_MEN] = hud_glyph(GLYPH_ICON + (Order::Infantry as u16));
     // Force the first compose: no real state matches these.
     hud_funds = 0xFF;
-    hud_sel = 0xFF;
+    hud_lives = 0xFF;
+    hud_hp = 0xFF;
+    hud_fuel = 0xFF;
+    hud_gun = 0xFF;
+    hud_bombs = 0xFF;
+    hud_men = 0xFF;
     hud_dirty = 0;
     hud_msg_dirty = 0;
     hud_ov_dirty = 0;
     hud_ov_shown = 0;
+    hud_ov_compose();
     hud_update();
 }
 
-// hud_update - recompose the row if the purse or the selection moved.
+// hud_update - recompose whatever moved. Health is 20 hp over 48 px
+// (2.5 px/hp, the last two clipped); fuel is 100 over 48 (half a pixel a
+// unit, the last two clipped).
 far fn hud_update() {
     if hud_funds != funds {
         hud_funds = funds;
         hud_put2(HUD_COL_FUNDS + 1, funds);
         hud_dirty = 1;
     }
-    if hud_sel != order_sel {
-        // Clear both brackets of the old selection, then place the new.
-        if hud_sel < ORDER_RING {
-            let old: u16 = HUD_COL_RING + ((hud_sel as u16) << 1);
-            hud_row[old - 1] = HUD_BLANK;
-            hud_row[old + 1] = HUD_BLANK;
-        }
-        hud_sel = order_sel;
-        let at: u16 = HUD_COL_RING + ((order_sel as u16) << 1);
-        hud_row[at - 1] = hud_glyph(GLYPH_LBRACKET);
-        hud_row[at + 1] = hud_glyph(GLYPH_RBRACKET);
-        hud_put2(HUD_COL_COST + 1, order_stats[order_sel as u16].cost);
+    if hud_lives != heli_lives {
+        hud_lives = heli_lives;
+        let mut n: u8 = heli_lives;
+        if n > 9 { n = 9; }
+        hud_row[HUD_COL_LIVES + 1] = hud_glyph(GLYPH_DIGIT + (n as u16));
+        hud_dirty = 1;
+    }
+    if hud_hp != heli_hp {
+        hud_hp = heli_hp;
+        hud_bar(HUD_COL_HEALTH + 2, ((heli_hp as u16) * 2) + ((heli_hp as u16) >> 1));
+        hud_dirty = 1;
+    }
+    if hud_fuel != heli_fuel {
+        hud_fuel = heli_fuel;
+        hud_bar(HUD_COL_FUEL + 2, (heli_fuel as u16) >> 1);
+        hud_dirty = 1;
+    }
+    if hud_gun != heli_gun {
+        hud_gun = heli_gun;
+        hud_put2(32 + HUD_COL_GUN + 2, heli_gun);
+        hud_dirty = 1;
+    }
+    if hud_bombs != heli_bombs {
+        hud_bombs = heli_bombs;
+        hud_put2(32 + HUD_COL_BOMBS + 2, heli_bombs);
+        hud_dirty = 1;
+    }
+    if hud_men != heli_men {
+        hud_men = heli_men;
+        hud_row[32 + HUD_COL_MEN + 1] = hud_glyph(GLYPH_DIGIT + (heli_men as u16));
         hud_dirty = 1;
     }
 }
@@ -148,12 +209,13 @@ far fn hud_message(text: *u8, len: u16) {
 // -------------------------------------------------------------- overlay ---
 // The order dialog, shown while L is held: a box on map rows OV_ROW.. of
 // BG1 - under the strip, over the sky - one line per unit type with its
-// icon, name and cost, the highlighted line marked by a cursor. The rows
-// are composed into one 8-row shadow and DMA'd as a block when it changes:
-// once to show, once per cursor move, once to clear. Rows 3-10 are
-// transparent in the art, so clearing writes the transparent tile back;
-// row 10 is also the battle-over line's, which is why game_over hides the
-// overlay before it writes.
+// icon, name and cost, the highlighted line marked by a cursor. The box
+// is composed once, at init, into an 8-row shadow that only the cursor
+// ever changes (composing it on the press cost a frame); showing it and
+// moving the cursor DMA that shadow as a block, hiding it DMAs a second,
+// all-transparent block. Rows 3-10 are transparent in the art; row 10 is
+// also the battle-over line's, which is why game_over hides the overlay
+// before it writes.
 //
 // Line layout, 18 columns from OV_COL: border, cursor, icon, space, an
 // eight-letter name, space, '$', two digits, space, border.
@@ -165,8 +227,9 @@ const OV_W:    u16 = 18;
 // Names in ring order, eight capitals each padded with spaces.
 static ov_names: [u8; 48] = "VAN     LAUNCHERTANK    INFANTRYENGINEERHELI    ";
 
-#[lowram] static mut hud_ov:       [u16; 256];   // OV_ROWS map rows
-#[lowram] static mut hud_ov_dirty: u8;
+#[lowram] static mut hud_ov:       [u16; 256];   // OV_ROWS map rows, the box
+#[lowram] static mut hud_ov_clear: [u16; 256];   // ... and the same rows, empty
+#[lowram] static mut hud_ov_dirty: u8;           // 1 flush the box, 2 flush the clear
 #[lowram] static mut hud_ov_shown: u8;
 #[lowram] static mut hud_ov_sel:   u8;           // the line the cursor is on
 
@@ -181,11 +244,13 @@ fn hud_ov_cursor(k: u16, tile: u16) {
     hud_ov[((k + 1) << 5) + OV_COL + 1] = tile;
 }
 
-// hud_ov_compose - the whole box, cursor on the current selection.
+// hud_ov_compose - the whole box, cursor on the current selection, and
+// the clear block. Once, at init.
 fn hud_ov_compose() {
     let clear: u16 = hud_clear_tile();
     for c in 0..256 {
         hud_ov[c] = clear;
+        hud_ov_clear[c] = clear;
     }
     // Top and bottom edges.
     hud_ov[OV_COL] = hud_box(BOX_TL);
@@ -223,7 +288,6 @@ fn hud_ov_compose() {
     }
     hud_ov_sel = order_sel;
     hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
-    hud_ov_dirty = 1;
 }
 
 // hud_overlay - one tick: *want* is whether L is down. Shows, follows the
@@ -232,14 +296,13 @@ far fn hud_overlay(want: u8) {
     if want != 0 {
         if hud_ov_shown == 0 {
             hud_ov_shown = 1;
-            hud_ov_compose();
-        } else {
-            if hud_ov_sel != order_sel {
-                hud_ov_cursor(hud_ov_sel as u16, HUD_BLANK);
-                hud_ov_sel = order_sel;
-                hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
-                hud_ov_dirty = 1;
-            }
+            hud_ov_dirty = 1;
+        }
+        if hud_ov_sel != order_sel {
+            hud_ov_cursor(hud_ov_sel as u16, HUD_BLANK);
+            hud_ov_sel = order_sel;
+            hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
+            hud_ov_dirty = 1;
         }
     } else {
         if hud_ov_shown != 0 { hud_overlay_hide(); }
@@ -249,23 +312,23 @@ far fn hud_overlay(want: u8) {
 // hud_overlay_hide - the rows back to transparent.
 far fn hud_overlay_hide() {
     hud_ov_shown = 0;
-    let clear: u16 = hud_clear_tile();
-    for c in 0..256 {
-        hud_ov[c] = clear;
-    }
-    hud_ov_dirty = 1;
+    hud_ov_dirty = 2;
 }
 
 // hud_flush - push the rows to VRAM. Vblank only.
 far fn hud_flush() {
-    if hud_ov_dirty != 0 {
-        hud_ov_dirty = 0;
+    if hud_ov_dirty == 1 {
         dma_copy_vram(1, &hud_ov as far *u8, VRAM_BG1 + (OV_ROW << 5), 512);
     }
+    if hud_ov_dirty == 2 {
+        dma_copy_vram(1, &hud_ov_clear as far *u8, VRAM_BG1 + (OV_ROW << 5), 512);
+    }
+    hud_ov_dirty = 0;
     if hud_dirty != 0 {
         hud_dirty = 0;
-        dma_copy_vram(1, &hud_row as far *u8, VRAM_BG1, 64);
+        dma_copy_vram(1, &hud_row as far *u8, VRAM_BG1, 128);
     }
+    radar_flush();
     if hud_msg_dirty != 0 {
         hud_msg_dirty = 0;
         dma_copy_vram(1, &hud_msg as far *u8, VRAM_BG1 + (HUD_MSG_ROW << 5), 64);

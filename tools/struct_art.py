@@ -18,6 +18,9 @@ Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
     row 10-13  super bunker (40x24 in 48x32) at cols 0-5
                base (64x32) at cols 6-13
     row 1      cols 12-14: the missile heading E, NE, N (8x8 tiles 28-30)
+               col 15: the radar's camera bracket (8x8 tile 31, radar.r65
+               RADAR_BRACKET_TILE) - the window's edges, drawn as a sprite
+               over the radar row
     row 14-15  the airframe's turn frames (32x16 each): three-quarter view
                at cols 0-3, head-on at cols 4-7, slight turn at cols 8-11
                (heli.r65 HELI_TILE_TURN_*)
@@ -302,6 +305,21 @@ PARACHUTE = [
 ]
 
 
+# The camera window on the radar: 8 px wide, its top and bottom edges and
+# a tick down each side. A sprite, so it moves every frame without a
+# redraw of the radar row (light grey, index 5, in OBJ palette 0).
+RADAR_BRACKET = [
+    "wwwwwwww",
+    "w......w",
+    "........",
+    "........",
+    "........",
+    "........",
+    "w......w",
+    "wwwwwwww",
+]
+
+
 def save_bmp4(im, path):
     """Write a 16-colour indexed image as a 4-bit BMP.
 
@@ -351,6 +369,7 @@ def main():
     stamp(px, 64, 112, TURN_SLIGHT)
     stamp(px, 48, 32, INFANTRY_FIRE)            # tile 70
     stamp(px, 64, 32, PARACHUTE)                # tile 72
+    stamp(px, 120, 8, RADAR_BRACKET)            # tile 31
     stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
     stamp(px, 104, 8, MISSILE_NE)
     stamp(px, 112, 8, MISSILE_N)

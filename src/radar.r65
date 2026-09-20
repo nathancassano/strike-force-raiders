@@ -1,0 +1,271 @@
+// radar - the strip's third row: the whole 8192 px world across 256 px,
+// 32 world pixels to one, drawn as pixels rather than sprites.
+//
+// The row is 32 tiles the game owns: RADAR_TILE.. in BG1's tileset, past
+// whatever bmp2chr produced, mapped in order along map row RADAR_ROW so
+// the row is one 256x8 bitmap. It is drawn into a 512-byte shadow - 2bpp,
+// two planes a scanline, sixteen bytes a tile - and DMA'd to VRAM in
+// vblank on the frames it was redrawn. Every RADAR_PERIOD frames: the
+// airframe covers a radar pixel in six frames at top speed, so sixteen
+// is under three pixels of lag.
+//
+// A redraw is a block copy of the base, a plot per live unit and a
+// 512-byte DMA - together about a third of a frame, which on top of an
+// ordinary frame (two thirds full with the enemy column out) dropped
+// four redraw frames in ten even in idle play. So it is spread: the
+// copy on one frame, half the units on each of the next two, the
+// airframe on the fourth, and the DMA in the vblank after that. Nothing waits on it. Every plot here is one index
+// calculation and a byte or two per plane.
+//
+// What it shows, in its own sub-palette - the strip's navy, then blue
+// for the player's side and red for the enemy's (2bpp is three colours
+// and transparent, so there is no white left over; a neutral building
+// is told by its shape):
+//
+//   rows 1-2       the airframe, a 2x2 blue block
+//   rows 3-5       buildings, 1x3 ticks by owner; a neutral one is a
+//                  single blue pixel at the bottom of them
+//   rows 6-7       vehicles on the ground line, 1x2: blue ours, red
+//                  theirs. Men are not shown - a column's worth of dots
+//                  would smear the row
+//
+// The camera window - the 8 px of the row the screen is looking at - is
+// not in the bitmap at all: it is one 8x8 sprite (radar_draw) placed over
+// the row, so it follows the camera every frame rather than every
+// sixteenth, and a redraw does not have to erase it.
+//
+// Buildings only move when they change hands, so they are drawn once
+// into a base image (rebuilt when struct_set_owner says so) that each
+// redraw starts from; the rest is plotted over it. An enemy van within
+// RADAR_JAM px of the airframe jams the picture: the redraw is noise.
+//
+// 2bpp: plane 0 is bit 0 of the colour, plane 1 bit 1. Navy is colour 1,
+// blue 2, red 3 - so the base is plane 0 all ones, and a blue pixel
+// clears its plane-0 bit and sets plane 1, a red one sets plane 1 only.
+// The row's tiles carry BG sub-palette RADAR_PAL, whose four entries are
+// written at init (CGRAM 4..7); the art's sub-palette 0 is untouched.
+
+#[bank(0)]
+
+const RADAR_ROW:    u16 = 2;
+const RADAR_PAL:    u16 = 1;                     // BG sub-palette: CGRAM 4..7
+const RADAR_TILE:   u16 = BG1_CHR_SIZE >> 4;     // first tile past the art
+const RADAR_SHIFT:  u16 = 5;                     // 8192 px -> 256
+const RADAR_PERIOD: u16 = 16;
+const RADAR_JAM:    u16 = 512;                   // the campaign table's, later
+const RADAR_BYTES:  u16 = 512;
+const RADAR_BRACKET_TILE: u8  = 31;              // tools/struct_art.py
+const RADAR_BRACKET_ATTR: u16 = 0x3000;          // priority 3, OBJ palette 0
+const RADAR_Y:      u16 = RADAR_ROW << 3;        // the row's first scanline
+
+// The bit for radar pixel x within its tile: x & 7 -> 0x80 >> that.
+static radar_bit: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
+
+#[lowram] static mut radar_base:  [u8; 512];     // the buildings
+#[lowram] static mut radar_buf:   [u8; 512];     // this redraw
+#[lowram] static mut radar_row:   [u16; 32];     // map row: the tile ids
+#[lowram] static mut radar_dirty: u8;            // shadow to VRAM
+#[lowram] static mut radar_map_dirty: u8;        // map row to VRAM, once
+#[lowram] static mut radar_base_dirty: u8;       // rebuild the base first
+#[lowram] static mut radar_jam:   u8;            // seen on this redraw's unit pass
+
+// radar_palette - the sub-palette: transparent, the strip's navy, blue,
+// red. CGRAM, so force blank only: boot, not the reset.
+far fn radar_palette() {
+    set_cgram_addr!(RADAR_PAL << 2);
+    write_color!(Color::rgb!(0, 0, 0));
+    write_color!(Color::rgb!(4, 5, 8));
+    write_color!(Color::rgb!(10, 20, 31));
+    write_color!(Color::rgb!(31, 8, 4));
+}
+
+// radar_init - after struct_init: the base is built here, outside any
+// frame's budget, rather than on the first redraw.
+far fn radar_init() {
+    for c in 0..32 {
+        radar_row[c] = (RADAR_TILE + c) | (RADAR_PAL << 10);
+    }
+
+    radar_map_dirty = 1;
+    radar_dirty = 0;
+    radar_jam = 0;
+    radar_build_base();
+    radar_base_dirty = 0;
+}
+
+// radar_index - the shadow byte of plane 0 for radar pixel x on row r.
+fn radar_index(x: u16, r: u16) -> u16 {
+    return ((x & 0x00F8) << 1) + (r << 1);
+}
+
+// radar_blue / radar_red - one pixel; radar_blue2 / radar_red2 - that
+// pixel and the one below it, for one index calculation.
+fn radar_blue(x: u16, r: u16) {
+    let i: u16 = radar_index(x, r);
+    let b: u8 = radar_bit[x & 7];
+    radar_buf[i] = radar_buf[i] & ~b;
+    radar_buf[i + 1] = radar_buf[i + 1] | b;
+}
+fn radar_red(x: u16, r: u16) {
+    let i: u16 = radar_index(x, r) + 1;
+    radar_buf[i] = radar_buf[i] | radar_bit[x & 7];
+}
+fn radar_blue2(x: u16, r: u16) {
+    let i: u16 = radar_index(x, r);
+    let b: u8 = radar_bit[x & 7];
+    radar_buf[i] = radar_buf[i] & ~b;
+    radar_buf[i + 1] = radar_buf[i + 1] | b;
+    radar_buf[i + 2] = radar_buf[i + 2] & ~b;
+    radar_buf[i + 3] = radar_buf[i + 3] | b;
+}
+fn radar_red2(x: u16, r: u16) {
+    let i: u16 = radar_index(x, r) + 1;
+    let b: u8 = radar_bit[x & 7];
+    radar_buf[i] = radar_buf[i] | b;
+    radar_buf[i + 2] = radar_buf[i + 2] | b;
+}
+
+// radar_build_base - navy, and the buildings.
+fn radar_build_base() {
+    let mut i: u16 = 0;
+    while i < RADAR_BYTES {
+        radar_buf[i] = 0xFF;
+        radar_buf[i + 1] = 0x00;
+        i = i + 2;
+    }
+    for n in 0..struct_count {
+        let x: u16 = (structs[n].x + (structs[n].w >> 1)) >> RADAR_SHIFT;
+        let owner: u8 = structs[n].owner;
+        if owner == SIDE_PLAYER {
+            radar_blue(x, 3); radar_blue(x, 4); radar_blue(x, 5);
+        } else {
+            if owner == SIDE_ENEMY {
+                radar_red(x, 3); radar_red(x, 4); radar_red(x, 5);
+            } else {
+                radar_blue(x, 5);
+            }
+        }
+    }
+    // Into the base: the shadow is the working image.
+    radar_copy(0);
+}
+
+// radar_copy - the whole image one way: 0 shadow -> base, 1 base ->
+// shadow. MVN, 7 cycles a byte; a loop was five times that. Both live
+// in lowram, so both are bank 0 - the .DEFINE symbols cannot be given
+// to block_move!, which asks WLA-DX for their bank.
+fn radar_copy(to_shadow: u8) {
+    if to_shadow != 0 {
+        asm!(
+            "PHB",
+            "REP #$20",
+            "LDA #511",
+            "LDX #radar_base",
+            "LDY #radar_buf",
+            "MVN $00,$00",
+            "SEP #$20",
+            "PLB"
+        );
+    } else {
+        asm!(
+            "PHB",
+            "REP #$20",
+            "LDA #511",
+            "LDX #radar_buf",
+            "LDY #radar_base",
+            "MVN $00,$00",
+            "SEP #$20",
+            "PLB"
+        );
+    }
+}
+
+// radar_noise - static: a few random bytes smeared down the row.
+fn radar_noise() {
+    let a: u16 = rand();
+    let b: u16 = rand();
+    let mut i: u16 = 0;
+    let mut k: u8 = a as u8;
+    while i < RADAR_BYTES {
+        radar_buf[i] = k;
+        radar_buf[i + 1] = k ^ (b as u8);
+        k = k + ((a >> 8) as u8) + 0x35;
+        i = i + 2;
+    }
+}
+
+// radar_units - plot the vehicles *from* .. *to* (a man's tag is Infantry
+// or above), noting an enemy van near enough to jam the picture.
+fn radar_units(from: u16, to: u16) {
+    let hx: u16 = heli_x_px;
+    for j in from..to {
+        let t: u8 = units[j].kind as u8;
+        if t != UnitType::Free as u8 && t < UnitType::Infantry as u8 {
+            let ux: u16 = units[j].x_px;
+            let x: u16 = ux >> RADAR_SHIFT;
+            if units[j].owner == SIDE_PLAYER {
+                radar_blue2(x, 6);
+            } else {
+                radar_red2(x, 6);
+                if t == UnitType::Van as u8 {
+                    let mut d: u16 = 0;
+                    if ux > hx { d = ux - hx; } else { d = hx - ux; }
+                    if d < RADAR_JAM { radar_jam = 1; }
+                }
+            }
+        }
+    }
+}
+
+// radar_update - one tick: one step of the redraw, on the first four
+// frames of every RADAR_PERIOD.
+far fn radar_update() {
+    let step: u16 = frames_loop & (RADAR_PERIOD - 1);
+    if step == 0 {
+        if radar_base_dirty != 0 {
+            radar_base_dirty = 0;
+            radar_build_base();
+        }
+        radar_copy(1);
+        radar_jam = 0;
+        return;
+    }
+    if step == 1 { radar_units(0, UNIT_MAX >> 1); return; }
+    if step == 2 { radar_units(UNIT_MAX >> 1, UNIT_MAX); return; }
+    if step != 3 { return; }
+
+    if radar_jam != 0 {
+        radar_noise();
+        radar_dirty = 1;
+        return;
+    }
+    if heli_dead == 0 {
+        let h: u16 = (heli_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
+        radar_blue2(h, 1);
+        if h < 255 { radar_blue2(h + 1, 1); }
+    }
+    radar_dirty = 1;
+}
+
+// radar_draw - the camera bracket, one sprite over the row. Taken right
+// after the airframe's slots: it is the HUD, and never dropped.
+far fn radar_draw() {
+    let s: u16 = oam_take();
+    if s < OAM_SLOTS {
+        oam.set_full!(s as u8, camera_x >> RADAR_SHIFT, RADAR_Y as u8,
+                      (RADAR_BRACKET_TILE as u16) | RADAR_BRACKET_ATTR);
+        oam.set_size!(s as u8, 0);        // 8x8
+    }
+}
+
+// radar_flush - vblank: the map row once, the tiles when redrawn.
+far fn radar_flush() {
+    if radar_map_dirty != 0 {
+        radar_map_dirty = 0;
+        dma_copy_vram(1, &radar_row as far *u8, VRAM_BG1 + (RADAR_ROW << 5), 64);
+    }
+    if radar_dirty != 0 {
+        radar_dirty = 0;
+        dma_copy_vram(1, &radar_buf as far *u8, VRAM_BG1C + (RADAR_TILE << 3), RADAR_BYTES);
+    }
+}

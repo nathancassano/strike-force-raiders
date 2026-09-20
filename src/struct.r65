@@ -205,6 +205,7 @@ fn struct_attr(owner: u8) -> u16 {
 
 // struct_set_owner - hand a structure to a side; the palette follows.
 fn struct_set_owner(i: u16, owner: u8) {
+    radar_base_dirty = 1;
     structs[i].owner = owner;
     structs[i].attr = struct_attr(owner);
 }

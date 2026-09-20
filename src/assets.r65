@@ -3,7 +3,7 @@
 
 #[bank(1)]
 
-static BG1_CHR: [u8; 848] = include_bytes!("../assets/gfx/bg1.chr");
+static BG1_CHR: [u8; 912] = include_bytes!("../assets/gfx/bg1.chr");
 static BG1_MAP: [u8; 2048] = include_bytes!("../assets/gfx/bg1.tilemap");
 static BG1_PAL: [u8; 32] = include_bytes!("../assets/gfx/bg1.pal");
 static BG2_CHR: [u8; 48] = include_bytes!("../assets/gfx/bg2.chr");
@@ -18,7 +18,7 @@ static BG4_PAL: [u8; 32] = include_bytes!("../assets/gfx/bg4.pal");
 static OBJ_CHR: [u8; 8192] = include_bytes!("../assets/gfx/obj.chr");
 static OBJ_PAL: [u8; 32] = include_bytes!("../assets/gfx/obj.pal");
 
-const BG1_CHR_SIZE: u16 = 848;
+const BG1_CHR_SIZE: u16 = 912;
 const BG1_MAP_SIZE: u16 = 2048;
 const BG1_PAL_SIZE: u16 = 32;
 const BG2_CHR_SIZE: u16 = 48;
