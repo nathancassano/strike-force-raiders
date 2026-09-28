@@ -5,6 +5,8 @@ assert the layers scrolled at their intended parallax rates.
 
   parallax.py BASE.png MOVED.png                    print a row profile
   parallax.py BASE.png MOVED.png --assert-bands 8   also check the ground
+  ... --ignore-rows 216-223    leave out rows a fixed layer covers (the
+                              bottom HUD strip lies across the last band)
 
 Each structured scanline is cross-correlated against the same row of the
 base frame; consecutive rows with equal displacement are collapsed into a
@@ -44,9 +46,11 @@ def best_shift(ra, rb, w):
     return best[1], best[0] / w
 
 
-def runs_of(a, b, w, h):
+def runs_of(a, b, w, h, ignore=()):
     out = []
     for y in range(h):
+        if y in ignore:
+            continue
         if len(set(a[y])) < 2:      # uniform row: every shift matches
             continue
         s, c = best_shift(a[y], b[y], w)
@@ -62,7 +66,11 @@ def main():
     args = sys.argv[3:]
     w, h, A = load(base)
     _, _, B = load(moved)
-    rs = runs_of(A, B, w, h)
+    ignore = set()
+    if '--ignore-rows' in args:
+        lo, hi = args[args.index('--ignore-rows') + 1].split('-')
+        ignore = set(range(int(lo), int(hi) + 1))
+    rs = runs_of(A, B, w, h, ignore)
 
     print(f"{'rows':>11} {'shift':>6} {'match':>7}")
     for a, b, s, c in rs:

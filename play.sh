@@ -26,7 +26,8 @@ ACTIONS="${2:-shot}"
 [ -f "$ROM" ]   || { echo "ROM not built: $ROM (run make)" >&2; exit 2; }
 
 SHA=$(sha1sum "$ROM" | cut -d' ' -f1 | tr 'a-z' 'A-Z')
-MOVIE="$HERE/build/play.mmo"
+# Named after the screenshot so runs can go in parallel.
+MOVIE="${OUT%.png}.mmo"
 python3 "$HERE/tools/mkmovie.py" "$MOVIE" "$PROJECT.smc" "$SHA" "$ACTIONS" >/dev/null
 
 # Re-look-up the address every run: it moves whenever code before it changes.
