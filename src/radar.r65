@@ -1,4 +1,4 @@
-// radar - the strip's third row: the whole 8192 px world across 256 px,
+// radar - the strip's second row: the whole 8192 px world across 256 px,
 // 32 world pixels to one, drawn as pixels rather than sprites.
 //
 // The row is 32 tiles the game owns: RADAR_TILE.. in BG1's tileset, past
@@ -47,7 +47,7 @@
 
 #[bank(0)]
 
-const RADAR_ROW:    u16 = 2;
+const RADAR_ROW:    u16 = 1;
 const RADAR_PAL:    u16 = 1;                     // BG sub-palette: CGRAM 4..7
 const RADAR_TILE:   u16 = BG1_CHR_SIZE >> 4;     // first tile past the art
 const RADAR_SHIFT:  u16 = 5;                     // 8192 px -> 256
@@ -243,6 +243,11 @@ far fn radar_update() {
         let h: u16 = (heli_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
         radar_blue2(h, 1);
         if h < 255 { radar_blue2(h + 1, 1); }
+    }
+    if foe_dead == 0 {
+        let f: u16 = (foe_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
+        radar_red2(f, 1);
+        if f < 255 { radar_red2(f + 1, 1); }
     }
     radar_dirty = 1;
 }

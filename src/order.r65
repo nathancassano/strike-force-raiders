@@ -12,7 +12,7 @@
 // frames; a multi-man order is just several in a row, so a convoy is what
 // queuing a few orders back to back looks like.
 
-#[bank(0)]
+#[bank(2)]
 
 // ------------------------------------------------------------- economy ---
 // The plan calls for a 24-bit add of the raw distance. Dropping the low

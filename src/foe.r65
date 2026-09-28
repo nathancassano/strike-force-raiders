@@ -1,0 +1,911 @@
+// foe - the enemy airframe, and the pilot.
+//
+// A second helicopter, the CPU's, with the player's airframe's physics,
+// loadout, fuel, pad and loss rules on its own state, and the world's
+// response to it: the player's gun, bombs and missiles against it, the
+// player's turrets, base and super bunker firing at it, balloons and the
+// other airframe ending it on contact, and its lives as the second way to
+// win.
+//
+// The pilot is an adaptation of Armor Alley's: a priority list run every
+// FOE_THINK frames that picks one spot to fly to and one thing to shoot
+// or bomb, in this order - refit (fuel, or two of ammo, bombs, health
+// short), dodge a round coming at it, hunt the player's airframe (gun
+// level with it, or bomb from above once the gun is dry), bomb a ground
+// unit its row lets it kill, bomb a player turret or bunker, and
+// otherwise wander toward the player's end on a weave, turning at the
+// world's edge. The original sums steering forces every frame; here the
+// same decisions set a target for foe_steer, which does the flying, and
+// the reactions are the original's too: a mode roll every half minute
+// (attack seven times in eight), a coin toss to start hunting when its
+// gunfire hits, a bomb limit per target. Clouds, paratroopers, kamikaze
+// runs and the missile counter-measures are not here.
+//
+// The player's airframe keeps its own module: its state is a set of
+// statics, and a second copy of the few routines that read them is
+// cheaper on this CPU than routing both through a pointer, and leaves the
+// tuned code alone.
+
+#[bank(0)]
+
+// ------------------------------------------------------------ constants ---
+// The start is the mirror of the player's: hovering at the far edge.
+const FOE_START_X: u16 = WORLD_W - 64 - HELI_W;
+const FOE_LIVES:   u8  = 4;
+const FOE_ATTR:    u16 = HELI_ATTR | OBJ_PAL_ENEMY;
+
+// The pilot. It flies toward a spot, at its row's clip speed far from it,
+// at a walk inside FOE_SLOW, and coasts to rest inside FOE_NEAR.
+const FOE_NEAR:    u16 = 8;
+const FOE_SLOW:    u16 = 64;
+const FOE_WALK:    Q10 = 64;              // 1 px/frame
+const FOE_SINK:    Q10 = 128;             // 2 px/frame, under HELI_CRASH_VY
+const FOE_SINK_LOW: Q10 = 48;             // ... and the last FOE_SLOW_Y px gently
+const FOE_SLOW_Y:  u16 = 24;
+const FOE_JUMP:    u16 = 36;              // a height change this big is a jink: full speed
+const HELI_Y_MIN_PX: u16 = 16;            // HELI_Y_MIN in pixels
+const FOE_HP_PASS: u8  = 16;              // a pass over a turret costs about ten; under this, leave them
+const FOE_FUEL_LOW: u8 = 14;              // the original's needsFuel (25), less the trip home added at the check
+const FOE_GUN_LOW:  u8 = 6;               // ... needsAmmo
+const FOE_HP_LOW:   u8 = 5;               // ... needsRepair
+const FOE_THINK:   u16 = 8;               // frames between decisions; a power of two
+const FOE_MODE_MASK: u16 = 2047;          // the mode roll, every ~34 s
+// The original's ranges: things in view, gun reach, rounds worth dodging.
+const FOE_VIEW:     u16 = 512;
+const FOE_GUN_REACH: u16 = 320;
+const FOE_DODGE_X:  u16 = 192;
+const FOE_DODGE_Y:  u16 = 2 * HELI_H;
+const FOE_AIM_Y:    u16 = HELI_H + (HELI_H >> 1);   // 1.5 heights, for the gun
+const FOE_EDGE:     u16 = 128;            // turn this far from the world's far end ...
+const FOE_WEST:     u16 = 900;            // ... and here at the player's, short of the
+                                          // base's 320 px no-fly zone (400 + 64 + 320)
+const FOE_BALLOON_X: u16 = 224;           // keep under a balloon this near: a second of flight, the descent is slow
+const FOE_STANDOFF: u16 = HELI_W + 16;    // gun range: sit this far off the target
+const FOE_CLOSE:    u16 = HELI_W + 160;   // ... and clear its plane inside this when it closes:
+                                          // a charge closes 8.75 px a frame and the climb takes
+                                          // twenty frames to get going
+const FOE_ALIGN:    u16 = 6;              // bomb when the centres are this close
+const FOE_PASS:     u16 = 192;            // a bombing pass over a building runs this far past it
+const FOE_BOMB_CD:  u8  = 40;             // frames between bombs
+const FOE_BOMB_TANK: u8 = 3;              // bombs per tank; one for anything else
+const FOE_RESPOND:  u8  = 60;             // frames between coin tosses on being hit
+// The weave: the wander's height cycles through these, one every 64
+// frames - the original's sine wave, biased upward. Under fire from the
+// ground it is the second, twice as tall and four times as quick: the
+// original's amplitude x4 when avoiding a turret.
+static foe_weave: [u16; 4] = [96 << 8, 72 << 8, 56 << 8, 72 << 8];
+static foe_jink:  [u16; 4] = [96 << 8, 56 << 8, 24 << 8, 56 << 8];
+
+// States, in priority order.
+const FOE_WANDER:  u8 = 0;
+const FOE_PAD:     u8 = 1;
+const FOE_DODGE:   u8 = 2;
+const FOE_HUNT:    u8 = 3;
+const FOE_BOMB:    u8 = 4;                // a ground unit
+const FOE_STRUCT:  u8 = 5;                // a turret or bunker
+// A bomb target: a unit slot, or a structure index with the top bit set.
+const FOE_TGT_STRUCT: u8 = 0x80;
+const FOE_TGT_NONE:   u8 = 0xFF;
+
+// ---------------------------------------------------------------- state ---
+#[lowram] static mut foe_x_px:  u16;
+#[lowram] static mut foe_x_sub: u8;
+#[lowram] static mut foe_y:     u16;      // 8.8 screen pixels
+#[lowram] static mut foe_vx:    Q10;
+#[lowram] static mut foe_vy:    Q10;
+#[lowram] static mut foe_face_left: u8;
+#[lowram] static mut foe_hp:    u8;
+#[lowram] static mut foe_fuel:  u8;
+#[lowram] static mut foe_fuel_t: u8;
+#[lowram] static mut foe_gun:   u8;
+#[lowram] static mut foe_gun_t: u8;
+#[lowram] static mut foe_bombs: u8;
+#[lowram] static mut foe_bomb_t: u8;
+#[lowram] static mut foe_hp_t:  u8;
+#[lowram] static mut foe_landed: u8;
+#[lowram] static mut foe_dead:  u8;       // frames until the next airframe; 0 = flying
+#[lowram] static mut foe_rising: u8;
+#[lowram] static mut foe_lives: u8;
+#[lowram] static mut foe_state: u8;
+#[lowram] static mut foe_attack: u8;      // the mode roll: in a fighting mood
+#[lowram] static mut foe_hunt:   u8;      // ... and after the player's airframe
+#[lowram] static mut foe_dir:    u8;      // wander: 1 heading west (the player's end)
+#[lowram] static mut foe_gun_cd: u8;      // frames until the gun can fire
+#[lowram] static mut foe_bomb_cd: u8;     // ... and the next bomb
+#[lowram] static mut foe_tgt:    u8;      // what the bombs are for this tick
+#[lowram] static mut foe_bombed: u8;      // the last target bombed ...
+#[lowram] static mut foe_bombed_n: u8;    // ... and how many times
+#[lowram] static mut foe_respond: u8;     // throttle on the chase coin toss
+#[lowram] static mut foe_pass:   u16;     // a bombing pass's far end; AIR_NONE between passes
+#[lowram] static mut foe_pass_tgt: u8;    // ... and what it is over
+#[lowram] static mut foe_clip:  Q10;      // the row's clip_speed, read once
+#[lowram] static mut foe_tx:    u16;      // where it is flying to, decided
+#[lowram] static mut foe_ty:    u16;      // ... every FOE_THINK frames
+
+// Where a gun's shot at an airframe goes: air_target's second result.
+#[lowram] static mut air_ty:    u16;
+const AIR_NONE: u16 = 0xFFFF;
+
+// foe_init - place the airframe with a full load; the lives are the
+// match's, so foe_lost keeps them across a re-init.
+far fn foe_init() {
+    foe_x_px = FOE_START_X;
+    foe_x_sub = 0;
+    foe_y = HELI_Y_HOVER;
+    foe_vx = Q10(0);
+    foe_vy = Q10(0);
+    foe_face_left = 1;
+    foe_hp = HELI_HP_MAX;
+    foe_fuel = HELI_FUEL_MAX;
+    foe_fuel_t = HELI_FUEL_DRAIN;
+    foe_gun = HELI_GUN_MAX;
+    foe_gun_t = HELI_GUN_RELOAD;
+    foe_bombs = HELI_BOMB_MAX;
+    foe_bomb_t = HELI_BOMB_RELOAD;
+    foe_hp_t = HELI_HP_REPAIR;
+    foe_landed = 0;
+    foe_dead = 0;
+    foe_rising = 0;
+    foe_state = FOE_WANDER;
+    foe_clip = cpu_stats[cpu_level as u16].clip_speed;
+    foe_tx = FOE_START_X;
+    foe_ty = HELI_Y_HOVER;
+    foe_dir = 1;
+    foe_gun_cd = 0;
+    foe_bomb_cd = 0;
+    foe_tgt = FOE_TGT_NONE;
+    foe_bombed = FOE_TGT_NONE;
+    foe_bombed_n = 0;
+    foe_respond = 0;
+    foe_pass = AIR_NONE;
+}
+
+far fn foe_reset() {
+    foe_init();
+    foe_lives = FOE_LIVES;
+    foe_attack = 1;
+    foe_hunt = 0;
+}
+
+// foe_lost - the airframe is gone. The next one comes after the row's
+// regen_time, rising out of the ground at the far edge; the last one is
+// the match, won.
+far fn foe_lost() {
+    foe_lives = foe_lives - 1;
+    if foe_lives == 0 {
+        game_over(GAME_WON);
+    } else {
+        foe_init();
+        let t: u8 = cpu_stats[cpu_level as u16].regen_time;
+        if t == 0 {
+            foe_rising = 1;
+            foe_y = GROUND_Y << 8;
+        } else {
+            foe_dead = t;
+        }
+    }
+}
+
+// foe_hit - damage from a round or a missile; a bomb goes straight to
+// foe_lost. Gunfire with the player's airframe in view is taken as its
+// gunfire, and - the original's respondToHit - a coin toss, no more than
+// once a second, may turn the pilot on it.
+fn foe_hit(dmg: u8) {
+    if foe_hp > dmg {
+        foe_hp = foe_hp - dmg;
+    } else {
+        foe_lost();
+        return;
+    }
+    if dmg == 1 && foe_hunt == 0 && foe_respond == 0 && foe_attack != 0 {
+        if (cpu_stats[cpu_level as u16].flags & CPU_KILL_COPTER) != 0 {
+            if heli_dead == 0 && unit_apart(heli_x_px, foe_x_px) < FOE_VIEW {
+                foe_respond = FOE_RESPOND;
+                foe_hunt = (cpu_rand() & 1) as u8;
+            }
+        }
+    }
+}
+
+// foe_collide - the player's munitions against the airframe's box, the
+// balloons, and the other airframe: two helicopters that meet are both
+// lost.
+far fn foe_collide() {
+    if foe_dead > 0 || foe_rising != 0 { return; }
+    let fx: u16 = foe_x_px;
+    let fy: u16 = foe_y >> 8;
+    if struct_balloon_at(fx, fy) != 0 {
+        foe_lost();
+        return;
+    }
+    if heli_dead == 0 && heli_rising == 0 {
+        let hx: u16 = heli_x_px;
+        let hy: u16 = heli_y >> 8;
+        if hx + HELI_W > fx && hx < fx + HELI_W {
+            if hy + HELI_H > fy && hy < fy + HELI_H {
+                heli_lost();
+                foe_lost();
+                return;
+            }
+        }
+    }
+    // Nothing of the player's up - the usual frame - and the pool is not
+    // worth walking. (Turrets, bases and launchers of the player's side
+    // fire player-owned rounds too, so this cannot be gated on where the
+    // player's airframe is.)
+    if muni_up[SIDE_PLAYER as u16] == 0 { return; }
+    for m in 0..MUNI_MAX {
+        let mk: u8 = muni_kind[m];
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
+            if muni_owner[m] == SIDE_PLAYER {
+                let mx: u16 = muni_x_px[m];
+                let my: u16 = muni_y[m] >> 8;
+                if mx >= fx && mx < fx + HELI_W {
+                    if my >= fy && my < fy + HELI_H {
+                        muni_drop_bomb(m);
+                        muni_kind[m] = MUNI_FREE;
+                        if mk == MUNI_BOMB {
+                            foe_lost();   // a bomb ends it outright
+                            return;
+                        }
+                        let mut dmg: u8 = 1;
+                        if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
+                        foe_hit(dmg);
+                        if foe_dead > 0 || foe_rising != 0 { return; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// air_target - the airframe a gun of side *mine* at *bx* has within
+// *range*: its centre x, with the centre y in air_ty, or AIR_NONE. A
+// hostile-neutral gun (SIDE_NONE) takes either, the player's first.
+far fn air_target(mine: u8, bx: u16, range: u16) -> u16 {
+    if mine != SIDE_PLAYER {
+        if heli_dead == 0 && heli_rising == 0 {
+            let hx: u16 = heli_x_px + (HELI_W >> 1);
+            if unit_apart(hx, bx) < range {
+                air_ty = heli_y + ((HELI_H >> 1) << 8);
+                return hx;
+            }
+        }
+    }
+    if mine != SIDE_ENEMY {
+        if foe_dead == 0 && foe_rising == 0 {
+            let fx: u16 = foe_x_px + (HELI_W >> 1);
+            if unit_apart(fx, bx) < range {
+                air_ty = foe_y + ((HELI_H >> 1) << 8);
+                return fx;
+            }
+        }
+    }
+    return AIR_NONE;
+}
+
+// ------------------------------------------------------------- physics ---
+// The player's, on this airframe's state.
+fn foe_move_x(v: Q10) {
+    let d: i16 = v.0 << 2;
+    if d >= 0 {
+        let m: u16 = d as u16;
+        let s: u16 = (foe_x_sub as u16) + (m & 0x00FF);
+        foe_x_sub = s as u8;
+        foe_x_px = foe_x_px + (m >> 8) + (s >> 8);
+        let limit: u16 = WORLD_W - HELI_W;
+        if foe_x_px > limit {
+            foe_x_px = limit;
+            foe_x_sub = 0;
+            foe_vx = Q10(0);
+        }
+    } else {
+        let m: u16 = (0 - d) as u16;
+        let mut whole: u16 = m >> 8;
+        let frac: u16 = m & 0x00FF;
+        if (foe_x_sub as u16) < frac { whole = whole + 1; }
+        foe_x_sub = foe_x_sub - (frac as u8);
+        if foe_x_px <= whole {
+            foe_x_px = 0;
+            foe_x_sub = 0;
+            foe_vx = Q10(0);
+        } else {
+            foe_x_px = foe_x_px - whole;
+        }
+    }
+}
+
+fn foe_move_y(v: Q10) {
+    let d: i16 = v.0 << 2;
+    if d >= 0 {
+        foe_y = foe_y + (d as u16);
+        if foe_y > HELI_Y_MAX {
+            foe_y = HELI_Y_MAX;
+            foe_vy = Q10(0);
+        }
+    } else {
+        let m: u16 = (0 - d) as u16;
+        if foe_y <= m {
+            foe_y = HELI_Y_MIN;
+            foe_vy = Q10(0);
+        } else {
+            foe_y = foe_y - m;
+            if foe_y < HELI_Y_MIN {
+                foe_y = HELI_Y_MIN;
+                foe_vy = Q10(0);
+            }
+        }
+    }
+}
+
+// foe_steer - one frame of flying toward (*tx*, *ty*): tx the world x the
+// airframe's left edge should reach, ty the 8.8 height. The stick is the
+// player's - thrust toward a target speed, drag toward rest - with the
+// target speed stepped down as the spot nears so it arrives rather than
+// overshoots. Facing follows the way it is going, and holds at rest.
+fn foe_steer(tx: u16, ty: u16) {
+    let clip: Q10 = foe_clip;
+    let mut want: Q10 = Q10(0);
+    let x: u16 = foe_x_px;
+    if tx > x {
+        let d: u16 = tx - x;
+        if d > FOE_SLOW { want = clip; } else { if d > FOE_NEAR { want = FOE_WALK; } }
+        if d > FOE_NEAR { foe_face_left = 0; }
+    } else {
+        let d: u16 = x - tx;
+        if d > FOE_SLOW { want = Q10(0) - clip; } else { if d > FOE_NEAR { want = Q10(0) - FOE_WALK; } }
+        if d > FOE_NEAR { foe_face_left = 1; }
+    }
+    let mut ax: Q10 = HELI_THRUST_X;
+    if want == Q10(0) { ax = HELI_DRAG_X; }
+    foe_vx = approach(foe_vx, want, ax);
+
+    // Vertically: FOE_SINK either way, which the gentler vertical thrust
+    // can bring down to FOE_SINK_LOW inside the last FOE_SLOW_Y pixels
+    // without overshooting - and the full HELI_VY_MAX for a jump of
+    // FOE_JUMP or more, which is the jink under fire: a round lofted at
+    // the airframe is aimed where it was, and four pixels a frame is what
+    // puts it somewhere else by the time the round arrives.
+    let mut wanty: Q10 = Q10(0);
+    if ty > foe_y {
+        let d: u16 = (ty - foe_y) >> 8;
+        if d > FOE_JUMP { wanty = HELI_VY_MAX; } else {
+            if d > FOE_SLOW_Y { wanty = FOE_SINK; } else { if d > 0 { wanty = FOE_SINK_LOW; } }
+        }
+    } else {
+        let d: u16 = (foe_y - ty) >> 8;
+        if d > FOE_JUMP { wanty = Q10(0) - HELI_VY_MAX; } else {
+            if d > FOE_SLOW_Y { wanty = Q10(0) - FOE_SINK; } else { if d > 0 { wanty = Q10(0) - FOE_SINK_LOW; } }
+        }
+    }
+    // A jink or an evasion gets four times the vertical thrust: the
+    // player's ramp takes twenty frames to reach full climb, and a charge
+    // closes the whole evasion distance in that.
+    let mut ay: Q10 = HELI_THRUST_Y;
+    if wanty == Q10(0) { ay = HELI_DRAG_Y; }
+    if wanty == HELI_VY_MAX || wanty == Q10(0) - HELI_VY_MAX { ay = HELI_THRUST_Y << 2; }
+    foe_vy = approach(foe_vy, wanty, ay);
+}
+
+// --------------------------------------------------------------- tick ---
+fn foe_rearm() {
+    if foe_fuel_t > 0 {
+        foe_fuel_t = foe_fuel_t - 1;
+    } else {
+        foe_fuel_t = HELI_FUEL_FILL;
+        if foe_fuel < HELI_FUEL_MAX { foe_fuel = foe_fuel + 1; }
+    }
+    if foe_gun_t > 0 {
+        foe_gun_t = foe_gun_t - 1;
+    } else {
+        foe_gun_t = HELI_GUN_RELOAD;
+        if foe_gun < HELI_GUN_MAX { foe_gun = foe_gun + 1; }
+    }
+    if foe_bomb_t > 0 {
+        foe_bomb_t = foe_bomb_t - 1;
+    } else {
+        foe_bomb_t = HELI_BOMB_RELOAD;
+        if foe_bombs < HELI_BOMB_MAX { foe_bombs = foe_bombs + 1; }
+    }
+    if foe_hp_t > 0 {
+        foe_hp_t = foe_hp_t - 1;
+    } else {
+        foe_hp_t = HELI_HP_REPAIR;
+        if foe_hp < HELI_HP_MAX { foe_hp = foe_hp + 1; }
+    }
+}
+
+fn foe_burn() {
+    if foe_fuel_t > 0 {
+        foe_fuel_t = foe_fuel_t - 1;
+    } else {
+        foe_fuel_t = HELI_FUEL_DRAIN;
+        if foe_fuel > 0 { foe_fuel = foe_fuel - 1; }
+    }
+}
+
+// foe_pad_x - where the left edge sits centred on the enemy deck.
+fn foe_pad_x() -> u16 {
+    return PAD_X[1] + ((PAD_W - HELI_W) >> 1);
+}
+
+// ---------------------------------------------------------------- pilot ---
+// foe_dodge - a round of another side coming at the airframe: the nearest
+// within FOE_DODGE_X and two heights, or 16 (none). The original brakes
+// for a round already past and sidesteps the rest vertically.
+fn foe_dodge() -> u16 {
+    if muni_up[SIDE_PLAYER as u16] == 0 { return MUNI_MAX; }
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+    let cy: u16 = (foe_y >> 8) + (HELI_H >> 1);
+    let mut best: u16 = MUNI_MAX;
+    let mut best_d: u16 = FOE_DODGE_X;
+    for m in 0..MUNI_MAX {
+        let mk: u8 = muni_kind[m];
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE {
+            if muni_owner[m] != SIDE_ENEMY {
+                let d: u16 = unit_apart(muni_x_px[m], cx);
+                if d < best_d {
+                    if unit_apart(muni_y[m] >> 8, cy) < FOE_DODGE_Y {
+                        best_d = d;
+                        best = m;
+                    }
+                }
+            }
+        }
+    }
+    return best;
+}
+
+// foe_ground_target - the nearest of the player's units the row lets the
+// pilot bomb, within FOE_VIEW, other than one it has bombed its fill;
+// UNIT_NONE with none.
+fn foe_ground_target() -> u8 {
+    let flags: u8 = cpu_stats[cpu_level as u16].flags;
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+    let mut best: u8 = UNIT_NONE;
+    let mut best_d: u16 = FOE_VIEW;
+    let mut i: u8 = unit_head[SIDE_PLAYER as u16];
+    while i != UNIT_NONE {
+        let u: u16 = i as u16;
+        let k: u8 = units[u].kind as u8;
+        let mut want: u8 = 0;
+        if k == UnitType::Tank as u8 { if (flags & CPU_KILL_TANK) != 0 { want = 1; } }
+        if k == UnitType::Van as u8  { if (flags & CPU_KILL_VAN)  != 0 { want = 1; } }
+        if k >= UnitType::Infantry as u8 { if (flags & CPU_KILL_MEN) != 0 { want = 1; } }
+        if want != 0 {
+            if i == foe_bombed {
+                let mut limit: u8 = 1;
+                if k == UnitType::Tank as u8 { limit = FOE_BOMB_TANK; }
+                if foe_bombed_n >= limit { want = 0; }
+            }
+        }
+        if want != 0 {
+            let d: u16 = unit_apart(units[u].x_px + 12, cx);
+            if d < best_d {
+                best_d = d;
+                best = i;
+            }
+        }
+        i = units[u].behind;
+    }
+    return best;
+}
+
+// foe_struct_target - the nearest standing turret or bunker of the
+// player's within FOE_VIEW, a bunker only once; STRUCT_MAX with none.
+fn foe_struct_target() -> u16 {
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+    let mut best: u16 = STRUCT_MAX;
+    let mut best_d: u16 = FOE_VIEW;
+    for i in 0..struct_count {
+        if structs[i].owner == SIDE_PLAYER && structs[i].hp > 0 {
+            let k: u8 = structs[i].kind;
+            if k == StructKind::Turret as u8 || k == StructKind::Bunker as u8 {
+                let mut want: u8 = 1;
+                // A turret shoots back: a pass over one costs about a
+                // dozen points, so it is not begun without them.
+                if k == StructKind::Turret as u8 && foe_hp < FOE_HP_PASS { want = 0; }
+                if k == StructKind::Bunker as u8 && foe_bombed == (FOE_TGT_STRUCT | (i as u8)) {
+                    if foe_bombed_n >= 1 { want = 0; }
+                }
+                if want != 0 {
+                    let d: u16 = unit_apart(structs[i].x + (structs[i].w >> 1), cx);
+                    if d < best_d {
+                        best_d = d;
+                        best = i;
+                    }
+                }
+            }
+        }
+    }
+    return best;
+}
+
+// foe_think - the priority list. Sets the state, the spot to fly to and
+// the bomb target for the coming FOE_THINK frames.
+fn foe_think() {
+    foe_choose();
+}
+
+// foe_evade - a round of another side coming at the airframe overrides
+// the height chosen, never the heading: the original zeroes the sideways
+// part of a turret dodge, and a bombing pass has to carry on. A round
+// from the ground - a turret's, a bunker's - is met with the jink, since
+// it comes along the line to the airframe and a step to one side is what
+// breaks that line; one from the air is stepped over or under.
+fn foe_evade() {
+    if foe_state == FOE_PAD && foe_landed != 0 { return; }
+
+    // The other airframe about to overlap - the original's
+    // avoidAboveOrBelow: within FOE_CLOSE sideways (a standoff, plus the
+    // way a charge at 8 px a frame closes it inside the dodge's reaction)
+    // and two heights up or down, get out of its plane, upward for choice.
+    if heli_dead == 0 && heli_rising == 0 {
+        // Closing: the player coming this way, or already on top.
+        let mut closing: u8 = 0;
+        if heli_x_px < foe_x_px { if heli_vx > Q10(0) { closing = 1; } } else { if heli_vx < Q10(0) { closing = 1; } }
+        if unit_apart(heli_x_px, foe_x_px) < FOE_STANDOFF { closing = 1; }
+        if closing != 0 && unit_apart(heli_x_px, foe_x_px) < FOE_CLOSE {
+            let hy: u16 = heli_y >> 8;
+            let fy: u16 = foe_y >> 8;
+            if unit_apart(hy, fy) < FOE_DODGE_Y {
+                if foe_state != FOE_PAD { foe_state = FOE_DODGE; }
+                if fy > HELI_Y_MIN_PX + FOE_DODGE_Y + 8 && hy >= fy {
+                    foe_ty = foe_y - ((FOE_DODGE_Y + 8) << 8);
+                } else {
+                    foe_ty = foe_y + ((FOE_DODGE_Y + 8) << 8);
+                    if foe_ty > HELI_Y_MAX - (8 << 8) { foe_ty = HELI_Y_MAX - (8 << 8); }
+                }
+                return;
+            }
+        }
+    }
+
+    let m: u16 = foe_dodge();
+    if m == MUNI_MAX { return; }
+    if foe_state != FOE_PAD { foe_state = FOE_DODGE; }
+    if (muni_y[m] >> 8) >= UNIT_BAND_TOP - 16 || muni_vy[m] < Q10(0) {
+        foe_ty = foe_jink[(frames_loop >> 4) & 3];
+    } else {
+        if (muni_y[m] >> 8) < (foe_y >> 8) + (HELI_H >> 1) {
+            foe_ty = foe_y + (FOE_DODGE_Y << 8);
+            if foe_ty > HELI_Y_HOVER + (24 << 8) { foe_ty = HELI_Y_HOVER + (24 << 8); }
+        } else {
+            if foe_y > HELI_Y_MIN + (FOE_DODGE_Y << 8) { foe_ty = foe_y - (FOE_DODGE_Y << 8); } else { foe_ty = HELI_Y_MIN; }
+        }
+    }
+}
+
+// foe_choose - what to do and where to fly, in priority order.
+fn foe_choose() {
+    // The mode roll, the original's every half minute: attack seven
+    // times in eight, and hunt the player's airframe while attacking if
+    // the row allows it.
+    if (frames_loop & FOE_MODE_MASK) == 0 {
+        foe_attack = 0;
+        if (cpu_rand() & 7) != 0 { foe_attack = 1; }
+        foe_hunt = 0;
+        if foe_attack != 0 && (cpu_stats[cpu_level as u16].flags & CPU_KILL_COPTER) != 0 { foe_hunt = 1; }
+    }
+
+    foe_tgt = FOE_TGT_NONE;
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+
+    // Refit: fuel short, or two of ammo, bombs and health short - one on
+    // the first two rows, where the original returns more readily.
+    if foe_state != FOE_PAD {
+        let mut votes: u8 = 0;
+        if foe_gun < FOE_GUN_LOW { votes = votes + 1; }
+        if foe_bombs == 0 { votes = votes + 1; }
+        if foe_hp < FOE_HP_LOW { votes = votes + 1; }
+        if cpu_level < 2 { votes = votes + 1; }
+        // Fuel short is the original's 25, plus the trip home: a unit
+        // burns in 64 frames, and at the slowest row's 2.75 px/frame that
+        // is 176 px, so a unit per 256 px of distance with the margin.
+        let trip: u16 = unit_apart(foe_x_px, foe_pad_x());
+        if foe_fuel < FOE_FUEL_LOW + ((trip >> 8) as u8) || votes >= 2 { foe_state = FOE_PAD; }
+    }
+    if foe_state == FOE_PAD {
+        let tx: u16 = foe_pad_x();
+        foe_tx = tx;
+        foe_ty = HELI_Y_HOVER;
+        // Over the deck and slow: come down.
+        if unit_apart(foe_x_px, tx) <= FOE_NEAR && foe_vx < FOE_WALK && foe_vx > Q10(0) - FOE_WALK {
+            foe_ty = HELI_Y_MAX;
+        }
+        return;
+    }
+
+    // Hunt: level with the player's airframe a standoff away for the
+    // gun; above it for a bomb once the gun is dry.
+    if foe_hunt != 0 && heli_dead == 0 && heli_rising == 0 && heli_landed == 0 {
+        let hx: u16 = heli_x_px;
+        if unit_apart(hx, foe_x_px) < FOE_VIEW {
+            foe_state = FOE_HUNT;
+            if foe_gun > 0 || foe_bombs == 0 {
+                if foe_x_px > hx { foe_tx = hx + FOE_STANDOFF; } else {
+                    if hx > FOE_STANDOFF { foe_tx = hx - FOE_STANDOFF; } else { foe_tx = 0; }
+                }
+                foe_ty = heli_y;
+            } else {
+                foe_tx = hx;
+                if heli_y > HELI_Y_MIN + (FOE_DODGE_Y << 8) { foe_ty = heli_y - (FOE_DODGE_Y << 8); } else { foe_ty = HELI_Y_MIN; }
+            }
+            return;
+        }
+    }
+
+    // Bomb a ground unit, then a building, the row and the load allowing.
+    if foe_bombs > 0 && foe_attack != 0
+       && (cpu_stats[cpu_level as u16].flags & CPU_SCATTER_BOMB) != 0 {
+        let u: u8 = foe_ground_target();
+        if u != UNIT_NONE {
+            foe_state = FOE_BOMB;
+            foe_tgt = u;
+            let ux: u16 = units[u as u16].x_px + (unit_stats[units[u as u16].kind as u16].width >> 1);
+            if ux > (HELI_W >> 1) { foe_tx = ux - (HELI_W >> 1); } else { foe_tx = 0; }
+            foe_ty = HELI_Y_HOVER;
+            return;
+        }
+        // A building is bombed on the way past, not from a hover: the
+        // original never steers at one, and a bomb dropped from a hover
+        // falls straight down the turret's own stream of rounds, which
+        // shoots it down. So the spot is FOE_PASS beyond the building the
+        // way the airframe is going, and the lead on the release does the
+        // aiming; the wander brings it back over for another pass.
+        if foe_pass != AIR_NONE {
+            // A pass under way: hold its course to the far end.
+            if unit_apart(foe_x_px, foe_pass) > FOE_NEAR + 8 {
+                foe_state = FOE_STRUCT;
+                foe_tgt = foe_pass_tgt;
+                foe_tx = foe_pass;
+                foe_ty = HELI_Y_HOVER;
+                return;
+            }
+            foe_pass = AIR_NONE;
+        } else {
+            let si: u16 = foe_struct_target();
+            if si < STRUCT_MAX {
+                foe_state = FOE_STRUCT;
+                foe_tgt = FOE_TGT_STRUCT | (si as u8);
+                foe_pass_tgt = foe_tgt;
+                let sx: u16 = structs[si].x + (structs[si].w >> 1);
+                if cx > sx { if sx > FOE_PASS { foe_pass = sx - FOE_PASS; } else { foe_pass = 0; } } else { foe_pass = sx + FOE_PASS; }
+                foe_tx = foe_pass;
+                foe_ty = HELI_Y_HOVER;
+                return;
+            }
+        }
+    }
+
+    // Wander: toward the player's end, back short of its base's missiles
+    // and at the world's far edge, on the weave.
+    foe_state = FOE_WANDER;
+    if foe_x_px <= FOE_WEST + FOE_NEAR + 8 { foe_dir = 0; }
+    if foe_x_px >= WORLD_W - FOE_EDGE - HELI_W { foe_dir = 1; }
+    if foe_dir != 0 { foe_tx = FOE_WEST; } else { foe_tx = WORLD_W - HELI_W; }
+    foe_ty = foe_weave[(frames_loop >> 6) & 3];
+}
+
+// foe_under_balloons - after every decision: a balloon near enough to
+// fly into keeps the airframe at hover height, under it. The original
+// steers around chains and balloons with its whiskers; here the chain
+// is vertical and the balloon's bottom is above hover height, so under
+// is always clear.
+fn foe_under_balloons() {
+    if foe_ty >= HELI_Y_HOVER { return; }
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+    for n in 0..bunker_count {
+        let i: u16 = bunker_idx[n] as u16;
+        if structs[i].bal > 0 {
+            if unit_apart(structs[i].x + BALLOON_DX + (BALLOON_W >> 1), cx) < FOE_BALLOON_X {
+                foe_ty = HELI_Y_HOVER;
+                return;
+            }
+        }
+    }
+}
+
+// foe_fire - the gun and the bombs, every frame. The gun goes at the
+// player's airframe when it is in reach, level, and faced - the
+// original's rule - along the nose as the player's does. A bomb goes when
+// the tick's target is under the airframe's centre, one per target (three
+// for a tank, any number for a turret), FOE_BOMB_CD frames apart.
+fn foe_fire() {
+    if foe_gun_cd > 0 { foe_gun_cd = foe_gun_cd - 1; }
+    if foe_bomb_cd > 0 { foe_bomb_cd = foe_bomb_cd - 1; }
+
+    if foe_gun_cd == 0 && foe_gun > 0 && heli_dead == 0 && heli_rising == 0 {
+        let dx: u16 = unit_apart(heli_x_px, foe_x_px);
+        if dx < FOE_GUN_REACH && dx > HELI_W {
+            if unit_apart(heli_y >> 8, foe_y >> 8) < FOE_AIM_Y {
+                let mut facing: u8 = 0;
+                if heli_x_px < foe_x_px { if foe_face_left != 0 { facing = 1; } } else { if foe_face_left == 0 { facing = 1; } }
+                if facing != 0 {
+                    foe_gun = foe_gun - 1;
+                    foe_gun_cd = HELI_GUN_RATE;
+                    let mut mx: u16 = foe_x_px + HELI_W;
+                    let mut v: Q10 = BULLET_SPEED;
+                    let mut fwd: Q10 = foe_vx;
+                    if foe_face_left != 0 {
+                        mx = foe_x_px;
+                        v = Q10(0) - BULLET_SPEED;
+                        fwd = Q10(0) - foe_vx;
+                    }
+                    let mut vy: Q10 = 0;
+                    if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
+                    muni_spawn(MUNI_BULLET, mx, foe_y + (HELI_MUZZLE_Y << 8),
+                               v, vy, BULLET_LIFE, SIDE_ENEMY);
+                }
+            }
+        }
+    }
+
+    if foe_bomb_cd != 0 || foe_bombs == 0 { return; }
+    let cx: u16 = foe_x_px + (HELI_W >> 1);
+    let mut tx: u16 = 0;
+    let mut ty: u16 = 0;
+    let mut tgt: u8 = foe_tgt;
+    if foe_state == FOE_HUNT {
+        // Bombing the player's airframe: its centre, and it has to be below.
+        if foe_gun > 0 || heli_dead != 0 { return; }
+        tx = heli_x_px + (HELI_W >> 1);
+        ty = heli_y >> 8;
+        tgt = FOE_TGT_NONE;
+    } else {
+        if tgt == FOE_TGT_NONE { return; }
+        if (tgt & FOE_TGT_STRUCT) != 0 {
+            let si: u16 = (tgt & 0x7F) as u16;
+            tx = structs[si].x + (structs[si].w >> 1);
+            ty = GROUND_Y - 8;
+        } else {
+            let u: u16 = tgt as u16;
+            if units[u].kind as u8 == UnitType::Free as u8 { return; }
+            tx = units[u].x_px + (unit_stats[units[u].kind as u16].width >> 1);
+            ty = UNIT_BASE_Y;
+        }
+    }
+    // A bomb keeps the airframe's speed, so it lands ahead by the fall's
+    // worth of it. The fall from a height h is about 18 + h/8 frames
+    // (24 from hover, 40 from the top of the jink), and vx is in 1/64 px
+    // a frame, so the lead is vx * (144 + h) / 512 px - with the product
+    // scaled to fit a word. Release when that spot is over the target; a
+    // stepped estimate skipped the 12 px window on a climbing pass.
+    let mut land: u16 = cx;
+    let mut mag: u16 = 0;
+    if foe_vx >= Q10(0) { mag = foe_vx.0 as u16; } else { mag = (0 - foe_vx.0) as u16; }
+    let h: u16 = GROUND_Y - (foe_y >> 8);
+    let lead: u16 = mul16(mag >> 2, 144 + h) >> 7;
+    if foe_vx >= Q10(0) {
+        land = cx + lead;
+    } else {
+        if land > lead { land = land - lead; } else { land = 0; }
+    }
+    if unit_apart(tx, land) < FOE_ALIGN && ty > (foe_y >> 8) + HELI_H {
+        foe_bombs = foe_bombs - 1;
+        foe_bomb_cd = FOE_BOMB_CD;
+        muni_spawn(MUNI_BOMB, cx, foe_y + (HELI_H << 8), foe_vx, Q10(0), 0, SIDE_ENEMY);
+        if tgt != FOE_TGT_NONE {
+            if tgt == foe_bombed { foe_bombed_n = foe_bombed_n + 1; } else { foe_bombed = tgt; foe_bombed_n = 1; }
+        }
+    }
+}
+
+// foe_update - one tick: the loss delay and the rise, the deck, the
+// pilot, the flying, and the landing rules.
+far fn foe_update() {
+    if foe_dead > 0 {
+        foe_dead = foe_dead - 1;
+        if foe_dead == 0 {
+            foe_rising = 1;
+            foe_y = GROUND_Y << 8;
+        }
+        return;
+    }
+    if foe_rising != 0 {
+        foe_y = foe_y - HELI_RISE;
+        if foe_y <= HELI_Y_HOVER {
+            foe_y = HELI_Y_HOVER;
+            foe_rising = 0;
+        }
+        return;
+    }
+
+    if foe_landed != 0 {
+        // On the deck until the load is full, then away.
+        foe_vx = Q10(0);
+        foe_vy = Q10(0);
+        foe_rearm();
+        if foe_fuel == HELI_FUEL_MAX && foe_gun == HELI_GUN_MAX && foe_bombs == HELI_BOMB_MAX
+           && foe_hp == HELI_HP_MAX {
+            foe_landed = 0;
+            foe_state = FOE_WANDER;
+        }
+        return;
+    }
+
+    foe_burn();
+    if foe_respond > 0 { foe_respond = foe_respond - 1; }
+
+    if foe_fuel == 0 {
+        // Dead stick: gravity, and the ground ends it.
+        foe_vx = approach(foe_vx, Q10(0), HELI_ACC);
+        let v: Q10 = foe_vy + HELI_GRAVITY;
+        if v > HELI_VY_MAX { foe_vy = HELI_VY_MAX; } else { foe_vy = v; }
+        foe_move_x(foe_vx);
+        foe_move_y(foe_vy);
+        if foe_y == HELI_Y_MAX {
+            // Only its own deck saves it.
+            if pad_at(foe_x_px + (HELI_W >> 1)) == 1 { foe_landed = 1; } else { foe_lost(); }
+        }
+        return;
+    }
+
+    // The pilot: where to fly, decided every FOE_THINK frames and flown
+    // every frame; the gun and the bombs every frame, since a shot is a
+    // frame's opportunity.
+    if (frames_loop & (FOE_THINK - 1)) == 0 {
+        foe_think();
+        foe_under_balloons();
+    }
+    foe_evade();                          // every frame: a round, or the other airframe, is quick
+    foe_steer(foe_tx, foe_ty);
+    foe_fire();
+
+    let mut descending: u8 = 0;
+    if foe_vy > Q10(0) { descending = 1; }
+    let vy_in: Q10 = foe_vy;
+    foe_move_x(foe_vx);
+    foe_move_y(foe_vy);
+
+    // Touchdown: the player's rules. Too fast is a crash; its own deck
+    // takes a landing (it never puts down anywhere else on purpose).
+    if foe_y == HELI_Y_MAX {
+        if vy_in > HELI_CRASH_VY {
+            foe_lost();
+            return;
+        }
+        if descending != 0 {
+            if pad_at(foe_x_px + (HELI_W >> 1)) == 1 { foe_landed = 1; }
+        }
+    }
+}
+
+// foe_draw - the two OBJ cells in the enemy palette, right after the
+// player's in the OAM order. Tilt from speed along the nose, as heli_draw.
+far fn foe_draw() {
+    if foe_dead > 0 { return; }
+
+    let mut fwd: Q10 = foe_vx;
+    if foe_face_left != 0 { fwd = Q10(0) - foe_vx; }
+    let mut tile: u8 = HELI_TILE_LEVEL;
+    if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
+    if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
+
+    // Culled on the full 16-bit offset, as the units are: the 9-bit OAM
+    // field would alias a position screens away onto the window.
+    let d: u16 = foe_x_px - camera_x;
+    if d >= 256 && d < 0xFFE0 { return; }
+    let sx: u16 = d & 0x01FF;
+    let sy: u8 = (foe_y >> 8) as u8;
+
+    let mut base: u16 = FOE_ATTR;
+    if foe_rising != 0 && foe_y + (HELI_H << 8) > (GROUND_Y << 8) { base = FOE_ATTR & 0x0FFF; }
+    let mut attr: u16 = base;
+    let mut near: u8 = tile;
+    let mut far_: u8 = tile + 2;
+    if foe_face_left != 0 {
+        attr = base | 0x4000;
+        near = tile + 2;
+        far_ = tile;
+    }
+
+    let l: u16 = oam_take();
+    let r: u16 = oam_take();
+    if r < OAM_SLOTS {
+        oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
+        oam.set_size!(l as u8, 1);
+        oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
+        oam.set_size!(r as u8, 1);
+    }
+}

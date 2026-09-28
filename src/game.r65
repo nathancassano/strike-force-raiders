@@ -4,8 +4,8 @@
 // other side's base destroys it and its owner loses - the base is immune
 // to everything else, so a two-fund unarmed van is the only way to win.
 // And a side that runs out of helicopters loses; the player starts with
-// four and buys more at twenty. The enemy has no helicopter until phase
-// 10, so only the first of those can end a match against the player.
+// four and buys more at twenty; the enemy's four (foe.r65) are the
+// player's second way to win.
 //
 // When it ends the simulation freezes where it stands, the result goes up
 // mid-screen, and Start begins a fresh match.
@@ -49,6 +49,8 @@ far fn game_reset() {
     struct_init();
     econ_init();
     order_init();
+    cpu_init();
+    foe_reset();
     hud_init();
     radar_init();
     hud_message(&MSG_WON as *u8, 0);

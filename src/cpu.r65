@@ -1,0 +1,278 @@
+// cpu - the opponent: its purse and its convoys. (Its airframe and the
+// state machine that flies it arrive in the later slices of phase 10.)
+//
+// The whole economy of the 1991 game is a list of convoy strings gated by
+// tier and a capability row per mission - a complete opponent in a few
+// hundred bytes of ROM, with no planner. That is what this is. The CPU
+// earns as the player does, from where its airframe is; each time the
+// last convoy has left the gate and the row's pause has run it buys one
+// convoy it can afford, at random, which then leaves its base through a
+// queue of its own under the same gate rules as the player's orders.
+
+#[bank(2)]
+
+// ---------------------------------------------------------- capability ---
+// One row per mission. `convoy_level` gates the table below and
+// `order_delay` is the pause between convoys (the original's 22 s, shorter
+// past tier 5); `fund_min` and `fund_max` are the player's purse at which
+// the airframe will raid the bank, when that comes (they gate nothing in
+// the purchasing - the original buys whatever it can afford); `clip_speed`
+// and `regen_time` are for the airframe (Q10 top speed, frames to the
+// next one). The flags follow the original's ramp: mission 1 hunts tanks
+// and nothing else, mission 8 has everything on.
+const CPU_BUILD_TRUCK:     u8 = 0x01;     // may buy launchers (else M -> I)
+const CPU_BUILD_ENGINEERS: u8 = 0x02;     // may buy engineers (else E -> I)
+const CPU_KILL_COPTER:     u8 = 0x04;
+const CPU_KILL_TANK:       u8 = 0x08;
+const CPU_KILL_VAN:        u8 = 0x10;
+const CPU_KILL_MEN:        u8 = 0x20;
+const CPU_USE_MISSILE:     u8 = 0x40;
+const CPU_SCATTER_BOMB:    u8 = 0x80;     // the airframe drops bombs at all (the original's
+                                          // scatterBombB, on from mission 8; the kill_* flags
+                                          // say at what)
+
+#[soa]
+struct CpuStat {
+    convoy_level: u8,
+    order_delay:  u16,    // frames between convoys
+    fund_min:     u8,
+    fund_max:     u8,
+    clip_speed:   Q10,
+    regen_time:   u8,
+    flags:        u8,
+}
+
+static cpu_stats: [CpuStat; 10] = [
+    CpuStat { convoy_level: 1,  order_delay: 1320, fund_min: 60, fund_max: 99, clip_speed: 176, regen_time: 240, flags: 0x08 },
+    CpuStat { convoy_level: 2,  order_delay: 1320, fund_min: 55, fund_max: 99, clip_speed: 192, regen_time: 210, flags: 0x18 },
+    CpuStat { convoy_level: 3,  order_delay: 1320, fund_min: 50, fund_max: 90, clip_speed: 208, regen_time: 180, flags: 0x1C },
+    CpuStat { convoy_level: 4,  order_delay: 1320, fund_min: 45, fund_max: 80, clip_speed: 224, regen_time: 150, flags: 0x1D },
+    CpuStat { convoy_level: 5,  order_delay: 1320, fund_min: 40, fund_max: 70, clip_speed: 240, regen_time: 120, flags: 0x3D },
+    CpuStat { convoy_level: 6,  order_delay: 1100, fund_min: 35, fund_max: 60, clip_speed: 256, regen_time: 90,  flags: 0x3F },
+    CpuStat { convoy_level: 7,  order_delay: 943,  fund_min: 30, fund_max: 50, clip_speed: 272, regen_time: 60,  flags: 0x7F },
+    CpuStat { convoy_level: 8,  order_delay: 825,  fund_min: 25, fund_max: 50, clip_speed: 288, regen_time: 30,  flags: 0xFF },
+    CpuStat { convoy_level: 9,  order_delay: 733,  fund_min: 20, fund_max: 50, clip_speed: 304, regen_time: 0,   flags: 0xFF },
+    CpuStat { convoy_level: 10, order_delay: 660,  fund_min: 20, fund_max: 50, clip_speed: 320, regen_time: 0,   flags: 0xFF },
+];
+
+// Which row, until phase 11's mission table selects one: the first
+// mission's, where the airframe only wanders and refits. R held during
+// the first frames takes the eighth's instead - the harness's way to a
+// pilot that hunts and bombs until the front end can choose a mission.
+const CPU_LEVEL:      u8 = 0;
+const CPU_LEVEL_HELD: u8 = 7;
+
+// -------------------------------------------------------------- convoys ---
+// The original's build orders, verbatim: M launcher, I infantry, E
+// engineer, T tank, V van. Each is a run of Orders ended by Order::Heli,
+// which no convoy contains; `convoys` indexes the runs and carries each
+// one's tier and price so a pick never walks the letters.
+const CONVOY_COUNT: u16 = 25;
+const CONVOY_MAX:   u8  = 11;             // longest run
+
+static convoy_data: [Order; 147] = [
+    Order::Van, Order::Heli,                                    // V (2)
+    Order::Launcher, Order::Heli,                               // M (3)
+    Order::Tank, Order::Heli,                                   // T (4)
+    Order::Infantry, Order::Heli,                               // I (5)
+    Order::Engineer, Order::Heli,                               // E (5)
+    Order::Tank, Order::Infantry, Order::Heli,                  // TI (9)
+    Order::Tank, Order::Tank, Order::Heli,                      // TT (8)
+    Order::Infantry, Order::Van, Order::Heli,                   // IV (7)
+    Order::Launcher, Order::Infantry, Order::Infantry, Order::Launcher, Order::Heli,     // MIIM (16)
+    Order::Tank, Order::Tank, Order::Launcher, Order::Infantry, Order::Heli,             // TTMI (16)
+    Order::Tank, Order::Engineer, Order::Van, Order::Heli,                               // TEV (11)
+    Order::Infantry, Order::Launcher, Order::Engineer, Order::Van, Order::Heli,          // IMEV (15)
+    Order::Launcher, Order::Infantry, Order::Van, Order::Van, Order::Heli,               // MIVV (12)
+    Order::Tank, Order::Launcher, Order::Van, Order::Heli,                               // TMV (9)
+    Order::Tank, Order::Launcher, Order::Infantry, Order::Van, Order::Infantry, Order::Launcher, Order::Heli,   // TMIVIM (22)
+    Order::Tank, Order::Tank, Order::Van, Order::Engineer, Order::Van, Order::Engineer, Order::Launcher, Order::Launcher, Order::Heli,     // TTVEVEMM (28)
+    Order::Launcher, Order::Infantry, Order::Van, Order::Van, Order::Tank, Order::Launcher, Order::Launcher, Order::Infantry, Order::Heli, // MIVVTMMI (27)
+    Order::Tank, Order::Van, Order::Van, Order::Van, Order::Heli,                                                                        // TVVV (10)
+    Order::Tank, Order::Launcher, Order::Launcher, Order::Launcher, Order::Launcher, Order::Launcher, Order::Heli,                        // TMMMMM (19)
+    Order::Tank, Order::Tank, Order::Tank, Order::Tank, Order::Engineer, Order::Engineer, Order::Engineer, Order::Launcher, Order::Heli,  // TTTTEEEM (34)
+    Order::Tank, Order::Van, Order::Engineer, Order::Launcher, Order::Infantry, Order::Van, Order::Tank, Order::Van, Order::Heli,         // TVEMIVTV (27)
+    Order::Launcher, Order::Tank, Order::Infantry, Order::Launcher, Order::Tank, Order::Launcher, Order::Infantry, Order::Launcher, Order::Engineer, Order::Heli,                       // MTIMTMIME (35)
+    Order::Tank, Order::Engineer, Order::Engineer, Order::Launcher, Order::Infantry, Order::Van, Order::Van, Order::Tank, Order::Launcher, Order::Launcher, Order::Heli,                // TEEMIVVTMM (36)
+    Order::Tank, Order::Tank, Order::Tank, Order::Launcher, Order::Launcher, Order::Launcher, Order::Infantry, Order::Infantry, Order::Engineer, Order::Tank, Order::Launcher, Order::Heli,   // TTTMMMIIETM (43)
+    Order::Tank, Order::Launcher, Order::Tank, Order::Launcher, Order::Infantry, Order::Launcher, Order::Tank, Order::Launcher, Order::Infantry, Order::Engineer, Order::Van, Order::Heli,    // TMTMIMTMIEV (41)
+];
+
+#[soa]
+struct Convoy {
+    off:  u8,             // first letter in convoy_data
+    tier: u8,             // the convoy_level that unlocks it
+    cost: u8,             // the letters' prices summed
+}
+
+static convoys: [Convoy; 25] = [
+    Convoy { off: 0,   tier: 0,  cost: 2  },
+    Convoy { off: 2,   tier: 0,  cost: 3  },
+    Convoy { off: 4,   tier: 0,  cost: 4  },
+    Convoy { off: 6,   tier: 0,  cost: 5  },
+    Convoy { off: 8,   tier: 0,  cost: 5  },
+    Convoy { off: 10,  tier: 3,  cost: 9  },
+    Convoy { off: 13,  tier: 3,  cost: 8  },
+    Convoy { off: 16,  tier: 3,  cost: 7  },
+    Convoy { off: 19,  tier: 5,  cost: 16 },
+    Convoy { off: 24,  tier: 5,  cost: 16 },
+    Convoy { off: 29,  tier: 5,  cost: 11 },
+    Convoy { off: 33,  tier: 5,  cost: 15 },
+    Convoy { off: 38,  tier: 5,  cost: 12 },
+    Convoy { off: 43,  tier: 5,  cost: 9  },
+    Convoy { off: 47,  tier: 7,  cost: 22 },
+    Convoy { off: 54,  tier: 7,  cost: 28 },
+    Convoy { off: 63,  tier: 7,  cost: 27 },
+    Convoy { off: 72,  tier: 9,  cost: 10 },
+    Convoy { off: 77,  tier: 9,  cost: 19 },
+    Convoy { off: 84,  tier: 9,  cost: 34 },
+    Convoy { off: 93,  tier: 9,  cost: 27 },
+    Convoy { off: 102, tier: 10, cost: 35 },
+    Convoy { off: 112, tier: 10, cost: 36 },
+    Convoy { off: 123, tier: 10, cost: 43 },
+    Convoy { off: 135, tier: 10, cost: 41 },
+];
+
+// ---------------------------------------------------------------- state ---
+#[lowram] static mut cpu_level:  u8;      // row of cpu_stats
+#[lowram] static mut cpu_funds:  u8;
+#[lowram] static mut cpu_acc:    u16;
+#[lowram] static mut cpu_seed:   u16;     // its own xorshift, see cpu_rand
+#[lowram] static mut cpu_t:      u16;     // frames to the next convoy
+// The convoy on its way out: a copy of the letters, drained like the
+// player's queue - one unit every ORDER_GAP frames, held at a busy gate.
+#[lowram] static mut cpu_q:      [u8; 12];
+#[lowram] static mut cpu_head:   u8;
+#[lowram] static mut cpu_tail:   u8;
+#[lowram] static mut cpu_men:    u8;      // still to leave for the current letter
+#[lowram] static mut cpu_kind:   u8;
+#[lowram] static mut cpu_gap:    u8;
+
+// cpu_init - a fresh purse and queue. The row (cpu_level) is the
+// match's, set at boot and by the front end, and survives a reset.
+far fn cpu_init() {
+    cpu_funds = ECON_START;
+    cpu_acc = 0;
+    cpu_seed = 0xC0DE;                    // any non-zero; fixed so a boot replays
+    cpu_t = 64;                           // the first convoy comes early
+    cpu_head = 0;
+    cpu_tail = 0;
+    cpu_men = 0;
+    cpu_kind = 0;
+    cpu_gap = 0;
+}
+
+// cpu_rand - a xorshift16 of the CPU's own, so its choices never disturb
+// rand()'s sequence, which the airlift's parachutes are pinned on.
+far fn cpu_rand() -> u16 {
+    let mut x: u16 = cpu_seed;
+    x = x ^ (x << 7);
+    x = x ^ (x >> 9);
+    x = x ^ (x << 8);
+    cpu_seed = x;
+    return x;
+}
+
+// cpu_afford - is this convoy unlocked and within the purse?
+fn cpu_afford(c: u16) -> u8 {
+    if convoys[c].tier > cpu_stats[cpu_level as u16].convoy_level { return 0; }
+    if convoys[c].cost > cpu_funds { return 0; }
+    return 1;
+}
+
+// cpu_choose - one convoy the purse allows, at random: the original's
+// rule, with no reserve. Returns CONVOY_COUNT when nothing is affordable.
+fn cpu_choose() -> u16 {
+    let mut n: u16 = 0;
+    for c in 0..CONVOY_COUNT {
+        if cpu_afford(c) != 0 { n = n + 1; }
+    }
+    if n == 0 { return CONVOY_COUNT; }
+
+    let mut pick: u8 = mod8((cpu_rand() & 0x00FF) as u8, n);
+    for c in 0..CONVOY_COUNT {
+        if cpu_afford(c) != 0 {
+            if pick == 0 { return c; }
+            pick = pick - 1;
+        }
+    }
+    return CONVOY_COUNT;                  // unreachable
+}
+
+// cpu_buy - pay for a convoy and copy its letters into the queue, with the
+// substitutions the row's flags call for.
+fn cpu_buy(c: u16) {
+    cpu_funds = cpu_funds - convoys[c].cost;
+    let flags: u8 = cpu_stats[cpu_level as u16].flags;
+    let mut p: u16 = convoys[c].off as u16;
+    cpu_head = 0;
+    cpu_tail = 0;
+    loop {
+        let mut k: Order = convoy_data[p];
+        if k as u8 == Order::Heli as u8 { break; }
+        if k as u8 == Order::Launcher as u8 && (flags & CPU_BUILD_TRUCK) == 0 { k = Order::Infantry; }
+        if k as u8 == Order::Engineer as u8 && (flags & CPU_BUILD_ENGINEERS) == 0 { k = Order::Infantry; }
+        cpu_q[cpu_tail as u16] = k as u8;
+        cpu_tail = cpu_tail + 1;
+        p = p + 1;
+    }
+}
+
+// cpu_delay - the pause to the next convoy: the row's, plus up to a
+// quarter at random; halved after a single-unit convoy.
+fn cpu_delay(letters: u8) -> u16 {
+    let base: u16 = cpu_stats[cpu_level as u16].order_delay;
+    let mut d: u16 = base + (cpu_rand() & (base >> 2));   // no multiply: a mask does
+    if letters == 1 { d = d >> 1; }
+    return d;
+}
+
+// cpu_tick - one frame: income, a convoy when the last has left the gate
+// and the pause has run, and the queue's emitter.
+far fn cpu_tick() {
+    // Income, as the player's: its airframe's distance into the other
+    // half against the same threshold.
+    cpu_acc = cpu_acc + ((WORLD_W - foe_x_px) >> ECON_SHIFT);
+    if cpu_acc >= ECON_THRESH {
+        cpu_acc = cpu_acc - ECON_THRESH;
+        if cpu_funds < ECON_MAX { cpu_funds = cpu_funds + 1; }
+    }
+
+    if cpu_t > 0 {
+        cpu_t = cpu_t - 1;
+    } else {
+        if cpu_head == cpu_tail && cpu_men == 0 {
+            let c: u16 = cpu_choose();
+            if c < CONVOY_COUNT {
+                cpu_buy(c);
+                cpu_t = cpu_delay(cpu_tail);
+            } else {
+                cpu_t = cpu_delay(0);     // broke: wait a whole pause
+            }
+        }
+    }
+
+    // The emitter. A letter is an order's worth of men; a letter whose kind
+    // would pass the side's cap when its turn comes is dropped, not
+    // refunded - checked once as the letter is taken, since the pool scan
+    // behind unit_count is not worth repeating every frame a man waits at
+    // the gate.
+    if cpu_gap > 0 {
+        cpu_gap = cpu_gap - 1;
+        return;
+    }
+    if cpu_men == 0 {
+        if cpu_head == cpu_tail { return; }
+        cpu_kind = cpu_q[cpu_head as u16];
+        cpu_head = cpu_head + 1;
+        let k: u16 = cpu_kind as u16;
+        if unit_count(cpu_kind as Order, SIDE_ENEMY) + order_stats[k].men <= order_stats[k].cap {
+            cpu_men = order_stats[k].men;
+        }
+        return;
+    }
+    if unit_spawn(cpu_kind as Order, SIDE_ENEMY, BASE_X_ENEMY) != 0 {
+        cpu_men = cpu_men - 1;
+        cpu_gap = ORDER_GAP;
+    }
+}

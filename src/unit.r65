@@ -42,6 +42,13 @@ const UNIT_H:      u16 = 16;
 // Traffic control: a unit stops rather than piling into the one ahead.
 // The plan puts the look-ahead at about a third of a unit width.
 const UNIT_GAP: u16 = 8;
+// Every unit marches at the one speed, half a pixel a frame - a pixel
+// on every odd frame, so there is no sub-pixel accumulator to carry. Men
+// walked at a quarter and vans drove at three quarters once, and any
+// column with a man near its front crawled at his pace, since a unit
+// halts for anything ahead. One speed means a follower can never close
+// on the unit ahead while both move, so a column keeps the gate's spacing
+// for free and collision is a front-line affair - see unit_traffic.
 
 // Every unit stands with its feet on the ground line.
 const UNIT_BASE_Y:     u16 = GROUND_Y - UNIT_H;
@@ -138,7 +145,6 @@ enum Order { Van, Launcher, Tank, Infantry, Engineer, Heli }
 // is balanced against.
 #[soa]
 struct UnitStat {
-    speed:      u16,      // 1/256 px per frame
     width:      u16,      // collision and traffic-control reach
     tile:       u8,       // left OBJ cell
     max_hp:     u8,
@@ -149,18 +155,18 @@ struct UnitStat {
 
 static unit_stats: [UnitStat; 6] = [
     // Free
-    UnitStat { speed: 0,   width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0, rifle_dmg: 0 },
-    // Tank: 0.5 px/frame; armour shrugs off gunfire
-    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_TANK, max_hp: 25, cells: 2, bullet_dmg: 1, rifle_dmg: 0 },
+    UnitStat { width: 0,          tile: 0, max_hp: 0,  cells: 0, bullet_dmg: 0, rifle_dmg: 0 },
+    // Tank: armour shrugs off gunfire
+    UnitStat { width: UNIT_W,     tile: UNIT_TILE_TANK, max_hp: 25, cells: 2, bullet_dmg: 1, rifle_dmg: 0 },
     // Van: unarmed - the win condition
-    UnitStat { speed: 192, width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
+    UnitStat { width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
     // Launcher: AA only, once aircraft exist
-    UnitStat { speed: 128, width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
+    UnitStat { width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
     // Infantry
-    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
+    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
     // Engineer: an infantryman who repairs and claims turrets instead of
     // capturing bunkers - the same body, a different job, and no rifle
-    UnitStat { speed: 64,  width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
+    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
 ];
 
 // ---------------------------------------------------------------- state ---
@@ -178,27 +184,31 @@ static unit_stats: [UnitStat; 6] = [
 #[soa]
 struct Unit {
     x_px:  u16,
-    x_sub: u8,           // 1/256 px accumulator
     hp:    u8,
     owner: u8,
-    block: u8,           // cached traffic-control flag
+    block: u8,           // traffic-control flag, refreshed every frame
     rank:  u8,           // the plan's promotion count; nothing earns it yet
+    ahead: u8,           // march order: the next unit of this side toward
+    behind: u8,          // ... the far base, and the next one back; UNIT_NONE at an end
     kind:  UnitType,
 }
 
 #[lowram] static mut units: [Unit; 32];
 
 #[lowram] static mut unit_cursor: u16;
-#[lowram] static mut unit_slice: u16;         // rolling traffic-control cursor
 
-// Traffic control is O(n^2) over the pool. Measured on hardware, a full
-// pass every frame costs more than a whole frame: with a 16-slot pool
-// filled the loop ran at 0.45 ticks per vblank. Re-evaluating a slice
-// instead leaves a unit's flag stale - with 32 slots and four a frame, up
-// to seven frames, which at 0.5-0.75 px/frame is 4-6 px of overshoot
-// against an 8 px gap: a column packs tighter but never overlaps. Eight
-// a frame was 26% of the frame once the structures came in.
-const UNIT_SLICE: u16 = 4;
+// March order. Since every unit moves at the one speed nothing ever
+// overtakes, so each side's column is a fixed order: the gate appends at
+// the rear, a paratrooper lands wherever he lands, a death drops out.
+// Each side keeps that order as a list through the `ahead`/`behind`
+// planes, from the lead - the one nearest the far base - to the rearmost.
+// Traffic control then asks each unit one question of the unit ahead of
+// it, and only the two leads look at the other side; unit_traffic.
+// (It was an O(n) pool scan per unit, four units a frame - 18% of the
+// frame under a full field - and a flag went up to seven frames stale.)
+const UNIT_NONE: u8 = 0xFF;
+#[lowram] static mut unit_head: [u8; 2];      // the lead, per side
+#[lowram] static mut unit_tail: [u8; 2];      // the rearmost, per side
 
 // Neither pool takes an initializer, so both are garbage at power-on and
 // every element must be written before anything matches on it.
@@ -206,7 +216,13 @@ const UNIT_SLICE: u16 = 4;
 // the hot loops is one load of the tag plane and a branch on zero.
 fn unit_free(i: u16) {
     units[i].kind = UnitType::Free;
-    unit_side_count[units[i].owner as u16] = unit_side_count[units[i].owner as u16] - 1;
+    let o: u16 = units[i].owner as u16;
+    unit_side_count[o] = unit_side_count[o] - 1;
+    // Drop out of the march.
+    let a: u8 = units[i].ahead;
+    let b: u8 = units[i].behind;
+    if a != UNIT_NONE { units[a as u16].behind = b; } else { unit_head[o] = b; }
+    if b != UNIT_NONE { units[b as u16].ahead = a; } else { unit_tail[o] = a; }
 }
 
 // Live units per side, kept exact by unit_spawn and unit_free.
@@ -218,20 +234,46 @@ far fn unit_init() {
     }
     unit_side_count[0] = 0;
     unit_side_count[1] = 0;
+    launcher_shot[0] = MUNI_MAX;
+    launcher_shot[1] = MUNI_MAX;
+    unit_head[0] = UNIT_NONE;
+    unit_head[1] = UNIT_NONE;
+    unit_tail[0] = UNIT_NONE;
+    unit_tail[1] = UNIT_NONE;
     unit_cursor = 0;
-    unit_slice = 0;
-    spawn_t = SPAWN_PERIOD;
-    spawn_seq = 0;
 }
 
 // unit_spawn - put a unit on the field. Returns 1, or 0 with nothing
 // placed when the pool is full, the side has its UNIT_SIDE_MAX out, or
-// the gate is still occupied - a unit of that side within a convoy
-// space of the spawn point - so an order waits rather than being lost,
-// and men leave the base one at a time instead of five in a heap.
+// the ground is still occupied - a unit of that side within a convoy
+// space of the spot, ahead of it or behind - so an order waits at the
+// gate rather than being lost, men leave the base one at a time instead
+// of five in a heap, and a paratrooper waits for a column to pass.
+//
+// The spot fixes the unit's place in the side's march: the walk from the
+// lead finds the first unit behind it, and the new one goes in ahead of
+// that - at the tail, for a spawn at the base.
 far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
     if unit_side_count[owner as u16] >= UNIT_SIDE_MAX { return 0; }
-    if unit_gate_busy(owner, x_px) != 0 { return 0; }
+    let mut ahead: u8 = UNIT_NONE;
+    let mut behind: u8 = unit_head[owner as u16];
+    if owner == SIDE_PLAYER {
+        while behind != UNIT_NONE && units[behind as u16].x_px > x_px {
+            ahead = behind;
+            behind = units[behind as u16].behind;
+        }
+    } else {
+        while behind != UNIT_NONE && units[behind as u16].x_px < x_px {
+            ahead = behind;
+            behind = units[behind as u16].behind;
+        }
+    }
+    if ahead != UNIT_NONE {
+        if unit_apart(units[ahead as u16].x_px, x_px) < UNIT_W + UNIT_GAP { return 0; }
+    }
+    if behind != UNIT_NONE {
+        if unit_apart(units[behind as u16].x_px, x_px) < UNIT_W + UNIT_GAP { return 0; }
+    }
     let mut i: u16 = unit_cursor;
     let mut n: u16 = 0;
     let mut placed: u8 = 0;
@@ -251,10 +293,13 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
                 };
                 units[i].owner = owner;
                 units[i].x_px = x_px;
-                units[i].x_sub = 0;
                 units[i].hp = unit_stats[units[i].kind as u16].max_hp;
                 units[i].block = 0;
                 units[i].rank = 0;
+                units[i].ahead = ahead;
+                units[i].behind = behind;
+                if ahead != UNIT_NONE { units[ahead as u16].behind = i as u8; } else { unit_head[owner as u16] = i as u8; }
+                if behind != UNIT_NONE { units[behind as u16].ahead = i as u8; } else { unit_tail[owner as u16] = i as u8; }
                 unit_cursor = (i + 1) & UNIT_MASK;
                 unit_side_count[owner as u16] = unit_side_count[owner as u16] + 1;
                 placed = 1;
@@ -269,20 +314,10 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
     return placed;
 }
 
-// unit_gate_busy - is a unit of *owner* still within UNIT_W + UNIT_GAP of
-// *x*? The base's gate: the next one out waits for it to clear.
-fn unit_gate_busy(owner: u8, x: u16) -> u8 {
-    for j in 0..UNIT_MAX {
-        if units[j].kind as u8 != UnitType::Free as u8 {
-            if units[j].owner == owner {
-                let ux: u16 = units[j].x_px;
-                let mut d: u16 = 0;
-                if ux > x { d = ux - x; } else { d = x - ux; }
-                if d < UNIT_W + UNIT_GAP { return 1; }
-            }
-        }
-    }
-    return 0;
+// unit_apart - the distance between two positions.
+fn unit_apart(a: u16, b: u16) -> u16 {
+    if a > b { return a - b; }
+    return b - a;
 }
 
 // unit_count - how many of a kind one side has on the field. `Free` is
@@ -311,34 +346,49 @@ far fn unit_count(kind: Order, owner: u8) -> u8 {
     return n;
 }
 
-// unit_blocked - is another unit close ahead?
+// unit_traffic - should this unit halt this frame?
 //
-// Two jobs in one test. Behind the line it is convoy spacing: units stop
-// rather than walking through each other, which is what makes a column read
-// as a column. At the line it is the front itself - an advancing column
-// meeting an opposing one halts and fights instead of the two sliding
-// through each other. So this deliberately does not care whose unit is
-// ahead, only that something is. (A tank is the exception - see
-// unit_blocked_tank.)
-fn unit_blocked(self_i: u16) -> u8 {
+// Behind the line it is convoy spacing, and that is one question of the
+// unit ahead in the march: is it halted, and within reach? Both move at
+// the one speed, so while it moves this unit can never close on it. At
+// the line it is the front itself - an advancing column meeting an
+// opposing one halts and fights instead of the two sliding through each
+// other - and only the lead has no unit of its own ahead, so only the
+// lead scans the pool for the nearest of the other side. The reach is
+// the width of whichever body lies between the two positions: this
+// unit's, marching east from its x; the one ahead's, marching west.
+//
+// The lead's scan is the hottest loop left in the game, twice a frame:
+// its shape is what keeps the counter in a register; change it and
+// measure (unit_budget). A tank has its own copy - unit_traffic_tank.
+fn unit_traffic(self_i: u16) -> u8 {
+    let a: u8 = units[self_i].ahead;
+    if a != UNIT_NONE {
+        if units[a as u16].block == 0 { return 0; }
+        let ax: u16 = units[a as u16].x_px;
+        let x: u16 = units[self_i].x_px;
+        if units[self_i].owner == SIDE_PLAYER {
+            if ax - x < unit_stats[units[self_i].kind as u16].width + UNIT_GAP { return 1; }
+        } else {
+            if x - ax < unit_stats[units[a as u16].kind as u16].width + UNIT_GAP { return 1; }
+        }
+        return 0;
+    }
+
     let x: u16 = units[self_i].x_px;
     let mine: u8 = units[self_i].owner;
     let reach: u16 = unit_stats[units[self_i].kind as u16].width + UNIT_GAP;
-
-    // The tag load is the whole filter: a free slot is tag 0, and a unit
-    // is never strictly ahead of itself, so neither needs a test of its
-    // own. This is the hottest loop in the game - O(n) per unit,
-    // UNIT_SLICE units a frame - and its shape is what keeps the counter
-    // in a register; change it and measure (unit_budget).
     for j in 0..UNIT_MAX {
         if units[j].kind as u8 != UnitType::Free as u8 {
-            if mine == SIDE_PLAYER {
-                if units[j].x_px > x {
-                    if units[j].x_px - x < reach { return 1; }
-                }
-            } else {
-                if x > units[j].x_px {
-                    if x - units[j].x_px < reach { return 1; }
+            if units[j].owner != mine {
+                if mine == SIDE_PLAYER {
+                    if units[j].x_px > x {
+                        if units[j].x_px - x < reach { return 1; }
+                    }
+                } else {
+                    if x > units[j].x_px {
+                        if x - units[j].x_px < unit_stats[units[j].kind as u16].width + UNIT_GAP { return 1; }
+                    }
                 }
             }
         }
@@ -346,30 +396,40 @@ fn unit_blocked(self_i: u16) -> u8 {
     return 0;
 }
 
-// unit_blocked_tank - unit_blocked for a tank: the same test, except that
-// a hit that is one of the other side's men does not stop it - a tank
-// drives over men (unit_fire's crush). A copy rather than a flag in
-// unit_blocked: any extra shape in that function cost the hot loop its
-// register-promoted counter (measured: 340 frames in 3665).
-fn unit_blocked_tank(self_i: u16) -> u8 {
+// unit_traffic_tank - unit_traffic for a tank: the same test, except that
+// one of the other side's men ahead does not stop it - a tank drives over
+// men (unit_fire's crush). A copy rather than a flag in unit_traffic: any
+// extra shape in that loop cost it its register-promoted counter
+// (measured: 340 frames in 3665).
+fn unit_traffic_tank(self_i: u16) -> u8 {
+    let a: u8 = units[self_i].ahead;
+    if a != UNIT_NONE {
+        if units[a as u16].block == 0 { return 0; }
+        let ax: u16 = units[a as u16].x_px;
+        let x: u16 = units[self_i].x_px;
+        if units[self_i].owner == SIDE_PLAYER {
+            if ax - x < UNIT_W + UNIT_GAP { return 1; }
+        } else {
+            if x - ax < unit_stats[units[a as u16].kind as u16].width + UNIT_GAP { return 1; }
+        }
+        return 0;
+    }
+
     let x: u16 = units[self_i].x_px;
     let mine: u8 = units[self_i].owner;
     let reach: u16 = UNIT_W + UNIT_GAP;
-
     for j in 0..UNIT_MAX {
         if units[j].kind as u8 != UnitType::Free as u8 {
-            if mine == SIDE_PLAYER {
-                if units[j].x_px > x {
-                    if units[j].x_px - x < reach {
-                        if units[j].owner == mine { return 1; }
-                        if units[j].kind as u8 < UnitType::Infantry as u8 { return 1; }
-                    }
-                }
-            } else {
-                if x > units[j].x_px {
-                    if x - units[j].x_px < reach {
-                        if units[j].owner == mine { return 1; }
-                        if units[j].kind as u8 < UnitType::Infantry as u8 { return 1; }
+            if units[j].owner != mine {
+                if units[j].kind as u8 < UnitType::Infantry as u8 {
+                    if mine == SIDE_PLAYER {
+                        if units[j].x_px > x {
+                            if units[j].x_px - x < reach { return 1; }
+                        }
+                    } else {
+                        if x > units[j].x_px {
+                            if x - units[j].x_px < reach { return 1; }
+                        }
                     }
                 }
             }
@@ -378,22 +438,17 @@ fn unit_blocked_tank(self_i: u16) -> u8 {
     return 0;
 }
 
-// unit_advance - move one unit along its heading by a 1/256 px step.
-fn unit_advance(i: u16, step: u16) {
+// unit_advance - move one unit a pixel along its heading. A column that
+// walks off the far edge of the world is freed there.
+fn unit_advance(i: u16) {
     if units[i].owner == SIDE_PLAYER {
-        let t: u16 = (units[i].x_sub as u16) + (step & 0x00FF);
-        units[i].x_sub = t as u8;
-        units[i].x_px = units[i].x_px + (step >> 8) + (t >> 8);
+        units[i].x_px = units[i].x_px + 1;
         if units[i].x_px >= WORLD_W { unit_free(i); }
     } else {
-        let mut whole: u16 = step >> 8;
-        let frac: u16 = step & 0x00FF;
-        if (units[i].x_sub as u16) < frac { whole = whole + 1; }
-        units[i].x_sub = units[i].x_sub - (frac as u8);
-        if units[i].x_px <= whole {
+        if units[i].x_px == 0 {
             unit_free(i);
         } else {
-            units[i].x_px = units[i].x_px - whole;
+            units[i].x_px = units[i].x_px - 1;
         }
     }
 }
@@ -522,70 +577,53 @@ fn unit_fire(i: u16) {
 }
 
 // The launcher's one shot. `self` is the pool index, so the shared planes
-// are `units[self].*` and its own field `self.armed`. The player's
-// airframe is the only helicopter until phase 10, so an enemy launcher
-// watches for it and a player's has nothing to fire at yet.
+// are `units[self].*` and its own field `self.armed`. It watches for the
+// other side's airframe - and only one truck of a side fires at a time:
+// while its missile is in the air the rest hold, so a column of them is
+// a chain of shots to dodge rather than a volley.
+#[lowram] static mut launcher_shot: [u16; 2];   // the missile in flight, per side, or MUNI_MAX
+
 impl Launcher {
     fn launch(self) {
         if self.armed == 0 { return; }
-        if units[self].owner != SIDE_ENEMY { return; }
+        let owner: u16 = units[self].owner as u16;
+        let s: u16 = launcher_shot[owner];
+        if s < MUNI_MAX {
+            if muni_kind[s] == MUNI_MISSILE && muni_owner[s] == units[self].owner { return; }
+            launcher_shot[owner] = MUNI_MAX;
+        }
         let lx: u16 = units[self].x_px + (UNIT_W >> 1);
-        let hx: u16 = heli_x_px + (HELI_W >> 1);
-        let mut d: u16 = 0;
-        if hx > lx { d = hx - lx; } else { d = lx - hx; }
-        if d < LAUNCHER_RANGE {
+        if air_target(units[self].owner, lx, LAUNCHER_RANGE) != AIR_NONE {
             self.armed = 0;
             muni_spawn(MUNI_MISSILE, lx, (UNIT_BASE_Y - 8) << 8, Q10(0),
                        Q10(0) - MISSILE_SPEED, MISSILE_LIFE, units[self].owner);
+            launcher_shot[owner] = muni_last;
             unit_free(self);
         }
     }
 }
 
 // ---------------------------------------------------------------- spawn ---
-// Units come out of each side's base. The player's come from orders
-// (order.r65). The CPU opponent arrives in phase 10; until then the enemy
-// base sends a rotating column so the field populates and a front forms.
+// Units come out of each side's base: the player's from orders
+// (order.r65), the CPU's from its convoys (cpu.r65).
 const BASE_X_PLAYER: u16 = 512;
 const BASE_X_ENEMY:  u16 = 7680;
-const SPAWN_PERIOD:  u8  = 120;
-
-// Launcher-heavy - half the column is missile trucks, so the homing
-// missile gets exercised on every approach. It began as a testing
-// rotation (the balanced one is Tank, Infantry, Van, Launcher) but the
-// suite's unit, structure and budget cases are all pinned against this
-// column now, and phase 10's convoy table replaces it anyway.
-static SPAWN_ORDER: [Order; 8] = [Order::Launcher, Order::Tank, Order::Launcher,
-                                  Order::Infantry, Order::Launcher, Order::Van,
-                                  Order::Launcher, Order::Launcher];
-
-#[lowram] static mut spawn_t:   u8;
-#[lowram] static mut spawn_seq: u8;
-
-far fn unit_spawn_tick() {
-    if spawn_t > 0 {
-        spawn_t = spawn_t - 1;
-    } else {
-        spawn_t = SPAWN_PERIOD;
-        let k: Order = SPAWN_ORDER[(spawn_seq & 7) as u16];
-        unit_spawn(k, SIDE_ENEMY, BASE_X_ENEMY);
-        spawn_seq = spawn_seq + 1;
-    }
-}
 
 // unit_update - one tick for the whole pool.
 far fn unit_update() {
-    unit_spawn_tick();
 
-    // Refresh the traffic-control flags for this frame's slice only.
-    for k in 0..UNIT_SLICE {
-        let i: u16 = unit_slice;
-        match units[i].kind {
-            UnitType::Free    => {}
-            UnitType::Tank(t) => { units[i].block = unit_blocked_tank(i) | t.hold; }
-            _                 => { units[i].block = unit_blocked(i); }
-        };
-        unit_slice = (unit_slice + 1) & UNIT_MASK;
+    // Refresh the traffic flags in march order, lead first, so a follower
+    // reads the flag its unit ahead was given this same frame.
+    for side in 0..2 {
+        let mut i: u8 = unit_head[side];
+        while i != UNIT_NONE {
+            let u: u16 = i as u16;
+            match units[u].kind {
+                UnitType::Tank(t) => { units[u].block = unit_traffic_tank(u) | t.hold; }
+                _                 => { units[u].block = unit_traffic(u); }
+            };
+            i = units[u].behind;
+        }
     }
 
     for i in 0..UNIT_MAX {
@@ -602,7 +640,7 @@ far fn unit_update() {
                     _ => {}
                 };
                 if units[i].block == 0 {
-                    unit_advance(i, unit_stats[units[i].kind as u16].speed);
+                    if (frames_loop & 1) != 0 { unit_advance(i); }
                 }
             }
         };
@@ -635,33 +673,43 @@ fn unit_draw_one(i: u16, sx: u16) {
     // renders on the tail side - and it moves the art within its box, so
     // the box shifts back to keep the sprite over the collision extent
     // (`UNIT_MIRROR_*`).
+    //
+    // A vehicle is 24 px in a 16x16 cell and the left half of a second:
+    // that half goes out as two 8x8 sprites, one tile each, so a vehicle
+    // costs a scanline three tiles rather than four - the design's
+    // budget, and the difference between eight tanks and a bunker on one
+    // line (36) and the PPU's 34. Mirrored, the half sits on the right of
+    // where its cell would have been.
     let mut attr: u16 = UNIT_ATTR;
-    let mut near: u8 = tile;
-    let mut far_: u8 = tile + 2;
     let mut bx: u16 = sx & 0x01FF;
+    let mut cell_x: u16 = bx;             // the 16x16 cell
+    let mut half_x: u16 = (bx + 16) & 0x01FF;   // the 8x8 pair
     if units[i].owner == SIDE_ENEMY {
         attr = UNIT_ATTR | 0x4000 | OBJ_PAL_ENEMY;
         if cells > 1 {
-            near = tile + 2;
-            far_ = tile;
             bx = (sx - UNIT_MIRROR_VEH) & 0x01FF;
+            cell_x = (bx + 16) & 0x01FF;
+            half_x = (bx + 8) & 0x01FF;
         } else {
             bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
+            cell_x = bx;
         }
     }
 
     let a: u16 = oam_take();
     if a < OAM_SLOTS {
-        oam.set_full!(a as u8, bx, y, (near as u16) | attr);
+        oam.set_full!(a as u8, cell_x, y, (tile as u16) | attr);
         oam.set_size!(a as u8, 1);
     }
-    // A man is one cell; a vehicle needs its second.
+    // A man is one cell; a vehicle needs its second half.
     if cells > 1 {
         let c: u16 = oam_take();
-        if c < OAM_SLOTS {
-            oam.set_full!(c as u8, (bx + 16) & 0x01FF, y,
-                          (far_ as u16) | attr);
-            oam.set_size!(c as u8, 1);
+        let d: u16 = oam_take();
+        if d < OAM_SLOTS {
+            oam.set_full!(c as u8, half_x, y, ((tile + 2) as u16) | attr);
+            oam.set_size!(c as u8, 0);
+            oam.set_full!(d as u8, half_x, y + 8, ((tile + 18) as u16) | attr);
+            oam.set_size!(d as u8, 0);
         }
     }
 }
@@ -772,7 +820,11 @@ far fn unit_collide() {
                 // round crossing both resolves against the bomb - and only
                 // while a bomb is in the air: with a full pool of rounds
                 // this was 256 slot checks a frame, by itself over budget.
-                if mk == MUNI_BULLET && muni_bombs != 0 {
+                // A round climbing - a turret's or a bunker's, lofted at an
+                // airframe - does not count: it would shoot down every bomb
+                // dropped on the gun that fired it, since the bomb falls
+                // straight down its stream.
+                if mk == MUNI_BULLET && muni_bombs != 0 && muni_vy[m] >= Q10(0) {
                     for b in 0..MUNI_MAX {
                         if muni_kind[b] == MUNI_BOMB {
                             let bx: u16 = muni_x_px[b];

@@ -69,7 +69,9 @@ Select), and screenshots.
     ./play.sh build/fly.png wait60,right90,shot --check-mem16 0x20=0x0140
 
 Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN`/`yN`/`lN`/`rN`.
-Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`.
+Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. `r3` at the start holds R
+through the first frames, which picks the eighth mission's CPU row (`CPU_LEVEL_HELD`) instead
+of the first's - the harness's stand-in for a mission select until the front end exists.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -101,6 +103,8 @@ rotor_raiders/
 │   ├── para.r65              # The airlift: men aboard, paratroopers
 │   ├── struct.r65            # Buildings: level table, turrets, bunkers, balloons, super bunker, bases, banks
 │   ├── order.r65             # Funds, the L/R order ring, the order queue
+│   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
+│   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
 │   ├── hud.r65               # BG1 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
 │   ├── radar.r65             # BG1 strip row 2: the radar, a 256x8 bitmap the game draws
 │   ├── game.r65              # Match state: the two ends, the reset
@@ -114,7 +118,7 @@ rotor_raiders/
 │   ├── gfx/                  # Generated .chr / .pal
 │   ├── sound/                # snesgss exports (spc700.bin, music_*.bin)
 │   └── levels/               # Battlefield placement lists
-├── tools/                    # mkmovie.py, pngstat.py, asset generators
+├── tools/                    # mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
 ├── tests/run.sh              # Scripted-input regression suite
 ├── play.sh                   # One-shot scripted run + screenshot
@@ -145,6 +149,9 @@ tilemap is two 32x32 screens and bmp2chr emits row-major at bitmap width. Each B
 own de-duplicated tileset and its own CGRAM block; only sub-palette 0 (4 colours) is used.
 
 Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a munition 8x8.
+A 24-px vehicle is one 16x16 cell plus its second cell's left half drawn as **two 8x8s** - three
+tiles on a scanline, not four, which is what keeps eight bunched tanks and a bunker (28) under
+the PPU's 34 (`unit_draw_one`; the sheet's fourth tile column of every vehicle is blank).
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
@@ -156,19 +163,26 @@ latching it needs a discarded read of $2137 and the compiler eliminates unused h
 A tank shells the other side's units ahead and its standing turrets, bunkers and manned super
 bunker (`struct_tank_target`, a walk of the sorted structure pool from the tank's own end),
 holding in place until the building falls. It does not stop for the other side's men
-(`unit_blocked_tank` - a copy of the traffic test, because any extra shape in `unit_blocked`
-cost its hot loop 340 frames): it drives over them, testing its sweep's remembered nearest
+(`unit_traffic_tank` - a copy of the traffic test, because any extra shape in `unit_traffic`'s
+lead scan cost it 340 frames): it drives over them, testing its sweep's remembered nearest
 opposing unit for overlap each frame (a pool scan per tank per frame measured 15% of the frame). A rifleman's shot is not a munition: the sweep that
 finds a target within `INF_RANGE` lands `rifle_dmg` there and then (0 against a tank) and sets
 the pose for the frame it is drawn; with no unit in reach an enemy turret ahead takes the point
 instead. Both sweep every 16 idle frames.
 Every unit stands on the one ground line - there are no lanes (there were three 4 px ones; they
-let opposing columns walk through each other and went) - so traffic control halts a unit for
-anything ahead, either side's. It is O(n^2) and re-evaluates 4 units a frame; liveness is the
-tag plane (`Free` is 0). The base's gate holds the next unit until the last is a convoy space
-clear, so men leave one at a time. Collision rejects a munition against the whole pool with one
-scanline-band test. **The sprite budget holds by spacing**: at width + gap a window carries at
-most eight vehicles, 16 sprites / 24 tiles on the line against the PPU's 32 / 34.
+let opposing columns walk through each other and went) - and **every unit marches at the one
+speed**, a pixel on each odd frame (`UNIT_SPEED` is gone with the per-kind speeds: any column
+with a man near its front crawled at his quarter pixel). Nothing overtakes, so each side's
+column is a fixed **march order** kept as a list through the `ahead`/`behind` planes from
+`unit_head` (the lead) to `unit_tail` (the rearmost): `unit_spawn` inserts by x - at the tail
+for a base spawn, wherever a paratrooper lands - refusing a spot within a convoy space of its
+neighbours (that is the base's gate: men leave one at a time), and `unit_free` unlinks.
+**Traffic control is then one question of the unit ahead** (`unit_traffic`: halted, and within
+width + gap?) and only the two leads scan the pool for the nearest of the other side; flags are
+refreshed every frame in march order, lead first. Liveness is the tag plane (`Free` is 0).
+Collision rejects a munition against the whole pool with one scanline-band test. **The sprite
+budget holds by spacing**: at width + gap a window carries at most eight vehicles, 24 sprites /
+24 tiles on the line against the PPU's 32 / 34, leaving room for a building on the same line.
 
 A unit is three declarations. **Unit** is a `#[soa]` struct holding what every unit has -
 position, hp, owner, lane, block, rank - plus its `kind`, so `units[i].hp` is one
@@ -181,8 +195,8 @@ is what is fixed about a kind: `unit_stats` is a `#[soa]` immutable static, one 
 column with one entry per variant in tag order. Three rules come out of it:
 
 - **Read a kind's constants straight out of the table by tag**:
-  `unit_stats[units[i].kind as u16].speed`. The cast is the bare tag-plane read and each
-  column is its own table, so a read is one `LDA.l unit_stats__speed_data,X` with the index
+  `unit_stats[units[i].kind as u16].width`. The cast is the bare tag-plane read and each
+  column is its own table, so a read is one `LDA.l unit_stats__width_data,X` with the index
   scaled by the column width (none for a `u8`). Do not route them through a method on the
   enum: both the `*UnitBase` accessor and per-column `match self` methods were measured at
   0.85 and 0.94 ticks/frame against 1.00 for the table.
@@ -208,7 +222,7 @@ and balloonless but still capturable - the man who takes it restores it); a mann
 along the ground at units of any other side outside its box; the base fires homing missiles
 (`MUNI_MISSILE`) inside 320 px; the bank's gun falls silent after two shells and an enemy
 infantryman at the player's bank halves the purse. Per-unit scans (capture, claim, entry, robbery)
-run on a stagger of one structure per frame in sixteen - a man covers four pixels in that time.
+run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
 `tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp` and writes the
 4-bit BMP itself, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
 
@@ -229,26 +243,91 @@ screen like the glyph strip), and Start calls `game_reset`, which re-runs every 
 The van end cannot be scripted in useful time; plant one with the debugger
 (`set` the tag/owner/x planes of a slot at the enemy base and step a few dozen frames).
 
-**The frame is now the binding constraint.** With 32 units live and every structure ticking, the
-stress movie (eight tanks bought at once against the full enemy column) runs at 0.968 ticks per
+**The frame is now the binding constraint.** With the field full and every structure ticking, the
+stress movie (eight tanks bought at once against the CPU's column) runs at 0.896 ticks per
 vblank, pinned by `unit_budget`. Anything new that runs per unit or per frame has to be measured
-against it; the profile method is a Mesen-GDB `trace` from the snapshot attributed to functions
-through the `.sym` (see the phase 8 notes in the plan).
+against it. `tools/profile.py` is the profiler: a Mesen-GDB `trace` from the snapshot attributed
+to functions through the `.sym` (the docstring has the incantation). `tools/poolstat.py` prints
+the field from a `--dump wram` - every unit with its links and flags, the munitions, the
+structures, the CPU's purse and queue (`--brief` for one line per dump) - and
+`tools/timeline.sh` takes those dumps at several frames of one run.
+
+**The CPU opponent** (`src/cpu.r65`, phase 10, in bank 2 with `hud.r65` and `order.r65` -
+bank 0 is full) is the 1991 game's: a capability row per mission (`cpu_stats`; `CPU_LEVEL`
+picks one until the mission table exists) and the convoy strings verbatim (`convoy_data`, gated
+by tier, priced by `convoys`). The match runs on the first mission's row (`CPU_LEVEL` 0;
+`cpu_level` is set at boot and by the front end, and survives a reset), where the pilot only
+wanders and refits; `scatter_bomb` (from mission 8) is what lets it bomb at all, and `kill_*`
+say at what. It earns as the player does from its airframe's distance into
+the player's half, and - the original's rule, from the remake's `Inventory.js` - once the last
+convoy has left the gate and the row's `order_delay` (22 s, shorter past tier 5, plus up to a
+quarter at random, halved after a single unit) has run, buys one convoy it can afford at
+random with its own xorshift, so `rand()`'s parachute sequence stays put; broke, it waits a
+whole pause. `fund_min`/`fund_max` are the player's purse at which it will raid the bank (not a
+reserve; the original has none). The convoy drains through `cpu_tick`'s emitter under the same
+gate rules as the player's orders. Its purchase sequence from a cold boot is fixed by
+`cpu_seed` and the airframe's flight, and a dozen suite cases are calibrated to the column.
+
+**The enemy airframe** (`src/foe.r65`) is a second helicopter on its own `foe_*` statics with
+copies of the player's physics, loadout, fuel, pad and loss rules (a second copy of a few
+routines beats routing both airframes through a pointer, and leaves the tuned code alone). It
+starts hovering at the far edge, facing the player. It is lost to a bomb outright, to 20 points
+of gunfire or two missiles, to a balloon, and to contact with the player's airframe (both go);
+the next one comes after the row's `regen_time`, rising out of the ground at the far edge, and
+the last one is the player's win.
+
+**The pilot** (`foe_think`, every 8 frames; `foe_fire` every frame) is an adaptation of Armor
+Alley's `Helicopter-AI.js` - its priority list, not its steering-force model. In order: **refit**
+(fuel under 10 plus a unit per 256 px of the trip home, or two of gun < 6 / no bombs / hp < 5 -
+one on the first two rows) → the pad; **dodge** the nearest opposing round within 192 px and
+two heights - a round from the ground gets the jink (`foe_jink`, four heights every 16 frames),
+one from the air a step over or under, and the spot flown to stays what it was; **hunt** the
+player's airframe when `foe_hunt` and it is within 512 px and not landed - a standoff off it,
+level, for the gun, or two heights above it for a bomb once the gun is dry; **bomb** the nearest
+player unit the row's `kill_*` flags allow within 512 px (from a hover over it), then the
+nearest player turret or bunker on a **pass** - `FOE_PASS` (192 px) beyond it, since a bomb
+from a hover falls straight down the turret's own stream of rounds; a turret only with hp ≥
+`FOE_HP_PASS` (16), a pass costing about ten - released when the bomb's landing spot (centre
+plus vx × the fall, `mul16` on the height) is over the target, one bomb per target, three per
+tank, any number per turret, 40 frames apart; else **wander** toward the player's end on the
+weave (`foe_weave`, four heights every 64 frames), turning at `FOE_WEST` (900, short of the
+base's missiles) and 128 px from the far edge. After every decision `foe_under_balloons` pins
+the height to hover within 224 px of a balloon, and every frame `foe_evade` overrides the
+height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames at
+full vertical speed with four times the thrust), one from the air a step over or under, and the
+player's airframe closing within 192 px gets a climb or dive out of its plane. The gun fires at
+the player's airframe within 320 px, more than a width off, within 1.5 heights and faced. Modes
+as the original's: every ~34 s `foe_attack` (7 in 8) and `foe_hunt` (attack and
+`kill_copter`); a point of gunfire with the player's airframe in view tosses a coin, at most
+once a second, to start hunting. Not adapted: clouds, paratroopers, the kamikaze run, and the
+smart-missile counter-measures (slice (d)). Both decks now repair (`HELI_HP_REPAIR`, a point
+per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
+`struct_collide` runs before `unit_collide`, which spends the blast, and the blast is snapped
+to the ground line - so four bombs take a turret and three a bunker; and a climbing round (a
+turret's, lofted at an airframe) no longer shoots bombs down. **Only one missile truck of a
+side fires at a time** (`launcher_shot`): while its missile is up the rest hold. Both airframes' collision walks are gated on `muni_up[side]`, the count of the
+other side's munitions in flight kept by `muni_update` - not on distance from the other
+airframe, since turrets, bases and launchers fire a side's rounds too. `air_target(mine, x, range)` is how a gun of either side, or a hostile-neutral
+one, finds the airframe it may shoot (centre x back, centre y in `air_ty`); turrets, the super
+bunker, the bases and launchers all go through it, and a missile homes on the airframe of the
+side that did not fire it. The CPU's purse reads its real position, and the radar plots it red.
 
 Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
 (`src/muni.r65`). OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px
 culled rather than parked off-screen.
 
-The HUD is BG1 rows 0-2. Rows 0-1 (`src/hud.r65`: `$` purse, lives, H and F gauges of six
-bar cells; G rounds, B bombs, men aboard) are composed into a 64-word shadow and DMA'd in vblank
-when a shown value changes. Their glyphs (digits, `$`, brackets, six unit icons on **map row 28
+The HUD is BG1 rows 0-1 at the top and row 27 at the bottom. Row 0 (`src/hud.r65`: `$` purse,
+lives, men aboard) and row 27 (the airframe: H and F gauges of six bar cells, G rounds, B
+bombs, M missiles - over the dirt, the last visible row in 224-line mode, where nothing else is
+drawn) are composed into one 64-word shadow and DMA'd in vblank, 64 bytes each, when a shown
+value changes; row 2, navy in the art, is cleared once at boot. Their glyphs (digits, `$`, brackets, six unit icons on **map row 28
 of `bg1.bmp`**, capitals on 29, the dialog's box/cursor/bar cells on 30 - all below the 224
 visible scanlines) are read back out of `BG1_MAP` at runtime by position, so bmp2chr's
 de-duplicated IDs never appear in code. The glyph *order* is the contract; `tools/hud_glyphs.py`
 stamps them and is the place to edit them.
 
-Row 2 is the radar (`src/radar.r65`): 32 tiles past the art's (`RADAR_TILE = BG1_CHR_SIZE/16`)
+Row 1 is the radar (`src/radar.r65`): 32 tiles past the art's (`RADAR_TILE = BG1_CHR_SIZE/16`)
 mapped in order, so the row is a 256x8 bitmap - 32 world px per pixel - drawn into a 512-byte
 2bpp shadow and DMA'd to the BG1 tileset every 16th frame, in its own BG sub-palette (CGRAM 4-7:
 navy, blue, red - written at boot by `radar_palette`) so a side reads by colour: blue the
@@ -270,16 +349,16 @@ the frame the unit pool has room. Draw order: after the munitions.
 
 Controls: hold L for the order dialog - Left/Right move the highlight, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck.
-The dialog (`hud_overlay`) is a box on BG1 rows 3-10 composed once at init into an 8-row
+The dialog (`hud_overlay`) is a box on BG1 rows 2-9 composed once at init into an 8-row
 shadow (composing it on the press cost a frame) and DMA'd as one 512-byte block on show and
 cursor move, with an all-transparent twin DMA'd on hide; its border and cursor tiles are stamped
-on map row 30 by `tools/hud_glyphs.py`, the names come from the letter row. It shares row 10
-with the battle-over line, so `game_over` hides it first.
+on map row 30 by `tools/hud_glyphs.py`, the names come from the letter row. `game_over` hides
+it before writing the battle-over line on row 10, from when they shared that row.
 
 Funds (`src/order.r65`) accumulate `heli_x_px >> 4` per frame against `ECON_THRESH`; that
 threshold is the pace knob and `econ_income` in the suite pins its current value. Orders go
 through an eight-deep queue that lets the next man out once the last has cleared the gate by a
-convoy space (`unit_gate_busy`), holding him when the pool is full rather than dropping him. Caps count men on the field plus men queued, and
+convoy space (`unit_spawn`'s spacing test), holding him when the pool is full rather than dropping him. Caps count men on the field plus men queued, and
 infantry and engineers share one cap.
 
 The ground parallax is 8 HDMA bands of 7 scanlines. `gnd_table_build` computes

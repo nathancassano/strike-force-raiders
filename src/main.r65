@@ -38,10 +38,12 @@ include!("muni.r65")
 include!("unit.r65")
 include!("para.r65")
 include!("order.r65")
+include!("cpu.r65")
 include!("hud.r65")
 include!("radar.r65")
 include!("game.r65")
 include!("heli.r65")
+include!("foe.r65")
 
 // Bank 0 - Main code
 #[bank(0)]
@@ -90,6 +92,9 @@ fn boot_load() {
     struct_init();
     econ_init();
     order_init();
+    cpu_level = CPU_LEVEL;
+    cpu_init();
+    foe_reset();
     hud_init();
     radar_init();
     game_init();
@@ -130,6 +135,14 @@ fn main() -> ! {
         let held: u16 = pad_poll();
         let trig: u16 = pad_poll_trigger();
 
+        // Until the front end chooses a mission: R held in the first
+        // frames after boot picks the harder CPU row (cpu.r65).
+        if frames_loop < 32 && (held & JOY_R) != 0 && cpu_level != CPU_LEVEL_HELD {
+            cpu_level = CPU_LEVEL_HELD;
+            cpu_init();
+            foe_reset();
+        }
+
         if game_state == GAME_PLAYING {
             // Holding L is the order overlay: the d-pad walks the ring and
             // A buys, and neither reaches the airframe while it is down.
@@ -141,9 +154,11 @@ fn main() -> ! {
             }
             heli_update(fly_held);
             heli_fire(fly_held, fly_trig);
+            foe_update();
             econ_tick();
             order_input(held, trig);
             order_tick();
+            cpu_tick();
             hud_update();
             let mut want: u8 = 0;
             if (held & JOY_L) != 0 { want = 1; }
@@ -152,9 +167,12 @@ fn main() -> ! {
             unit_update();
             para_update();
             struct_update();
-            unit_collide();
+            // Buildings before units: a bomb's blast is spent by
+            // unit_collide, and the building under it must see it first.
             struct_collide();
+            unit_collide();
             heli_collide();
+            foe_collide();
             camera_update();
             radar_update();
         } else {
@@ -167,6 +185,7 @@ fn main() -> ! {
         // buildings, then ground units from the camera centre outward.
         oam_begin();
         heli_draw();
+        foe_draw();
         radar_draw();
         muni_draw();
         para_draw();

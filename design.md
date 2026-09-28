@@ -245,14 +245,15 @@ the title screen; it encodes the mission index and the carried funds.
 
 ## HUD *(decided after phase 9)*
 
-The strip is 24 lines - three tile rows of 32 on BG1 - and the order ring leaves it for the
-L overlay:
+The strip is 16 lines - two tile rows of 32 on BG1 - and the order ring leaves it for the
+L overlay; the airframe's own gauges are on a third row along the bottom of the screen
+*(moved there in phase 10)*:
 
 | Row | Contents |
 |---|---|
-| 0 | `$` purse · lives · health bar · fuel bar |
-| 1 | gun / bombs / missiles / men-aboard counts |
-| 2 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
+| 0 | `$` purse · lives · men aboard |
+| 27 (bottom) | health bar · fuel bar · gun / bombs / missiles counts |
+| 1 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
 
 Plus an **avatar pop-in at the bottom right** of the screen: a character portrait that slides in
 to deliver briefings and in-battle warnings (van approaching, bank robbed, low fuel).
@@ -272,7 +273,10 @@ to deliver briefings and in-battle warnings (van approaching, bank robbed, low f
   A remake addition, but it's what makes a convoy read as a convoy. *Decided:* only a tank
   parks to shell a building; everything else in the column keeps advancing past it. A column
   that walks past the far base goes on to the world edge and is freed there - the van end
-  fires before that needs defining.
+  fires before that needs defining. *Decided in phase 10:* **every unit marches at the one
+  speed** (half a pixel a frame) and collision is a front-line affair - a follower only ever
+  halts behind a halted unit of its own side, and only the lead of a column looks at the other
+  side. With per-kind speeds any column with a man near its front crawled at his pace.
 
 ---
 
@@ -735,6 +739,98 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    moves every frame.
    *Verified: `radar_boot`/`radar_flown` byte for byte, the gauges by their white on screen.*
 10. **CPU opponent.** Convoy table, AI flag table, helicopter priority state machine.
+    *Decided at the start of the phase (2026-09-20):*
+    - **Slices, in order:** (a) the enemy purse and the convoy table, replacing the placeholder
+      rotation; (b) the enemy airframe - a second helicopter with its own state, the player's
+      weapons against it, the player's turrets, base and bank firing at it, its use of the
+      enemy pad, enemy lives as the second way to win; (c) the priority state machine that
+      flies it; (d) smart missiles for both airframes, the AI's `useMissile` gating its own.
+    - **AI capability rows, one per mission:** `convoy_level`, `fund_min`, `fund_max`,
+      `clip_speed`, `regen_time` and the flags `build_truck`, `build_engineers`, `kill_copter`,
+      `kill_tank`, `kill_van`, `kill_men`, `use_missile`. The rest of AA's table (napalm,
+      flame thrower, scatter bomb, stealth, suicide, kill_end, kill_missile, dumb missiles,
+      jamming) is out: weapons the roster does not have, or already covered (van jamming).
+      Until phase 11 selects a row per mission, `CPU_LEVEL` picks one.
+    - **The purse.** The enemy earns as the player does, from its airframe's distance into the
+      player's half against the same threshold: `(WORLD_W - x) >> 4` a frame. Until slice (b)
+      the airframe is a stand-in parked mid-field, so the CPU earns a fund every ~2.6 s.
+    - **Spending.** `fund_min` is a reserve: the CPU buys only what leaves that much in the
+      purse. Every `CPU_TICK` frames it lists the convoys at or below its `convoy_level` it
+      can afford above the reserve, and takes one at random; above `fund_max` it takes the
+      dearest instead, so a purse never sits idle. A letter is an order at the ring's price
+      and men count (`I` is five men, `E` two), `M` becomes `I` without `build_truck` and `E`
+      becomes `I` without `build_engineers`. The convoy drains through the CPU's own queue at
+      the player's gate rules - one unit per `ORDER_GAP` frames, held while the gate is busy -
+      and a unit at its side's cap when its turn comes is dropped, not refunded.
+    - The CPU rolls its own xorshift (`cpu_rand`), not `rand()`, so its choices never move
+      the parachute sequence the airlift cases are pinned on.
+    - The state machine's priorities and thresholds are settled in slice (c); the plan's order
+      stands: seek pad (fuel < 30 or ammo < 6) > attack the player's airframe > bomb tanks >
+      attack bunkers > patrol, with vote counters against flip-flopping.
+
+    *Slice (a) DONE.* `src/cpu.r65`: the ten capability rows, the 25 convoys as one `Order`
+    run per convoy with an index of offset, tier and price, the purse, the decision every 64
+    frames, the queue and its emitter. *Verified:* `cpu_purse` pins the first buy and the
+    income; `poolstat.py` shows the fixed sequence IMEV, M, TI.
+
+    **One march speed, collision at the front** *(decided during slice (a))*. The CPU's first
+    convoy at the working level is infantry-led, and under the old rules - men at a quarter
+    pixel a frame, everything halting for anything ahead - its whole army crawled behind five
+    men: 590 px in 2400 frames, a tank 22,000 frames from the player's bunker. Now every unit
+    moves a pixel on each odd frame, nothing overtakes, and each side's column is a list in
+    march order (`ahead`/`behind` planes, `unit_head`/`unit_tail`): a follower asks one
+    question of the unit ahead, only the leads scan the pool for the other side, and the
+    base's gate is the spacing test at the insertion point. The stress movie went from 0.822
+    to 0.896 ticks a frame, the pixel-on-odd-frames step being most of it (the sub-pixel add
+    per unit was 9% of the frame). Twelve suite cases were re-derived against the CPU column
+    with `tools/poolstat.py` and `tools/timeline.sh`; `march_order` pins the packing.
+
+    *Slice (b) DONE.* `src/foe.r65`: the enemy airframe on its own statics with the player's
+    physics, loadout, fuel, pad and loss rules; two states for now - the pad under 30 fuel,
+    otherwise a patrol 96 px ahead of the column's lead at the row's clip speed; lost to a
+    bomb, 20 points of gunfire, two missiles, a balloon or contact with the other airframe
+    (both go); regen after the row's `regen_time`; four lives, the last the player's win.
+    Every gun that shot the player's airframe now shoots the other side's through
+    `air_target` - turrets, super bunker, bases, launchers - and missiles home on the airframe
+    of the side that did not fire them; the CPU's purse reads the real position; the enemy
+    bank's purse is robbed like the player's. *Verified:* `foe_patrol`, `foe_pad`, `foe_gun`,
+    `foe_contact`, `foe_turret` (the player's turret takes the first airframe around frame
+    14000 and the next one rises). The purse reading the real airframe moved the CPU's
+    purchase timing, so the column-dependent cases were re-derived once more.
+    *Slice (c) DONE.* The pilot, adapted from the remake's `Helicopter-AI.js` (read in
+    full; the original is a per-frame force accumulator over seek/arrive/avoid vectors and
+    votes, not a state machine). Kept: the priority order (refit, dodge, hunt, bomb, wander),
+    its numbers (fuel 25 → ours 10 + the trip home, ammo 6, hp 5, view 512, gun 320, dodge
+    192, edge 128, mode roll every 30 s at 7/8 attack, chase-on-hit coin toss, one bomb per
+    target and three per tank), the wander toward the player's end with a vertical weave, the
+    x4 weave under turret fire, bombing turrets and bunkers on the way, and gunfire at the
+    player's airframe only when level, in reach and faced. Changed for the SNES: decisions
+    every 8 frames set one spot for `foe_steer` instead of summed forces; the balloon and
+    chain whiskers are a height clamp near balloons; the wander turns at the player's base
+    zone rather than the world's edge, since the base's missiles would take a life every
+    pass. Dropped: clouds (none here), paratroopers, kamikaze, missile decoys - and the
+    purchasing rule in `cpu.r65` was corrected to the original's on the way (no reserve;
+    a random affordable convoy after each pause). Found on the way: a bomb's blast never
+    reached a building (`unit_collide` spent it first, and the ground line was excluded).
+    Settled while tuning: a bombing run on a turret is a pass, not a hover (the turret's
+    own stream shoots down what falls through it), begun only with 16 hp (a pass costs ten);
+    climbing rounds do not intercept bombs; the decks repair (the refit rule assumes it);
+    the wander turns 900 px from the player's end, short of the base's missiles; vertical
+    evasion gets four times the thrust, or a charging player collides with it every time;
+    `scatter_bomb` (the original's, on from mission 8) gates bombing, so the first rows'
+    pilot only wanders and refits - which is what the suite runs against, with R held at
+    boot as the stand-in for a mission select (the eighth row) for the cases that need the
+    hunt and the bombs. Also: **only one missile truck per side fires at a time**.
+    *Open:* the original's CPU helicopter has unlimited lives; ours has four - on the
+    first row it survives a match, on the eighth it spends them on the player's turret.
+    *Found on the way:* a compiler bug - vreg-move coalescing tested interference against
+    liveness left stale by an earlier coalesce in the same sweep, so `let clip = g; let mut
+    want = 0; ... want = clip` folded `want` into `clip` and its `= 0` overwrote the clip
+    speed (the airframe never moved). Fixed in `slot_allocator.py` with a regression test;
+    the same defect was the long-open "let-copy of a mutable local aliases its source".
+    And the sprite budget: eight bunched tanks and a bunker on one line were 36 tiles against
+    the PPU's 34 with vehicles drawn as two 16x16 cells; the second cell's live half is now
+    two 8x8 sprites, three tiles a line as the design table always budgeted (28 on that line).
 11. **Campaign.** Mission table, briefing and after-action screens, SRAM persistence.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in
     snesgss and wire the export into the Makefile.

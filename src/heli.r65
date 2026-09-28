@@ -99,6 +99,9 @@ const HELI_FUEL_FILL:  u8 = 4;            // frames per unit on the deck
 // same job without a modulus, which for 20 and 10 would mean a mod8 call.
 const HELI_GUN_RELOAD:  u8 = 20;
 const HELI_BOMB_RELOAD: u8 = 10;
+// The deck repairs too - the plan's "full rearm", and what the enemy
+// pilot's refit rule (health under 5 counts toward a return) assumes.
+const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 
 // Dead-stick descent once the tank is dry.
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
@@ -118,6 +121,7 @@ const HELI_CRASH_VY: Q10 = 160;           // 2.5 px/frame
 #[lowram] static mut heli_vy:    Q10;
 #[lowram] static mut heli_gun:   u8;      // rounds remaining
 #[lowram] static mut heli_bombs: u8;
+#[lowram] static mut heli_missiles: u8;   // smart missiles: none until phase 10's last slice
 #[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
 #[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
 #[lowram] static mut heli_turn: u8;       // progress through a turn, 0 = none
@@ -127,6 +131,7 @@ const HELI_CRASH_VY: Q10 = 160;           // 2.5 px/frame
 #[lowram] static mut heli_fuel_t: u8;     // countdown to the next fuel unit
 #[lowram] static mut heli_gun_t:  u8;     // ... and to the next round
 #[lowram] static mut heli_bomb_t: u8;
+#[lowram] static mut heli_hp_t:   u8;     // ... and to the next point repaired
 #[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
 #[lowram] static mut heli_dead:   u8;     // frames until the next airframe; 0 = flying
 #[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
@@ -160,6 +165,7 @@ far fn heli_init() {
     heli_vy = Q10(0);
     heli_gun = HELI_GUN_MAX;
     heli_bombs = HELI_BOMB_MAX;
+    heli_missiles = 0;
     heli_gun_cd = 0;
     heli_face_left = 0;
     heli_turn = 0;
@@ -169,6 +175,7 @@ far fn heli_init() {
     heli_fuel_t = HELI_FUEL_DRAIN;
     heli_gun_t = HELI_GUN_RELOAD;
     heli_bomb_t = HELI_BOMB_RELOAD;
+    heli_hp_t = HELI_HP_REPAIR;
     heli_hp = HELI_HP_MAX;
     heli_men = 0;                         // the men aboard went with it
     heli_dead = 0;
@@ -199,9 +206,12 @@ far fn heli_collide() {
         heli_lost();
         return;
     }
+    // Nothing of another side up - the usual frame - and the pool is not
+    // worth walking; muni_up counts the player's and everyone else's.
+    if muni_up[1] == 0 { return; }
     for m in 0..MUNI_MAX {
         let mk: u8 = muni_kind[m];
-        if mk == MUNI_BULLET || mk == MUNI_MISSILE {
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
             // Anything not the player's own: the enemy's, or a
             // hostile-neutral super bunker's.
             if muni_owner[m] != SIDE_PLAYER {
@@ -209,13 +219,19 @@ far fn heli_collide() {
                 let my: u16 = muni_y[m] >> 8;
                 if mx >= hx && mx < hx + HELI_W {
                     if my >= hy && my < hy + HELI_H {
+                        muni_drop_bomb(m);
                         muni_kind[m] = MUNI_FREE;
+                        if mk == MUNI_BOMB {
+                            heli_lost();          // a bomb ends it outright
+                            return;
+                        }
                         let mut dmg: u8 = 1;
                         if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
                         if heli_hp > dmg {
                             heli_hp = heli_hp - dmg;
                         } else {
                             heli_lost();
+                            return;
                         }
                     }
                 }
@@ -246,6 +262,13 @@ far fn heli_rearm() {
     } else {
         heli_bomb_t = HELI_BOMB_RELOAD;
         if heli_bombs < HELI_BOMB_MAX { heli_bombs = heli_bombs + 1; }
+    }
+
+    if heli_hp_t > 0 {
+        heli_hp_t = heli_hp_t - 1;
+    } else {
+        heli_hp_t = HELI_HP_REPAIR;
+        if heli_hp < HELI_HP_MAX { heli_hp = heli_hp + 1; }
     }
 }
 

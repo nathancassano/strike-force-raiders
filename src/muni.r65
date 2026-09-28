@@ -65,6 +65,13 @@ const MUNI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 // be skipped entirely when there is nothing to intercept - scanning the
 // pool for bombs from every round was, by itself, over the frame budget.
 #[lowram] static mut muni_bombs: u8;
+// Munitions of each side in flight after this frame's update - a count
+// the airframes' collision tests consult before walking the pool, since
+// most frames nothing of the other side is up.
+#[lowram] static mut muni_up: [u8; 2];
+// The slot the last muni_spawn filled, MUNI_MAX when the pool was full -
+// for a caller that has to know whether its shot is still in the air.
+#[lowram] static mut muni_last: u16;
 
 // muni_drop_bomb - a slot that held a bomb is about to hold something
 // else; keep the count honest. Every retirement of a bomb goes through
@@ -92,9 +99,11 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8,
                   owner: u8) {
     let mut i: u16 = muni_cursor;
     let mut n: u16 = 0;
+    muni_last = MUNI_MAX;
     // No `continue` in an entity loop - compiler region-spill bug.
     while n < MUNI_MAX {
         if muni_kind[i] == MUNI_FREE {
+            muni_last = i;
             muni_kind[i] = kind;
             muni_x_px[i] = x_px;
             muni_x_sub[i] = 0;
@@ -144,9 +153,12 @@ fn muni_move_x(i: u16, v: Q10) {
 // A munition retires on ground contact, on leaving the world, or - for
 // gunfire - when its range runs out.
 far fn muni_update() {
+    let mut up0: u8 = 0;
+    let mut up1: u8 = 0;
     for i in 0..MUNI_MAX {
         let kind: u8 = muni_kind[i];
         if kind != MUNI_FREE {
+            if muni_owner[i] == SIDE_PLAYER { up0 = up0 + 1; } else { up1 = up1 + 1; }
             if muni_life[i] > 0 {
                 muni_life[i] = muni_life[i] - 1;
                 if muni_life[i] == 0 {
@@ -155,11 +167,24 @@ far fn muni_update() {
             }
 
             if kind == MUNI_MISSILE {
-                // Steer: full speed toward the airframe on each axis.
-                muni_vx[i] = MISSILE_SPEED;
-                if heli_x_px + (HELI_W >> 1) < muni_x_px[i] { muni_vx[i] = Q10(0) - MISSILE_SPEED; }
-                muni_vy[i] = MISSILE_SPEED;
-                if heli_y + ((HELI_H >> 1) << 8) < muni_y[i] { muni_vy[i] = Q10(0) - MISSILE_SPEED; }
+                // Steer: full speed toward the other side's airframe on
+                // each axis. With none up it flies on straight.
+                let mut tx: u16 = heli_x_px + (HELI_W >> 1);
+                let mut ty: u16 = heli_y + ((HELI_H >> 1) << 8);
+                let mut up: u8 = 1;
+                if muni_owner[i] == SIDE_PLAYER {
+                    tx = foe_x_px + (HELI_W >> 1);
+                    ty = foe_y + ((HELI_H >> 1) << 8);
+                    if foe_dead > 0 || foe_rising != 0 { up = 0; }
+                } else {
+                    if heli_dead > 0 || heli_rising != 0 { up = 0; }
+                }
+                if up != 0 {
+                    muni_vx[i] = MISSILE_SPEED;
+                    if tx < muni_x_px[i] { muni_vx[i] = Q10(0) - MISSILE_SPEED; }
+                    muni_vy[i] = MISSILE_SPEED;
+                    if ty < muni_y[i] { muni_vy[i] = Q10(0) - MISSILE_SPEED; }
+                }
             }
 
             if kind == MUNI_BOMB {
@@ -187,6 +212,7 @@ far fn muni_update() {
                     if muni_kind[i] == MUNI_BOMB {
                         muni_bombs = muni_bombs - 1;
                         muni_kind[i] = MUNI_BLAST;
+                        muni_y[i] = GROUND_Y << 8;  // on the line, where the buildings' test looks
                     } else {
                         muni_kind[i] = MUNI_FREE;
                     }
@@ -199,6 +225,8 @@ far fn muni_update() {
             }
         }
     }
+    muni_up[0] = up0;
+    muni_up[1] = up1;
 }
 
 // muni_draw - place the live munitions, camera-relative, into the OAM slots
