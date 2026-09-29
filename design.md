@@ -895,6 +895,22 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     case can fly the length of the field to meet a vehicle. Seven cases were re-derived
     against the frozen rows (`unit_kinds`, `tank_crush`, `launcher_fire`, `missile_unit`,
     `missile_air`, `missile_foe`, `foe_hunt`); the suite is green at 93.
+    *Slice (b) DONE.* `src/screen.r65`: the title, the briefing and the after-action page, all
+    one mechanism - BG1 written as a full 32x28 page of text with `TM` naming BG1 alone.
+    *Both questions above are answered by that:* the field is hidden by not being drawn (BG2-4
+    and OBJ keep their contents and their registers, so coming back is a BG1 map DMA and a
+    `hud_init`, not a reload), and the briefing gets its own layout rather than the order
+    dialog's box - it borrows only the border tiles, since a full page and an 18-column dialog
+    want nothing else from each other. A page is composed into one lowram shadow and DMA'd in
+    force blank at the transition, so it costs nothing per frame; `GAME_SCREEN` stops both the
+    tick and the draw. The briefing reads `mission_stats` rather than repeating it - the
+    mission's number and name, its turrets and bunkers, the purse and the lives it starts you
+    with - and the names widened to sixteen capitals each so they can be spelled out.
+    *The front end is the campaign's*: a harness mission boots straight into its battle, and
+    `@x` is a fourth power-on hold for the campaign's first mission with the front end skipped,
+    which is the world the suite's oldest (unprefixed) cases were written against. New cases:
+    `screen_title`, `screen_brief`, `screen_battle`, `screen_after` (four crash landings spend
+    the four lives, which ends the match and brings the page up). Green at 98.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in
     snesgss and wire the export into the Makefile.
 

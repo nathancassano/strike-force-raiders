@@ -1,0 +1,247 @@
+// screen - the front end: the title page, the mission briefing and the
+// after-action page.
+//
+// All three are the same thing - BG1 written as a full 32x28 page of text
+// with every other layer switched off, so the field behind them is not
+// hidden so much as not drawn. That is the whole trick: BG2-4 and OBJ keep
+// their contents and their registers, `TM` just stops naming them, and a
+// page costs one DMA of the BG1 map at the moment it goes up rather than
+// anything per frame. Coming back restores the map from ROM and re-inits
+// the strip, since a page has written over both.
+//
+// The glyphs are the HUD's - capitals on HUD_LETTER_ROW, digits on
+// HUD_GLYPH_ROW, the dialog's border on HUD_BOX_ROW - read back out of the
+// tilemap in ROM by position, the same contract tools/hud_glyphs.py keeps.
+// So a page may say anything in capitals, digits and spaces, and nothing
+// else: no lower case, no punctuation. The mission names spell their
+// hyphens as spaces for that reason.
+//
+// The front end is the *campaign's*. A harness mission (mission.r65) boots
+// straight into its battle and its Start still restarts it, so the suite
+// never sees a page it did not ask for.
+
+#[bank(2)]
+
+const SCREEN_NONE:  u8 = 0;
+const SCREEN_TITLE: u8 = 1;
+const SCREEN_BRIEF: u8 = 2;
+const SCREEN_AFTER: u8 = 3;
+
+// The map is 32x32; 224 scanlines show 28 rows of it.
+const SCREEN_COLS: u16 = 32;
+const SCREEN_ROWS: u16 = 28;
+
+// The border, and where a page's text sits inside it.
+const SCREEN_BOX_ROW:  u16 = 1;
+const SCREEN_BOX_ROWS: u16 = 26;
+const SCREEN_BOX_COL:  u16 = 1;
+const SCREEN_BOX_W:    u16 = 30;
+const SCREEN_LABEL:    u16 = 9;           // a stat line's label ...
+const SCREEN_VALUE:    u16 = 21;          // ... and the last digit of its value
+const SCREEN_PROMPT:   u16 = 22;          // the PRESS START row
+
+// One shadow of the visible map, composed on a transition and flushed in
+// force blank. It is 1792 bytes of lowram, which is affordable because
+// nothing else here is: the pages have no per-frame state at all.
+#[lowram] static mut screen_page: [u16; 896];
+#[lowram] static mut screen_kind: u8;
+
+// Every word a page can say, one run of capitals after another, indexed
+// rather than pointed at: a near pointer to a static in this bank would be
+// read against DBR 0 and find bank 0's ROM instead.
+static scr_text: [u8; 89] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEAT";
+const T_TITLE:  u16 = 0;    const T_TITLE_N:  u16 = 13;
+const T_SUB:    u16 = 13;   const T_SUB_N:    u16 = 21;
+const T_START:  u16 = 34;   const T_START_N:  u16 = 11;
+const T_MISS:   u16 = 45;   const T_MISS_N:   u16 = 7;
+const T_TURRET: u16 = 52;   const T_TURRET_N: u16 = 7;
+const T_BUNKER: u16 = 59;   const T_BUNKER_N: u16 = 7;
+const T_FUNDS:  u16 = 66;   const T_FUNDS_N:  u16 = 5;
+const T_LIVES:  u16 = 71;   const T_LIVES_N:  u16 = 5;
+const T_WON:    u16 = 76;   const T_WON_N:    u16 = 7;
+const T_LOST:   u16 = 83;   const T_LOST_N:   u16 = 6;
+
+// ----------------------------------------------------------- composing ---
+
+fn screen_put(row: u16, col: u16, tile: u16) {
+    screen_page[(row << 5) + col] = tile;
+}
+
+// screen_text - *len* characters of scr_text from *off*, at (row, col).
+fn screen_text(row: u16, col: u16, off: u16, len: u16) {
+    for k in 0..len {
+        screen_put(row, col + k, hud_letter(scr_text[off + k]));
+    }
+}
+
+// screen_centre - the same run, centred on the page.
+fn screen_centre(row: u16, off: u16, len: u16) {
+    screen_text(row, (SCREEN_COLS - len) >> 1, off, len);
+}
+
+// screen_value - *v* right-aligned so its last digit lands on SCREEN_VALUE,
+// with no leading zero.
+fn screen_value(row: u16, v: u8) {
+    let tens: u8 = div8(v, 10);
+    screen_put(row, SCREEN_VALUE, hud_glyph(GLYPH_DIGIT + ((v - mul8(tens, 10)) as u16)));
+    if tens != 0 {
+        screen_put(row, SCREEN_VALUE - 1, hud_glyph(GLYPH_DIGIT + (tens as u16)));
+    }
+}
+
+// screen_mission - "MISSION n", the word and the number centred together
+// rather than the number against the stat column.
+fn screen_mission(row: u16) {
+    let n: u8 = mission + 1;
+    let mut w: u16 = T_MISS_N + 2;        // the word, a space, one digit
+    if n > 9 { w = w + 1; }
+    let col: u16 = (SCREEN_COLS - w) >> 1;
+    screen_text(row, col, T_MISS, T_MISS_N);
+    let tens: u8 = div8(n, 10);
+    let mut at: u16 = col + T_MISS_N + 1;
+    if tens != 0 {
+        screen_put(row, at, hud_glyph(GLYPH_DIGIT + (tens as u16)));
+        at = at + 1;
+    }
+    screen_put(row, at, hud_glyph(GLYPH_DIGIT + ((n - mul8(tens, 10)) as u16)));
+}
+
+// screen_stat - a label at SCREEN_LABEL and its value against the column.
+fn screen_stat(row: u16, off: u16, len: u16, v: u8) {
+    screen_text(row, SCREEN_LABEL, off, len);
+    screen_value(row, v);
+}
+
+// screen_name - the current mission's name, centred, its padding trimmed.
+fn screen_name(row: u16) {
+    let at: u16 = (mission as u16) << MISSION_NAME_SH;
+    let mut n: u16 = MISSION_NAME_W;
+    while n > 0 {
+        if mission_names[at + n - 1] != 0x20 { break; }
+        n = n - 1;
+    }
+    let col: u16 = (SCREEN_COLS - n) >> 1;
+    for k in 0..n {
+        screen_put(row, col + k, hud_letter(mission_names[at + k]));
+    }
+}
+
+fn screen_clear() {
+    let blank: u16 = hud_clear_tile();
+    for c in 0..(SCREEN_ROWS << 5) {
+        screen_page[c] = blank;
+    }
+}
+
+// screen_frame - the order dialog's border pieces around the whole page.
+fn screen_frame() {
+    let bot: u16 = SCREEN_BOX_ROW + SCREEN_BOX_ROWS - 1;
+    screen_put(SCREEN_BOX_ROW, SCREEN_BOX_COL, hud_box(BOX_TL));
+    screen_put(SCREEN_BOX_ROW, SCREEN_BOX_COL + SCREEN_BOX_W - 1, hud_box(BOX_TR));
+    screen_put(bot, SCREEN_BOX_COL, hud_box(BOX_BL));
+    screen_put(bot, SCREEN_BOX_COL + SCREEN_BOX_W - 1, hud_box(BOX_BR));
+    for c in 1..(SCREEN_BOX_W - 1) {
+        screen_put(SCREEN_BOX_ROW, SCREEN_BOX_COL + c, hud_box(BOX_T));
+        screen_put(bot, SCREEN_BOX_COL + c, hud_box(BOX_B));
+    }
+    for r in 1..(SCREEN_BOX_ROWS - 1) {
+        screen_put(SCREEN_BOX_ROW + r, SCREEN_BOX_COL, hud_box(BOX_L));
+        screen_put(SCREEN_BOX_ROW + r, SCREEN_BOX_COL + SCREEN_BOX_W - 1, hud_box(BOX_R));
+    }
+}
+
+// --------------------------------------------------------------- pages ---
+
+fn screen_title() {
+    screen_centre(6,  T_TITLE, T_TITLE_N);
+    screen_centre(9,  T_SUB,   T_SUB_N);
+    screen_mission(15);
+    screen_name(17);
+    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+}
+
+// The briefing: which mission, its name, and what it is made of - the
+// numbers mission_stats gave the field and the purse, so the page is a
+// reading of the row rather than a second copy of it.
+fn screen_brief() {
+    screen_mission(4);
+    screen_name(6);
+    let i: u16 = mission as u16;
+    screen_stat(11, T_TURRET, T_TURRET_N, mission_stats[i].turrets);
+    screen_stat(13, T_BUNKER, T_BUNKER_N, mission_stats[i].bunkers);
+    screen_stat(15, T_FUNDS,  T_FUNDS_N,  start_funds);
+    screen_stat(17, T_LIVES,  T_LIVES_N,  start_lives);
+    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+}
+
+// The after-action page: how the match ended and what is left in the
+// purse. Slice (d) adds the equipment conversion that feeds the next
+// mission's funds; until then this reports, it does not carry anything.
+fn screen_after() {
+    if game_state == GAME_WON {
+        screen_centre(6, T_WON, T_WON_N);
+    } else {
+        screen_centre(6, T_LOST, T_LOST_N);
+    }
+    screen_name(9);
+    screen_stat(13, T_FUNDS, T_FUNDS_N, funds);
+    screen_stat(15, T_LIVES, T_LIVES_N, heli_lives);
+    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+}
+
+// ------------------------------------------------------------ the page ---
+
+// screen_blit - the composed page to VRAM and BG1 alone on the screen.
+// Force blank because this is a 1792-byte DMA at an arbitrary point in the
+// frame; a black frame at a transition costs nothing.
+fn screen_blit() {
+    INIDISP = FORCE_BLANK;
+    dma_copy_vram(0, &screen_page as far *u8, VRAM_BG1, SCREEN_ROWS << 6);
+    set_main_layers!(Screen::BG1);
+    INIDISP = 0x0F;
+}
+
+// screen_show - compose a page and put it up. The simulation stops here:
+// GAME_SCREEN is not GAME_PLAYING, so main runs neither the tick nor the
+// draw while one is showing.
+far fn screen_show(kind: u8) {
+    screen_kind = kind;
+    screen_clear();
+    screen_frame();
+    if kind == SCREEN_TITLE { screen_title(); }
+    if kind == SCREEN_BRIEF { screen_brief(); }
+    if kind == SCREEN_AFTER { screen_after(); }
+    screen_blit();
+    game_state = GAME_SCREEN;
+}
+
+// screen_hide - back to the field: the art's BG1 map over the page, every
+// layer on again, and the strip recomposed, the page having written over
+// the rows it lives on.
+far fn screen_hide() {
+    screen_kind = SCREEN_NONE;
+    INIDISP = FORCE_BLANK;
+    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
+    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::BG4
+                     | Screen::Obj);
+    INIDISP = 0x0F;
+    hud_init();
+    radar_init();
+}
+
+// screen_tick - one frame with a page up. Start is the only control:
+// title to briefing, briefing into the battle, after-action back to the
+// title (slice (d) makes that the next mission instead).
+far fn screen_tick(trig: u16) {
+    if (trig & JOY_START) == 0 { return; }
+    if screen_kind == SCREEN_TITLE {
+        screen_show(SCREEN_BRIEF);
+        return;
+    }
+    if screen_kind == SCREEN_BRIEF {
+        screen_hide();
+        game_reset();
+        return;
+    }
+    screen_show(SCREEN_TITLE);
+}

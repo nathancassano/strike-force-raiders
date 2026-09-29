@@ -14,7 +14,7 @@ Actions
   upN downN leftN rightN   hold a direction for N frames
   aN bN xN yN lN rN        hold a face/shoulder button for N frames
   up+leftN                 hold several buttons together for N frames
-  @l @r @l+r               hold at power-on: the button is down for the whole
+  @l @r @x @l+r            hold at power-on: the button is down for the whole
                            boot prefix and costs no frames of its own, which
                            is how the ROM's boot-time mission select is
                            reached without moving any timing after it

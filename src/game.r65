@@ -8,13 +8,18 @@
 // player's second way to win.
 //
 // When it ends the simulation freezes where it stands, the result goes up
-// mid-screen, and Start begins a fresh match.
+// mid-screen, and Start goes on: to the after-action page on a campaign
+// mission, or straight into a fresh match on a harness one, which is what
+// the suite drives.
 
 #[bank(0)]
 
 const GAME_PLAYING: u8 = 0;
 const GAME_WON:     u8 = 1;
 const GAME_LOST:    u8 = 2;
+// A front-end page is up (screen.r65 says which). The simulation and the
+// draw are both off, and the field keeps its state behind it.
+const GAME_SCREEN:  u8 = 3;
 
 #[lowram] static mut game_state: u8;
 
@@ -36,6 +41,17 @@ far fn game_over(result: u8) {
     } else {
         hud_message(&MSG_LOST as *u8, 6);
     }
+}
+
+// game_continue - Start, with the match over. The campaign reports it on
+// the after-action page; a harness mission has no front end and simply
+// starts again.
+far fn game_continue() {
+    if mission >= MISSION_HARNESS {
+        game_reset();
+        return;
+    }
+    screen_show(SCREEN_AFTER);
 }
 
 // game_reset - a fresh match of the current mission. Everything that

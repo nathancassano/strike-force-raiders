@@ -43,6 +43,7 @@ include!("mission.r65")
 include!("hud.r65")
 include!("radar.r65")
 include!("game.r65")
+include!("screen.r65")
 include!("heli.r65")
 include!("foe.r65")
 
@@ -111,6 +112,14 @@ fn boot_load() {
     game_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
+    // The campaign opens on its title page; a harness mission has no
+    // front end and boots straight into its battle, so a suite movie
+    // never has to press its way past one. X held at power-on is the
+    // third way in: the campaign's first mission with no front end -
+    // the world the suite's oldest cases were written against, before
+    // there was anything to press past.
+    if m < MISSION_HARNESS && (pad & JOY_X) == 0 { screen_show(SCREEN_TITLE); }
+
     // The probe counts from here: the inits above run for a couple of
     // frames' worth, and the NMI is not on yet to count them, but the
     // wait_nmi! in main catches the first edge either way.
@@ -137,10 +146,14 @@ fn nmi_handler() {
 fn main() -> ! {
     loop {
         wait_nmi!();
-        scroll_update();
-        gnd_table_build();
-        oam_flush();
-        hud_flush();
+        // A front-end page owns BG1 and is the only layer on, so none of
+        // the vblank traffic below has anywhere to go.
+        if game_state != GAME_SCREEN {
+            scroll_update();
+            gnd_table_build();
+            oam_flush();
+            hud_flush();
+        }
 
         pad_read_ports();
         let held: u16 = pad_poll();
@@ -179,23 +192,29 @@ fn main() -> ! {
             camera_update();
             radar_update();
         } else {
-            // The match is over: everything holds where it stands until
-            // Start begins another.
-            if (trig & JOY_START) != 0 { game_reset(); }
+            if game_state == GAME_SCREEN {
+                screen_tick(trig);
+            } else {
+                // The match is over: everything holds where it stands
+                // until Start goes on.
+                if (trig & JOY_START) != 0 { game_continue(); }
+            }
         }
 
         // Draw order is the OAM drop policy: airframe, munitions in flight,
         // buildings, then ground units from the camera centre outward.
-        oam_begin();
-        heli_draw();
-        foe_draw();
-        radar_draw();
-        muni_draw();
-        para_draw();
-        struct_draw();
-        pad_draw();
-        unit_draw();
-        oam_end();
+        if game_state != GAME_SCREEN {
+            oam_begin();
+            heli_draw();
+            foe_draw();
+            radar_draw();
+            muni_draw();
+            para_draw();
+            struct_draw();
+            pad_draw();
+            unit_draw();
+            oam_end();
+        }
         frames_loop = frames_loop + 1;
 
         if (trig & JOY_SELECT) != 0 {

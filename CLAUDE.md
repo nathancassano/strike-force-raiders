@@ -69,11 +69,12 @@ Select), and screenshots.
     ./play.sh build/fly.png wait60,right90,shot --check-mem16 0x20=0x0140
 
 Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN`/`yN`/`lN`/`rN`.
-Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. A leading `@l`, `@r` or `@l+r`
-is a **power-on hold**: it holds that button through the boot prefix, costing no frames, and
-`boot_load` reads the pad by hand (`pad_read_manual`, before the auto-read is on) to pick one
-of the three harness missions - the stand-in for a mission select until the front end exists.
-Every case in the suite carries one; `tests/run.sh`'s header says what each opponent is.
+Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. A leading `@l`, `@r`, `@l+r` or
+`@x` is a **power-on hold**: it holds that button through the boot prefix, costing no frames,
+and `boot_load` reads the pad by hand (`pad_read_manual`, before the auto-read is on). L, R and
+L+R pick one of the three harness missions; X takes the campaign's first mission with the front
+end skipped, and no hold at all gets the campaign proper, title page and all.
+`tests/run.sh`'s header says what each opponent is.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -107,6 +108,7 @@ rotor_raiders/
 │   ├── order.r65             # Funds, the L/R order ring, the order queue
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
 │   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the harness rows
+│   ├── screen.r65            # The front end: title, briefing and after-action pages on BG1
 │   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
 │   ├── hud.r65               # BG1 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
 │   ├── radar.r65             # BG1 strip row 2: the radar, a 256x8 bitmap the game draws
@@ -279,6 +281,18 @@ reachable only by holding a shoulder button at power-on, and the whole suite run
 see `tests/run.sh`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
 
+**The front end** (`src/screen.r65`, phase 11, bank 2) is three pages - title, briefing,
+after-action - and they are all one mechanism: BG1 written as a full 32x28 page of text with
+`TM` naming BG1 alone, so the field behind is not hidden but simply not drawn, keeping its
+state and its registers. A page costs one 1792-byte DMA of the map in force blank when it goes
+up and nothing per frame; coming back restores the map from ROM and re-runs `hud_init` and
+`radar_init`, the page having written over the rows they own. `GAME_SCREEN` is a game state
+like the two battle-over ones, so `main` runs neither the tick nor the draw while one shows,
+and Start is the only control (`screen_tick`). The glyphs are the HUD's - capitals, digits and
+spaces, nothing else, which is why the mission names spell their hyphens as spaces. **The front
+end is the campaign's**: a harness mission boots straight into its battle and its Start
+restarts it, so no suite movie has to press past a page it did not ask for.
+
 **The CPU opponent** (`src/cpu.r65`, phase 10, in bank 2 with `hud.r65` and `order.r65` -
 bank 0 is full) is the 1991 game's: a capability row per mission (`cpu_stats`, picked by the
 mission's `cpu_row`) and the convoy strings verbatim (`convoy_data`, gated by tier, priced by
@@ -387,7 +401,8 @@ cell drawn over the standing man's, or at 3 px/frame with none when the chute fa
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
 the frame the unit pool has room. Draw order: after the munitions.
 
-Controls: hold L for the order dialog - Left/Right move the highlight, A buys - and the d-pad
+Controls: Start on a front-end page (title → briefing → battle, after-action → title); in the
+battle, hold L for the order dialog - Left/Right move the highlight, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, Y smart missile, X drop, Up
 lifts off a deck.
 The dialog (`hud_overlay`) is a box on BG1 rows 2-9 composed once at init into an 8-row
