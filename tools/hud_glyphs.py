@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Stamp the HUD glyph strip into assets/src/bg1.bmp.
+Stamp the HUD glyph strip into assets/src/bg1.tilemap.bmp.
 
 One-off authoring helper, not part of the build: it edits the bitmap that
-`make assets` then converts, so the BMP stays the source of truth. The
+the Makefile's bmp2chr rule then converts, so the BMP stays the source of
+truth and an ordinary `make` picks the edit up. The
 glyphs go on tile row HUD_GLYPH_ROW - below the 224 scanlines NTSC shows -
 and the game reads their tile IDs back out of bg1.tilemap at runtime, so
 the strip can be redrawn freely as long as the *order* here matches
@@ -12,12 +13,12 @@ the strip can be redrawn freely as long as the *order* here matches
 Colour indices follow the BG1 palette: 1 navy (background), 2 white,
 3 light blue.
 
-    python3 tools/hud_glyphs.py && make assets
+    python3 tools/hud_glyphs.py && make
 """
 
 from PIL import Image
 
-BMP = 'assets/src/bg1.bmp'
+BMP = 'assets/src/bg1.tilemap.bmp'
 GLYPH_ROW = 28
 
 # 8x8 glyphs; '.' is navy, '#' white, '+' light blue.

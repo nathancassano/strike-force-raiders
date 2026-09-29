@@ -5,6 +5,16 @@ build/
 *.o
 linkfile.txt
 
+# Generated art. assets/src/*.bmp is the source; `make` converts it with
+# r65x bmp2chr and writes the bindings that embed the result.
+assets/gfx/*.chr
+assets/gfx/*.pal
+assets/gfx/*.tilemap
+src/assets.r65
+
+# Python bytecode from the tools
+__pycache__/
+
 # Editor
 *.swp
 *.swo

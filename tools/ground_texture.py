@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Paint the ground band of assets/src/bg4.bmp.
+Paint the ground band of assets/src/bg4.tilemap.bmp.
 
 One-off authoring helper, not part of the build: it edits the bitmap that
-`make assets` converts, so the BMP stays the source of truth.
+the Makefile's bmp2chr rule converts, so the BMP stays the source of truth
+and an ordinary `make` picks the edit up.
 
 The band used to carry a yellow marker bar every 32 px so tools/parallax.py
 could measure each scanline's displacement - plain soil is periodic at a
@@ -21,12 +22,12 @@ pattern opens out with nearness - the cue perspective gives anyway.
 
 Colour indices follow the BG4 palette: 1 dark earth, 2 earth, 3 highlight.
 
-    python3 tools/ground_texture.py && make assets
+    python3 tools/ground_texture.py && make
 """
 
 from PIL import Image
 
-BMP = 'assets/src/bg4.bmp'
+BMP = 'assets/src/bg4.tilemap.bmp'
 SCREEN_W = 256
 GROUND_Y = 168                # matches video.r65 GROUND_Y
 GROUND_H = 56                 # 8 HDMA bands of 7 scanlines

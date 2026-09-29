@@ -3,7 +3,8 @@
 Stamp the structure sprites into assets/src/obj.bmp.
 
 One-off authoring helper, not part of the build: it edits the bitmap that
-`make assets` converts, so the BMP stays the source of truth. Programmer
+the Makefile's bmp2chr rule converts, so the BMP stays the source of truth
+and an ordinary `make` picks the edit up. Programmer
 art until phase 12; what matters is the cell layout, which struct.r65's
 STRUCT_TILE_* constants depend on.
 
@@ -36,7 +37,7 @@ grey, 6 orange, 7 darker green, 8 mid green, 9 charcoal, 10 blue-grey,
 11 red. Structures are concrete (5/9/1) with green trim so the enemy
 palette swap (greens -> red-browns) marks the owner.
 
-    python3 tools/struct_art.py && make assets
+    python3 tools/struct_art.py && make
 """
 
 import struct

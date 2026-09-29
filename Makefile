@@ -13,8 +13,23 @@ ROM_FILE  = $(BUILD_DIR)/$(PROJECT).smc
 rwildcard = $(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2)$(filter $(subst *,%,$2),$d))
 R65_SRCS  = $(call rwildcard,src,*.r65)
 
-# Binary assets pulled in via include_bytes!
-ASSETS = $(wildcard assets/gfx/*.chr assets/gfx/*.pal assets/sound/*.bin assets/levels/*.bin)
+# Everything the ROM embeds with include_bytes!. The art is generated from
+# the bitmaps under assets/src (see the assets section below); the sound
+# and level blobs are authored elsewhere and are listed as they are found.
+# A bitmap named %.tilemap.bmp is de-duplicated into a tilemap as well as
+# a tileset; a plain %.bmp is a sheet addressed by tile number and gets no
+# map. The name is the whole declaration - drop a bitmap into assets/src
+# and it is converted, bound and embedded with no list to keep in step.
+ART_MAP_BMP = $(wildcard assets/src/*.tilemap.bmp)
+ART_RAW_BMP = $(filter-out %.tilemap.bmp,$(wildcard assets/src/*.bmp))
+ART_MAPPED  = $(patsubst assets/src/%.tilemap.bmp,%,$(ART_MAP_BMP))
+ART_RAW     = $(patsubst assets/src/%.bmp,%,$(ART_RAW_BMP))
+ART         = $(ART_MAPPED) $(ART_RAW)
+ART_CHR  = $(addprefix assets/gfx/,$(addsuffix .chr,$(ART)))
+ART_PAL  = $(ART_CHR:.chr=.pal)
+ART_MAP  = $(addprefix assets/gfx/,$(addsuffix .tilemap,$(ART_MAPPED)))
+ART_OUT  = $(ART_CHR) $(ART_PAL) $(ART_MAP)
+BLOBS    = $(wildcard assets/sound/*.bin assets/levels/*.bin)
 
 # Tools
 R65C     = python -m r65.compiler.main
@@ -29,7 +44,10 @@ R65C_FLAGS  = -v --cfg snes --dbg -I src
 all: $(ROM_FILE)
 
 # Compile R65 source to WLA-DX assembly
-$(BUILD_DIR)/main.asm: $(R65_SRCS) $(ASSETS)
+# src/assets.r65 is generated and so is not in $(R65_SRCS) on a fresh
+# checkout; naming it here is what pulls the whole bitmap -> chr -> bindings
+# chain into an ordinary `make`.
+$(BUILD_DIR)/main.asm: $(R65_SRCS) src/assets.r65 $(ART_OUT) $(BLOBS)
 	@mkdir -p $(BUILD_DIR)
 	$(R65C) $(MAIN_SRC) -o $@ $(R65C_FLAGS)
 
@@ -43,12 +61,20 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 	$(WLA_LINK) -v -S $(BUILD_DIR)/main.link $@
 
 # ---------------------------------------------------------------- assets ----
-# All art is indexed BMP under assets/src and is converted by r65x. Nothing
-# else generates graphics; edit the bitmaps, run `make assets`.
+# All art is indexed BMP under assets/src, converted by `r65x bmp2chr`.
+# A bitmap named %.tilemap.bmp gets a de-duplicated tileset and the map
+# that names its tiles back; a plain %.bmp gets the tileset alone.
+# Editing a bitmap is all it takes: every .chr, .pal and .tilemap under
+# assets/gfx, the bindings in src/assets.r65 and the ROM rebuild from it.
+# Those outputs are build products - they are not in git, and `make clean`
+# removes them.
 #
 #   -b2 / -b4  2bpp (Mode 0 backgrounds) or 4bpp (sprites) planar output
 #   -p         also emit the .pal
 #   -t         de-duplicate tiles and emit a .tilemap
+#   -f         write the whole bitmap; without it bmp2chr stops at the size
+#              of any existing destination file, silently truncating a
+#              sheet that has grown
 #
 # BACKGROUNDS ARE STORED FOLDED. A 64x32 SNES tilemap is two 32x32 screens
 # held one after the other, but bmp2chr walks a bitmap row-major at its full
@@ -57,40 +83,62 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 # output is then byte-identical to what the PPU expects. Editing bg2/3/4
 # means remembering that the bottom half continues off the right edge of the
 # top half. bg1 is a single 32x32 screen and needs no fold.
-BG_SRC := bg1 bg2 bg3 bg4
-BG_OUT := $(addprefix assets/gfx/,$(addsuffix .chr,$(BG_SRC)))
+#
+# Two rule sets, told apart by the source's name. Both are multi-target
+# pattern rules - make's way of saying "one run of this command produces
+# all of these", so a parallel build starts each conversion once rather
+# than once per output.
+#
+# Which rule make picks is settled by which bitmap exists: for bg1.chr the
+# plain rule wants assets/src/bg1.bmp, which is not there, so the tilemap
+# rule takes it; for obj.chr it is the other way round.
+#
+# Bit depth is the other axis and is a target-specific variable, since it
+# has nothing to do with whether a sheet carries a map. It has to be set
+# on every output of a sheet, not just the .chr: make looks the variable
+# up on whichever file it was asked for, and the .tilemap is often the one
+# the bindings want first.
+# (a comment after a value would become part of it, so they go above)
+# 2bpp unless a sheet says otherwise, and nothing to do afterwards.
+BMP2CHR_DEPTH = -b2
+BMP2CHR_POST  = true
 
-assets/gfx/bg%.chr: assets/src/bg%.bmp
-	@mkdir -p assets/gfx
-	$(R65X) bmp2chr $< -o $@ -b2 -p -t
+# The sprite sheet is 4bpp.
+assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
 
 # The ground band's tilemap carries the per-tile priority bit (bit 13). In
 # Mode 0 a priority-0 sprite still draws over a low-priority BG3/BG4, so
 # without it the airframe rising out of the ground (heli.r65) would sit on
 # top of the dirt instead of under it. Transparent pixels are unaffected.
-assets/gfx/bg4.chr: assets/src/bg4.bmp
-	@mkdir -p assets/gfx
-	$(R65X) bmp2chr $< -o $@ -b2 -p -t
-	python3 -c "p='assets/gfx/bg4.tilemap'; d=bytearray(open(p,'rb').read()); d[1::2]=bytes(b|0x20 for b in d[1::2]); open(p,'wb').write(d)"
+# bmp2chr has no flag for it, so the bit is set on the tilemap afterwards.
+assets/gfx/bg4.chr assets/gfx/bg4.pal assets/gfx/bg4.tilemap: \
+	BMP2CHR_POST = python3 -c "p='assets/gfx/bg4.tilemap'; d=bytearray(open(p,'rb').read()); d[1::2]=bytes(b|0x20 for b in d[1::2]); open(p,'wb').write(d)"
 
-# -f writes the whole bitmap; without it bmp2chr stops at the size of any
-# existing destination file, silently truncating the sheet when it grows.
-assets/gfx/obj.chr: assets/src/obj.bmp
+# A sheet that carries a tilemap: tiles de-duplicated (-t), and the map
+# names them back in the bitmap's order.
+assets/gfx/%.chr assets/gfx/%.pal assets/gfx/%.tilemap: assets/src/%.tilemap.bmp
 	@mkdir -p assets/gfx
-	$(R65X) bmp2chr $< -o $@ -b4 -p -f
+	$(R65X) bmp2chr $< -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -t -f
+	@$(BMP2CHR_POST)
+
+# And a sheet without one: every tile kept, addressed by its number.
+assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp
+	@mkdir -p assets/gfx
+	$(R65X) bmp2chr $< -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -f
+	@$(BMP2CHR_POST)
 
 # Bindings are generated from whatever r65x actually produced. Tile counts
 # move when art is edited - dedup decides them - so a hand-written size in
 # include_bytes! would silently desync from the file on disk.
-src/assets.r65: $(BG_OUT) assets/gfx/obj.chr
+src/assets.r65: $(ART_OUT)
 	@echo "[GEN] $@"
 	@{ \
-	  echo '// GENERATED by `make assets` - DO NOT EDIT.'; \
+	  echo '// GENERATED by make - DO NOT EDIT, and do not commit.'; \
 	  echo '// Art source is assets/src/*.bmp, converted by r65x bmp2chr.'; \
 	  echo ''; \
 	  echo '#[bank(1)]'; \
 	  echo ''; \
-	  for n in $(BG_SRC) obj; do \
+	  for n in $(ART); do \
 	    u=$$(echo $$n | tr a-z A-Z); \
 	    for k in chr tilemap pal; do \
 	      [ -f assets/gfx/$$n.$$k ] || continue; \
@@ -100,7 +148,7 @@ src/assets.r65: $(BG_OUT) assets/gfx/obj.chr
 	    done; \
 	  done; \
 	  echo ''; \
-	  for n in $(BG_SRC) obj; do \
+	  for n in $(ART); do \
 	    u=$$(echo $$n | tr a-z A-Z); \
 	    for k in chr tilemap pal; do \
 	      [ -f assets/gfx/$$n.$$k ] || continue; \
@@ -111,8 +159,9 @@ src/assets.r65: $(BG_OUT) assets/gfx/obj.chr
 	  done; \
 	} > $@
 
+# `make assets` is now only a name for the art half of an ordinary build:
+# the ROM depends on it, so nothing has to be run by hand.
 assets: src/assets.r65
-	@echo "[ASSETS] up to date"
 
 # ------------------------------------------------------------------ test ----
 # The compiler writes a .link next to -o, so lint needs a real output path.
@@ -135,6 +184,7 @@ play: $(ROM_FILE)
 clean:
 	@echo "[CLEAN] Removing build artifacts..."
 	rm -rf $(BUILD_DIR)
+	rm -f $(ART_OUT) src/assets.r65
 	rm -f *.o *.asm *.smc *.sym *.map linkfile.txt
 
 run: $(ROM_FILE)
@@ -151,7 +201,7 @@ syntax: $(BUILD_DIR)/main.asm
 help:
 	@echo "Available targets:"
 	@echo "  all      - Build ROM (default)"
-	@echo "  assets   - Convert assets/src/*.bmp to SNES CHR + palettes"
+	@echo "  assets   - Convert assets/src/*.bmp to SNES CHR + palettes (an ordinary build does this)"
 	@echo "  lint     - Run the R65 linter (r65-lint.toml)"
 	@echo "  verify   - Build and run the scripted-input regression suite"
 	@echo "  play     - One scripted run: make play OUT=x.png ACTIONS=start,wait60,shot"
