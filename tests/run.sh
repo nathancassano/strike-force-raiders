@@ -509,7 +509,7 @@ else
     # 0.824 - the first mission's column is three squads of men, fifteen
     # riflemen sweeping, against the eight tanks - and the smart missiles
     # 0.821.
-    run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
+    run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
                                                       --check-mem16 0x$FLOOP=0x0BC1
 
     # The headline constraint: at a bunched column the PPU must still be able
@@ -670,8 +670,8 @@ else
         --check-mem 0x$(at "$UK" 1)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
         --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$(at "$UK" 4)=0x00 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(hp 0)=0x19 \
-        --check-mem 0x$(at "$UK" 6)=0x04 --check-mem16 0x$(at "$UX" 12)=0x1134 \
-        --check-mem 0x$(at "$UD" 0)=0x0B
+        --check-mem 0x$(at "$UK" 6)=0x04 --check-mem16 0x$(at "$UX" 12)=0x1135 \
+        --check-mem 0x$(at "$UD" 0)=0x0C
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -1021,14 +1021,47 @@ else
         --check-mem 0x$GSTATE=0x00 --check-mem 0x$SKIND2=0x00 \
         --check-mem16 0x$HX=0x0141
 
+    # The continue code (slice (c)). The d-pad types four letters over the
+    # title: Right moves the cursor, Up and Down run a letter through
+    # A..P (a held direction repeats, a tap steps once - these movies tap).
+    # Down from A wraps to P, which is letter 15.
+    taps() { local o=""; local i=0; while [ $i -lt $2 ]; do o="$o$1,"; i=$((i+1)); done; printf '%s' "$o"; }
+    CLET=$(ramaddr code_letters)
+    CCUR=$(ramaddr code_cursor)
+    SFUNDS=$(ramaddr start_funds)
+    run_case code_type "wait20,down,right,wait10,shot" \
+        --check-mem 0x$CLET=0x0F --check-mem 0x$CCUR=0x01
+
+    # NKCH is mission 5 carrying 32: eleven bits of payload - four of
+    # mission, seven of purse - and five of check, scrambled and cut into
+    # four nibbles. Start takes what the page says it will, so the row's
+    # own starting funds give way to the code's.
+    NKCH="$(taps up 13)right,$(taps up 10)right,$(taps up 2)right,$(taps up 7)"
+    run_case code_continue "wait20,${NKCH}start,wait20,shot" --timeout 200000 \
+        --check-mem 0x$MISSION=0x04 --check-mem 0x$SFUNDS=0x20 \
+        --check-mem 0x$SKIND2=0x02
+
+    # One letter out is not a near miss, it is nothing: the check digits
+    # reject it and Start begins a new campaign instead (1000 of the
+    # 65536 spellings mean anything at all).
+    NKCG="$(taps up 13)right,$(taps up 10)right,$(taps up 2)right,$(taps up 6)"
+    run_case code_bad "wait20,${NKCG}start,wait20,shot" --timeout 200000 \
+        --check-mem 0x$MISSION=0x00 --check-mem 0x$SKIND2=0x02
+
     # And the way out: four crash landings spend the four lives - 40
     # frames of Down from the hover is over HELI_CRASH_VY, and the next
     # airframe takes HELI_RESPAWN plus its climb - which ends the match,
-    # and Start on the frozen field brings up the after-action page.
+    # and Start on the frozen field brings up the after-action page. It
+    # spells the code for the next run - JKDG, this mission again with
+    # the purse as it stands, since the match was lost - and leaves it
+    # typed into the title's field.
     run_case screen_after \
         "start,wait10,start,wait20,down40,wait200,down40,wait200,down40,wait200,down40,wait240,start,wait20,shot" \
         --check-mem 0x$GSTATE=0x03 --check-mem 0x$SKIND2=0x03 \
-        --check-mem 0x$LIVES=0x00
+        --check-mem 0x$LIVES=0x00 \
+        --check-mem 0x$CLET=0x09 --check-mem 0x$(printf '%X' $((0x$CLET + 1)))=0x0A \
+        --check-mem 0x$(printf '%X' $((0x$CLET + 2)))=0x03 \
+        --check-mem 0x$(printf '%X' $((0x$CLET + 3)))=0x06
 fi
 
 # ---------------------------------------------------------------------------

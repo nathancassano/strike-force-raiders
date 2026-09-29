@@ -299,8 +299,17 @@ after-action - and they are all one mechanism: BG1 written as a full 32x28 page 
 state and its registers. A page costs one 1792-byte DMA of the map in force blank when it goes
 up and nothing per frame; coming back restores the map from ROM and re-runs `hud_init` and
 `radar_init`, the page having written over the rows they own. `GAME_SCREEN` is a game state
-like the two battle-over ones, so `main` runs neither the tick nor the draw while one shows,
-and Start is the only control (`screen_tick`). The glyphs are the HUD's - capitals, digits and
+like the two battle-over ones, so `main` runs neither the tick nor the draw while one shows.
+**Progress between missions is a typed code, not a save file** (`code_*`): four letters
+carrying eleven bits of payload - four of mission, seven of purse - and five of check,
+scrambled and cut into nibbles, each a letter A..P, so 1000 of the 65536 spellings mean
+anything and a mistyped one is rejected rather than silently starting the wrong mission. The
+d-pad types it over the title (a held direction repeats), the line under it says live what the
+code reads as - the mission it opens, or NEW GAME - and Start takes exactly that, the code's
+purse displacing the row's `start_funds`. The after-action page spells the code for the next
+run and leaves it typed in, so continuing is one press. Typing redraws only the five rows the
+field occupies, DMA'd from the page shadow in vblank (`screen_flush`); everything else about a
+page is composed once. The glyphs are the HUD's - capitals, digits and
 spaces, nothing else, which is why the mission names spell their hyphens as spaces. **The front
 end is the campaign's**: a harness mission boots straight into its battle and its Start
 restarts it, so no suite movie has to press past a page it did not ask for.
@@ -413,8 +422,9 @@ cell drawn over the standing man's, or at 3 px/frame with none when the chute fa
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
 the frame the unit pool has room. Draw order: after the munitions.
 
-Controls: Start on a front-end page (title → briefing → battle, after-action → title); in the
-battle, hold L for the order dialog - Left/Right move the highlight, A buys - and the d-pad
+Controls: on the title, the d-pad types the continue code and Start takes what the page says;
+Start goes on from the briefing and the after-action page. In the battle, hold L for the order
+dialog - Left/Right move the highlight, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, Y smart missile, X drop, Up
 lifts off a deck.
 The dialog (`hud_overlay`) is a box on BG1 rows 2-9 composed once at init into an 8-row

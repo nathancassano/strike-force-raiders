@@ -911,6 +911,20 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     which is the world the suite's oldest (unprefixed) cases were written against. New cases:
     `screen_title`, `screen_brief`, `screen_battle`, `screen_after` (four crash landings spend
     the four lives, which ends the match and brings the page up). Green at 98.
+    *Slice (c) DONE.* The continue code, four letters over the title. Eleven bits of payload -
+    four of mission, seven of purse - and five of check, scrambled with a salt and cut into
+    nibbles, each a letter A..P: 1000 of the 65536 spellings mean anything, so a mistyped code
+    is rejected rather than quietly starting the wrong mission, and the line under the field
+    says live what the code reads as (the mission it opens, or NEW GAME) so Start never does
+    anything the page did not say. Start applies it by writing `start_funds` after
+    `mission_set`, which is the whole of "carrying" funds until slice (d) decides what is
+    carried. The after-action page spells the code for the next run - the next mission if the
+    match was won, this one again if it was not - and leaves it typed into the field, so
+    continuing is one press. A held direction repeats after a pause, since four letters is
+    otherwise sixty presses; typing redraws only the five rows the field occupies, DMA'd in
+    vblank, rather than re-blitting the page in force blank on every keypress. New cases:
+    `code_type`, `code_continue` (NKCH is mission 5 carrying 32), `code_bad` (one letter out
+    starts a new campaign), and `screen_after` now pins the code it spells. Green at 101.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in
     snesgss and wire the export into the Makefile.
 

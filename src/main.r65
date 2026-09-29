@@ -112,6 +112,7 @@ fn boot_load() {
     game_init();
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
+    screen_init();
     // The campaign opens on its title page; a harness mission has no
     // front end and boots straight into its battle, so a suite movie
     // never has to press its way past one. X held at power-on is the
@@ -147,8 +148,11 @@ fn main() -> ! {
     loop {
         wait_nmi!();
         // A front-end page owns BG1 and is the only layer on, so none of
-        // the vblank traffic below has anywhere to go.
-        if game_state != GAME_SCREEN {
+        // the vblank traffic below has anywhere to go - only the rows a
+        // typed continue code has changed.
+        if game_state == GAME_SCREEN {
+            screen_flush();
+        } else {
             scroll_update();
             gnd_table_build();
             oam_flush();
@@ -193,7 +197,7 @@ fn main() -> ! {
             radar_update();
         } else {
             if game_state == GAME_SCREEN {
-                screen_tick(trig);
+                screen_tick(held, trig);
             } else {
                 // The match is over: everything holds where it stands
                 // until Start goes on.

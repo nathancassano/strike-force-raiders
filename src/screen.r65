@@ -40,16 +40,27 @@ const SCREEN_LABEL:    u16 = 9;           // a stat line's label ...
 const SCREEN_VALUE:    u16 = 21;          // ... and the last digit of its value
 const SCREEN_PROMPT:   u16 = 22;          // the PRESS START row
 
+// The title's continue-code field: the four letters, the cursor under the
+// one being typed, and the line that says what the code reads as. They
+// are kept together because editing one redraws the block, and a block of
+// whole rows is one DMA (see screen_flush).
+const SCREEN_CODE_ROW:  u16 = 14;
+const SCREEN_CODE_ROWS: u16 = 5;          // 14..18: letters, cursor, readout
+const SCREEN_CODE_COL:  u16 = 16;         // the first letter; two columns apart
+const SCREEN_LABEL_COL: u16 = 10;         // and the word CODE, to their left
+const SCREEN_READ_ROW:  u16 = 17;
+
 // One shadow of the visible map, composed on a transition and flushed in
 // force blank. It is 1792 bytes of lowram, which is affordable because
 // nothing else here is: the pages have no per-frame state at all.
 #[lowram] static mut screen_page: [u16; 896];
 #[lowram] static mut screen_kind: u8;
+#[lowram] static mut screen_dirty: u8;    // the code block wants flushing
 
 // Every word a page can say, one run of capitals after another, indexed
 // rather than pointed at: a near pointer to a static in this bank would be
 // read against DBR 0 and find bank 0's ROM instead.
-static scr_text: [u8; 89] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEAT";
+static scr_text: [u8; 101] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEATCODENEW GAME";
 const T_TITLE:  u16 = 0;    const T_TITLE_N:  u16 = 13;
 const T_SUB:    u16 = 13;   const T_SUB_N:    u16 = 21;
 const T_START:  u16 = 34;   const T_START_N:  u16 = 11;
@@ -60,6 +71,72 @@ const T_FUNDS:  u16 = 66;   const T_FUNDS_N:  u16 = 5;
 const T_LIVES:  u16 = 71;   const T_LIVES_N:  u16 = 5;
 const T_WON:    u16 = 76;   const T_WON_N:    u16 = 7;
 const T_LOST:   u16 = 83;   const T_LOST_N:   u16 = 6;
+const T_CODE:   u16 = 89;   const T_CODE_N:   u16 = 4;
+const T_NEW:    u16 = 93;   const T_NEW_N:    u16 = 8;
+
+// ------------------------------------------------------ continue code ---
+// Progress between missions is a typed code, not a save file: four
+// letters carrying the mission and the purse to start it with. Eleven
+// bits of payload (four of mission, seven of funds) and five of check,
+// scrambled with CODE_SALT and cut into four nibbles, each a letter A..P
+// - so 1000 of the 65536 spellings mean anything, and a mistyped one is
+// almost certainly rejected rather than silently starting the wrong
+// mission. The after-action page shows the code for the next run and
+// leaves it typed in, so continuing is one press.
+const CODE_LEN:  u16 = 4;
+const CODE_SALT: u16 = 0x9E37;
+const CODE_BAD:  u8  = 0xFF;
+
+#[lowram] static mut code_letters: [u8; 4];   // 0..15: the letters A..P
+#[lowram] static mut code_cursor:  u8;        // which one the d-pad edits
+#[lowram] static mut code_rep:     u8;        // frames to the held d-pad's repeat
+
+// Typing a four-letter code a press at a time would be sixty presses, so
+// a held direction runs on: a pause, then a step every few frames.
+const CODE_REP_FIRST: u8 = 20;
+const CODE_REP_NEXT:  u8 = 5;
+
+fn code_check(p: u16) -> u16 {
+    return (p ^ (p >> 5) ^ (p >> 9)) & 0x001F;
+}
+
+// code_set - spell the code for mission *m* carrying *f* funds.
+fn code_set(m: u8, f: u8) {
+    let p: u16 = ((m as u16) << 7) | (f as u16);
+    let v: u16 = ((p << 5) | code_check(p)) ^ CODE_SALT;
+    code_letters[0] = ((v >> 12) & 0x000F) as u8;
+    code_letters[1] = ((v >> 8) & 0x000F) as u8;
+    code_letters[2] = ((v >> 4) & 0x000F) as u8;
+    code_letters[3] = (v & 0x000F) as u8;
+}
+
+// code_value - the typed letters as the sixteen bits they stand for.
+fn code_value() -> u16 {
+    let mut v: u16 = 0;
+    for k in 0..CODE_LEN {
+        v = (v << 4) | (code_letters[k] as u16);
+    }
+    return v ^ CODE_SALT;
+}
+
+// code_mission - the mission the typed code names, or CODE_BAD if the
+// check digits, the mission or the purse do not stand up.
+fn code_mission() -> u8 {
+    let v: u16 = code_value();
+    let p: u16 = v >> 5;
+    if (v & 0x001F) != code_check(p) { return CODE_BAD; }
+    let m: u8 = (p >> 7) as u8;
+    let f: u8 = (p & 0x007F) as u8;
+    if m >= MISSION_COUNT { return CODE_BAD; }
+    if f > ECON_MAX { return CODE_BAD; }
+    return m;
+}
+
+// code_purse - the funds it carries. Only meaningful once code_mission
+// has said the code is good.
+fn code_purse() -> u8 {
+    return ((code_value() >> 5) & 0x007F) as u8;
+}
 
 // ----------------------------------------------------------- composing ---
 
@@ -91,8 +168,8 @@ fn screen_value(row: u16, v: u8) {
 
 // screen_mission - "MISSION n", the word and the number centred together
 // rather than the number against the stat column.
-fn screen_mission(row: u16) {
-    let n: u8 = mission + 1;
+fn screen_mission(row: u16, m: u8) {
+    let n: u8 = m + 1;
     let mut w: u16 = T_MISS_N + 2;        // the word, a space, one digit
     if n > 9 { w = w + 1; }
     let col: u16 = (SCREEN_COLS - w) >> 1;
@@ -112,9 +189,9 @@ fn screen_stat(row: u16, off: u16, len: u16, v: u8) {
     screen_value(row, v);
 }
 
-// screen_name - the current mission's name, centred, its padding trimmed.
-fn screen_name(row: u16) {
-    let at: u16 = (mission as u16) << MISSION_NAME_SH;
+// screen_name - mission *m*'s name, centred, its padding trimmed.
+fn screen_name(row: u16, m: u8) {
+    let at: u16 = (m as u16) << MISSION_NAME_SH;
     let mut n: u16 = MISSION_NAME_W;
     while n > 0 {
         if mission_names[at + n - 1] != 0x20 { break; }
@@ -150,13 +227,39 @@ fn screen_frame() {
     }
 }
 
+// screen_code_block - the title's code field and what it reads as, into
+// the page. Only the inside of the frame is cleared: the border columns
+// live on these rows too, and this block is redrawn on every keypress.
+fn screen_code_block() {
+    let blank: u16 = hud_clear_tile();
+    for r in 0..SCREEN_CODE_ROWS {
+        for c in 2..(SCREEN_COLS - 2) {
+            screen_put(SCREEN_CODE_ROW + r, c, blank);
+        }
+    }
+    screen_text(SCREEN_CODE_ROW, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
+    for k in 0..CODE_LEN {
+        let col: u16 = SCREEN_CODE_COL + (k << 1);
+        screen_put(SCREEN_CODE_ROW, col, hud_letter(0x41 + code_letters[k]));
+    }
+    screen_put(SCREEN_CODE_ROW + 1, SCREEN_CODE_COL + ((code_cursor as u16) << 1),
+               hud_box(BOX_CURSOR));
+    // What it means, live: the mission it opens, or a new campaign.
+    let m: u8 = code_mission();
+    if m == CODE_BAD {
+        screen_centre(SCREEN_READ_ROW, T_NEW, T_NEW_N);
+    } else {
+        screen_mission(SCREEN_READ_ROW, m);
+        screen_name(SCREEN_READ_ROW + 1, m);
+    }
+}
+
 // --------------------------------------------------------------- pages ---
 
 fn screen_title() {
-    screen_centre(6,  T_TITLE, T_TITLE_N);
-    screen_centre(9,  T_SUB,   T_SUB_N);
-    screen_mission(15);
-    screen_name(17);
+    screen_centre(6, T_TITLE, T_TITLE_N);
+    screen_centre(9, T_SUB,   T_SUB_N);
+    screen_code_block();
     screen_centre(SCREEN_PROMPT, T_START, T_START_N);
 }
 
@@ -164,8 +267,8 @@ fn screen_title() {
 // numbers mission_stats gave the field and the purse, so the page is a
 // reading of the row rather than a second copy of it.
 fn screen_brief() {
-    screen_mission(4);
-    screen_name(6);
+    screen_mission(4, mission);
+    screen_name(6, mission);
     let i: u16 = mission as u16;
     screen_stat(11, T_TURRET, T_TURRET_N, mission_stats[i].turrets);
     screen_stat(13, T_BUNKER, T_BUNKER_N, mission_stats[i].bunkers);
@@ -183,9 +286,19 @@ fn screen_after() {
     } else {
         screen_centre(6, T_LOST, T_LOST_N);
     }
-    screen_name(9);
-    screen_stat(13, T_FUNDS, T_FUNDS_N, funds);
-    screen_stat(15, T_LIVES, T_LIVES_N, heli_lives);
+    screen_name(9, mission);
+    screen_stat(12, T_FUNDS, T_FUNDS_N, funds);
+    screen_stat(14, T_LIVES, T_LIVES_N, heli_lives);
+    // The code for the next run: the mission after this one if it was
+    // won, this one again if it was not, and the purse as it stands. It
+    // is left typed into the title's field, so continuing is one press.
+    let mut m: u8 = mission;
+    if game_state == GAME_WON && m + 1 < MISSION_COUNT { m = m + 1; }
+    code_set(m, funds);
+    screen_text(17, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
+    for k in 0..CODE_LEN {
+        screen_put(17, SCREEN_CODE_COL + (k << 1), hud_letter(0x41 + code_letters[k]));
+    }
     screen_centre(SCREEN_PROMPT, T_START, T_START_N);
 }
 
@@ -229,12 +342,91 @@ far fn screen_hide() {
     radar_init();
 }
 
-// screen_tick - one frame with a page up. Start is the only control:
-// title to briefing, briefing into the battle, after-action back to the
-// title (slice (d) makes that the next mission instead).
-far fn screen_tick(trig: u16) {
+// screen_init - the code field at A A A A with the cursor on the first
+// letter. SNES RAM is whatever it was at power-on, and an unset letter
+// index reads a glyph from past the row; boot_load calls this before the
+// title goes up, and nothing else does - a code typed or handed back by
+// the after-action page has to survive a reset.
+far fn screen_init() {
+    for k in 0..CODE_LEN {
+        code_letters[k] = 0;
+    }
+    code_cursor = 0;
+    code_rep = 0;
+    screen_kind = SCREEN_NONE;
+    screen_dirty = 0;
+}
+
+// screen_flush - the code block to VRAM. Vblank only, and only the five
+// rows the typing touches: re-blitting the page would mean force blank
+// and a black frame on every keypress.
+far fn screen_flush() {
+    if screen_dirty == 0 { return; }
+    screen_dirty = 0;
+    dma_copy_vram(1, &screen_page[SCREEN_CODE_ROW << 5] as far *u8,
+                  VRAM_BG1 + (SCREEN_CODE_ROW << 5), SCREEN_CODE_ROWS << 6);
+}
+
+// screen_type - the d-pad over the title's code field: left and right
+// move the cursor, up and down run the letter through A..P. The readout
+// under it follows, so the page always says what Start will do.
+fn screen_type(held: u16, trig: u16) {
+    let dirs: u16 = JOY_LEFT | JOY_RIGHT | JOY_UP | JOY_DOWN;
+    let mut act: u16 = trig & dirs;
+    if (held & dirs) == 0 {
+        code_rep = 0;
+    } else {
+        if act != 0 {
+            code_rep = CODE_REP_FIRST;
+        } else {
+            if code_rep > 0 { code_rep = code_rep - 1; }
+            if code_rep == 0 {
+                act = held & dirs;
+                code_rep = CODE_REP_NEXT;
+            }
+        }
+    }
+    let trig: u16 = act;
+    let mut moved: u8 = 0;
+    if (trig & JOY_LEFT) != 0 {
+        code_cursor = (code_cursor + (CODE_LEN as u8) - 1) & 0x03;
+        moved = 1;
+    }
+    if (trig & JOY_RIGHT) != 0 {
+        code_cursor = (code_cursor + 1) & 0x03;
+        moved = 1;
+    }
+    let k: u16 = code_cursor as u16;
+    if (trig & JOY_UP) != 0 {
+        code_letters[k] = (code_letters[k] + 1) & 0x0F;
+        moved = 1;
+    }
+    if (trig & JOY_DOWN) != 0 {
+        code_letters[k] = (code_letters[k] + 15) & 0x0F;
+        moved = 1;
+    }
+    if moved != 0 {
+        screen_code_block();
+        screen_dirty = 1;
+    }
+}
+
+// screen_tick - one frame with a page up. On the title the d-pad types a
+// continue code and Start takes what it says - the mission it names with
+// the purse it carries, or a new campaign if it names nothing. Elsewhere
+// Start is the only control: briefing into the battle, after-action back
+// to the title (slice (d) makes that the next mission instead).
+far fn screen_tick(held: u16, trig: u16) {
+    if screen_kind == SCREEN_TITLE { screen_type(held, trig); }
     if (trig & JOY_START) == 0 { return; }
     if screen_kind == SCREEN_TITLE {
+        let m: u8 = code_mission();
+        if m == CODE_BAD {
+            mission_set(MISSION_START);
+        } else {
+            mission_set(m);
+            start_funds = code_purse();   // mission_set wrote the row's
+        }
         screen_show(SCREEN_BRIEF);
         return;
     }
