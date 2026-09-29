@@ -32,7 +32,7 @@
 // The start is the mirror of the player's: hovering at the far edge.
 const FOE_START_X: u16 = WORLD_W - 64 - HELI_W;
 const FOE_LIVES:   u8  = 4;
-const FOE_ATTR:    u16 = HELI_ATTR | OBJ_PAL_ENEMY;
+const FOE_ATTR:    u16 = (HELI_ATTR & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY;
 
 // The pilot. It flies toward a spot, at its row's clip speed far from it,
 // at a walk inside FOE_SLOW, and coasts to rest inside FOE_NEAR.

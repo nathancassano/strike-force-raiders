@@ -142,7 +142,8 @@ so there is **no column refill anywhere**. Everything world-specific is a sprite
 | BG2 | near clouds | `camera_x >> 2` | $7000 (64x32) |
 | BG3 | distant hills | `camera_x >> 3` | $6800 (64x32) |
 | BG4 | ground band, bottom quarter | per-scanline HDMA ch6 | $6000 (64x32) |
-| OBJ | helicopter and, later, every unit | camera-relative | $4000 (4bpp) |
+| OBJ | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
+| OBJ | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
 
 Shared 2bpp tileset at $0000. Mode 0 gives each layer its own 32-colour CGRAM block
 (BG1 0-31, BG2 32-63, BG3 64-95, BG4 96-127); sprites get 128-255.
@@ -157,14 +158,22 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,struct_art}.py` stamp pixels *into the bitmaps*; they are
-authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
+`tools/{hud_glyphs,ground_texture,struct_art,heli_art}.py` stamp pixels *into the bitmaps*
+(sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
+they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 Nothing generates graphics from code at build time. **bg2/3/4 are stored
 folded** - 32 tiles wide by 64 tall, right-hand screen below the left - because a 64x32 SNES
 tilemap is two 32x32 screens and bmp2chr emits row-major at bitmap width. Each BG layer has its
 own de-duplicated tileset and its own CGRAM block; only sub-palette 0 (4 colours) is used.
 
 Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a munition 8x8.
+**There are two sprite sheets.** `obj.bmp` holds the units, the buildings, the decks and the
+munitions at $4000 (tiles 0-255); `heli.bmp` holds the two airframes' six frames alone, loaded
+into the second OBJ name block at $5000, so its tile numbers are 256 + the sheet's and the 9th
+tile bit (`HELI_PAGE`) rides in the attribute word. It has its own CGRAM palette as well
+(`OBJ_PAL_HELI`, palette 3, and palette 4 for the enemy's), so the airframes can be redrawn or
+recoloured without touching anything the ground shares. Either sheet must be 16 tiles wide
+whatever it holds: the hardware reads a 16x16 sprite as tiles T, T+1, T+16, T+17.
 A 24-px vehicle is one 16x16 cell plus its second cell's left half drawn as **two 8x8s** - three
 tiles on a scanline, not four, which is what keeps eight bunched tanks and a bunker (28) under
 the PPU's 34 (`unit_draw_one`; the sheet's fourth tile column of every vehicle is blank).
@@ -230,17 +239,20 @@ Structures (`src/struct.r65`) are a `#[soa]` pool filled from `level_layout`, a 
 table in west-to-east order - **keep it sorted**: the draw cull and the munition test both stop
 at the first building east of the camera or the round. Per-frame geometry (width, cells, box
 top, first tile, attribute) is precomputed into the pool at init and on `struct_set_owner`.
-Ownership is an OBJ palette: 0 the sheet's greens, 1 enemy (red-brown), 2 nobody (grey), built
-at boot by `struct_palettes` from the one palette the sheet carries; enemy units wear palette 1
-too. Turrets and the super bunker loft rounds at the helicopter along the line to it; bunkers
+Ownership is an OBJ palette: 0 the sheet's greens, 1 enemy (red-brown), 2 nobody (grey) - and
+3, 4 the same two for the airframe sheet - built at boot by `struct_palettes` from the one
+palette each sheet carries (it runs in bank 2: boot-only code, and bank 0 is full). Enemy units
+wear palette 1 and the enemy airframe palette 4; the red-brown is one list of colours, so a
+tank and an airframe of the same side match. Turrets and the super bunker loft rounds at the helicopter along the line to it; bunkers
 moor a balloon on a chain that kills any helicopter on contact (a bunker shelled to 0 hp is nobody's
 and balloonless but still capturable - the man who takes it restores it); a manned super bunker also fires
 along the ground at units of any other side outside its box; the base fires homing missiles
 (`MUNI_MISSILE`) inside 320 px; the bank's gun falls silent after two shells and an enemy
 infantryman at the player's bank halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
-`tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp` and writes the
-4-bit BMP itself, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
+`tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp`; the airframe's
+own sheet is drawn by `tools/heli_art.py`, and both write their 4-bit BMP through
+`tools/bmp4.py`, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
 
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base
 (`struct_base_van`, scanned every 32 frames - a van is in the window ~75 frames) or the

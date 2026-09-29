@@ -49,7 +49,7 @@ const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 // nose-right and facing-left renders them hflipped, so a screen-relative
 // name invites picking the mirrored frame - which is exactly the bug this
 // naming replaced.
-const HELI_TILE_NOSE_DOWN: u8 = 0;        // assets/src/obj.bmp, frame 0
+const HELI_TILE_NOSE_DOWN: u8 = 0;        // assets/src/heli.bmp, frame 0
 const HELI_TILE_LEVEL:     u8 = 4;        // ... frame 1
 const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
 // Turning: five drawings - a slight turn and a three-quarter view facing
@@ -59,12 +59,20 @@ const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
 // it swings back. The facing the gun fires along changes when the turn
 // completes, not when it starts. The three pieces of art are on the
 // sheet's last row (tools/struct_art.py).
-const HELI_TILE_TURN_34:     u8 = 224;
-const HELI_TILE_TURN_HEAD:   u8 = 228;
-const HELI_TILE_TURN_SLIGHT: u8 = 232;
+const HELI_TILE_TURN_34:     u8 = 32;
+const HELI_TILE_TURN_HEAD:   u8 = 36;
+const HELI_TILE_TURN_SLIGHT: u8 = 40;
 const HELI_TURN_HOLD:        u8 = 3;      // frames per drawing
 const HELI_TURN_STEPS:       u8 = 5 * 3;  // the whole swing
-const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
+// The airframe has a sheet of its own (assets/src/heli.bmp, drawn by
+// tools/heli_art.py) rather than a corner of obj.bmp: its art and its
+// colours are the two airframes' alone, and neither the units nor the
+// buildings are disturbed by a change to them. It is loaded into the
+// second OBJ name block, so a tile number here is 256 + the sheet's -
+// HELI_PAGE is that 9th bit, which rides in the attribute word beside
+// the palette and the priority.
+const HELI_PAGE: u16 = 0x0100;
+const HELI_ATTR: u16 = 0x3000 | HELI_PAGE | OBJ_PAL_HELI;   // priority 3
 
 // The helicopter is the highest-priority object in the game, so it draws
 // first and takes the lowest slots from the shared allocator.

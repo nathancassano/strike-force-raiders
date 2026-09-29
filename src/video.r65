@@ -30,6 +30,10 @@ const VRAM_BG1:  u16 = 0x7800;   // 0x1E
 // OBJ tiles sit at word $4000, clear of the BG tileset at $0000 and the four
 // tilemaps at $6000-$7FFF. OBSEL's base field counts 8K-word units.
 const VRAM_OBJ:  u16 = 0x4000;
+// The second OBJ name block - tiles 256-511, which is where the
+// airframe's own sheet goes (heli.r65 HELI_PAGE). OBSEL's name-select
+// field of 0 puts it one 4K-word block past the base.
+const VRAM_OBJ2: u16 = 0x5000;
 const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000
 
 // 128 sprites plus the 32-byte extended table. Kept in lowram, i.e. bank 0,
@@ -205,7 +209,8 @@ far fn video_load() {
     dma_copy_cgram(0, &BG3_PAL as far *u8, 64, BG3_PAL_SIZE);
     dma_copy_cgram(0, &BG4_PAL as far *u8, 96, BG4_PAL_SIZE);
     dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
-    struct_palettes();              // OBJ palettes 1 and 2 from 0
+    dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
+    struct_palettes();              // the recoloured variants of both
 
     dma_copy_vram(0, &BG1_CHR as far *u8, VRAM_BG1C, BG1_CHR_SIZE);
     dma_copy_vram(0, &BG2_CHR as far *u8, VRAM_BG2C, BG2_CHR_SIZE);
@@ -216,6 +221,7 @@ far fn video_load() {
     dma_copy_vram(0, &BG3_MAP as far *u8, VRAM_BG3, BG3_MAP_SIZE);
     dma_copy_vram(0, &BG4_MAP as far *u8, VRAM_BG4, BG4_MAP_SIZE);
     dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
+    dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
 
     set_bgmode!(0, 0);             // mode 0, all layers 8x8 tiles
     set_bg1_map!(0x1E, 0);         // 32x32 - HUD does not scroll

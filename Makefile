@@ -103,8 +103,9 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 BMP2CHR_DEPTH = -b2
 BMP2CHR_POST  = true
 
-# The sprite sheet is 4bpp.
+# The sprite sheets are 4bpp: the shared one, and the airframe's own.
 assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
+assets/gfx/heli.chr assets/gfx/heli.pal: BMP2CHR_DEPTH = -b4
 
 # The ground band's tilemap carries the per-tile priority bit (bit 13). In
 # Mode 0 a priority-0 sprite still draws over a low-priority BG3/BG4, so

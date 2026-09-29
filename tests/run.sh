@@ -247,31 +247,37 @@ else
     # two cells as well as setting hflip - so sprite 0 then holds the frame's
     # *far* tile (+2) and its attribute byte gains $40. Asserting both is what
     # tells a correct mirror from a frame picked at random.
+    #
+    # The attribute byte reads $37 (or $77 mirrored): priority 3, OBJ palette
+    # 3 and the 9th tile bit, which is the airframe's own sheet - it is
+    # loaded into the second OBJ name block with a palette of its own
+    # (heli.bmp, HELI_PAGE / OBJ_PAL_HELI), so a tile number here is the
+    # sheet's and the page bit says which sheet.
     TILT=$(printf '%04X' $((0x$OAMB + 2)))
     ATTR=$(printf '%04X' $((0x$OAMB + 3)))
     run_case heli_tilt_level "@l,shot"                --check-mem 0x$TILT=0x04 \
-                                                   --check-mem 0x$ATTR=0x30
+                                                   --check-mem 0x$ATTR=0x37
     run_case heli_tilt_right "@l,wait20,right60,shot" --check-mem 0x$TILT=0x00 \
-                                                   --check-mem 0x$ATTR=0x30
+                                                   --check-mem 0x$ATTR=0x37
     run_case heli_tilt_left  "@x,wait20,right120,left60,shot" \
                                                    --check-mem 0x$TILT=0x02 \
-                                                   --check-mem 0x$ATTR=0x70
+                                                   --check-mem 0x$ATTR=0x77
     # Reversing is a turn: five drawings held three frames each, advancing
     # only while the new direction is held. Ten frames in, the three-quarter
     # view faces the new way (its cells swap under hflip, so the first slot
-    # carries the right-hand cell, $E2); six frames in and released, it
-    # stalls on the three-quarter view still facing the old way ($E0); and
+    # carries the right-hand cell, $22); six frames in and released, it
+    # stalls on the three-quarter view still facing the old way ($20); and
     # wound back to nothing, the facing never changed. The nose-up flare the
     # reversal used to show is out of reach now - the swing outlasts the
     # velocity decay - so the tilt cases stop at nose-down and level.
     run_case heli_turn_mid   "@x,wait20,right120,left10,shot" \
-                                                   --check-mem 0x$TILT=0xE2 \
-                                                   --check-mem 0x$ATTR=0x70
+                                                   --check-mem 0x$TILT=0x22 \
+                                                   --check-mem 0x$ATTR=0x77
     run_case heli_turn_stall "@l,wait20,right120,left6,wait20,shot" \
-                                                   --check-mem 0x$TILT=0xE0 \
-                                                   --check-mem 0x$ATTR=0x30
+                                                   --check-mem 0x$TILT=0x20 \
+                                                   --check-mem 0x$ATTR=0x37
     run_case heli_turn_back  "@x,wait20,right120,left6,right6,wait2,shot" \
-                                                   --check-mem 0x$ATTR=0x30
+                                                   --check-mem 0x$ATTR=0x37
 
     # The airframe is actually drawn, not just positioned. Canopy and rotor
     # are the two OBJ colours that appear nowhere else on screen, so finding

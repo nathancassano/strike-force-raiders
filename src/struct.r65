@@ -21,12 +21,21 @@ const STRUCT_MAX: u16 = 16;
 // turret nobody has claimed is.
 const SIDE_NONE: u8 = 2;
 
-// OBJ palettes: 0 player (the sheet's greens), 1 enemy, 2 neutral. Built
-// at boot from the one palette the sheet carries, by recolouring its four
-// green entries (see struct_palettes).
+// OBJ palettes, as an OAM attribute's palette field. 0-2 are obj.bmp's -
+// player (the sheet's greens), enemy, nobody - and 3-4 are heli.bmp's,
+// the airframe's own sheet: its colours and the enemy's recolouring of
+// them. Each sheet carries one palette and the variants are built from it
+// at boot by recolouring the green entries (see struct_palettes).
 const OBJ_PAL_PLAYER:  u16 = 0x0000;
 const OBJ_PAL_ENEMY:   u16 = 0x0200;
 const OBJ_PAL_NEUTRAL: u16 = 0x0400;
+const OBJ_PAL_HELI:       u16 = 0x0600;
+const OBJ_PAL_HELI_ENEMY: u16 = 0x0800;
+// ... and where each one starts in CGRAM.
+const CGRAM_OBJ_ENEMY:      u16 = 144;
+const CGRAM_OBJ_NEUTRAL:    u16 = 160;
+const CGRAM_OBJ_HELI:       u16 = 176;
+const CGRAM_OBJ_HELI_ENEMY: u16 = 192;
 
 // ------------------------------------------------------------- kinds ---
 enum StructKind { Turret, Bunker, Super, Base, Bank }
@@ -247,30 +256,6 @@ far fn struct_init() {
     // The super bunker starts empty, and empty means hostile-neutral.
     structs[super_i].hp = 0;
     structs[super_i].men = 0;
-}
-
-// struct_palettes - fill OBJ palettes 1 and 2 from palette 0. The sheet
-// carries one palette; the enemy's is that with its greens turned
-// red-brown, and nobody's with them turned grey. Runs in force blank
-// after the sheet's own palette is loaded.
-#[lowram] static mut obj_pal_copy: [u8; 32];
-
-fn struct_palette_variant(cgram: u16, c2: Color, c3: Color, c7: Color, c8: Color) {
-    for i in 0..32 {
-        obj_pal_copy[i] = OBJ_PAL[i];
-    }
-    obj_pal_copy[4] = c2.0 as u8;   obj_pal_copy[5] = (c2.0 >> 8) as u8;
-    obj_pal_copy[6] = c3.0 as u8;   obj_pal_copy[7] = (c3.0 >> 8) as u8;
-    obj_pal_copy[14] = c7.0 as u8;  obj_pal_copy[15] = (c7.0 >> 8) as u8;
-    obj_pal_copy[16] = c8.0 as u8;  obj_pal_copy[17] = (c8.0 >> 8) as u8;
-    dma_copy_cgram(0, &obj_pal_copy as far *u8, cgram, 32);
-}
-
-far fn struct_palettes() {
-    struct_palette_variant(144, Color::rgb!(12, 5, 4), Color::rgb!(22, 9, 6),
-                                Color::rgb!(10, 4, 3), Color::rgb!(17, 7, 5));
-    struct_palette_variant(160, Color::rgb!(10, 10, 11), Color::rgb!(17, 17, 18),
-                                Color::rgb!(8, 8, 9), Color::rgb!(13, 13, 14));
 }
 
 // struct_draw - place the structures inside the camera window, third in
@@ -934,4 +919,44 @@ fn struct_bank_hit(i: u16) {
     } else {
         structs[i].hp = 0;
     }
+}
+
+// ------------------------------------------------------------ palettes ---
+// Boot-only, so it lives in bank 2 - bank 0 is full, and a JSL once at
+// power-on costs nothing.
+#[bank(2)]
+
+// struct_palettes - the recoloured OBJ palettes: 1 and 2 from the sheet's
+// own, 4 from the airframe sheet's. A sheet carries one palette; the
+// enemy's is that with its greens turned red-brown, and nobody's with
+// them turned grey. The two sheets share these colours - an enemy tank
+// and an enemy airframe are the same red-brown - which is why one
+// function builds both rather than each sheet tinting its own. Runs in
+// force blank, after both sheets' palettes are loaded.
+#[lowram] static mut obj_pal_copy: [u8; 32];
+
+// *src* is the sheet's own palette, in ROM.
+fn struct_palette_variant(src: far *u8, cgram: u16, c2: Color, c3: Color, c7: Color, c8: Color) {
+    for i in 0..32 {
+        obj_pal_copy[i] = src[i];
+    }
+    obj_pal_copy[4] = c2.0 as u8;   obj_pal_copy[5] = (c2.0 >> 8) as u8;
+    obj_pal_copy[6] = c3.0 as u8;   obj_pal_copy[7] = (c3.0 >> 8) as u8;
+    obj_pal_copy[14] = c7.0 as u8;  obj_pal_copy[15] = (c7.0 >> 8) as u8;
+    obj_pal_copy[16] = c8.0 as u8;  obj_pal_copy[17] = (c8.0 >> 8) as u8;
+    dma_copy_cgram(0, &obj_pal_copy as far *u8, cgram, 32);
+}
+
+far fn struct_palettes() {
+    struct_palette_variant(&OBJ_PAL as far *u8, CGRAM_OBJ_ENEMY,
+                           Color::rgb!(12, 5, 4), Color::rgb!(22, 9, 6),
+                           Color::rgb!(10, 4, 3), Color::rgb!(17, 7, 5));
+    struct_palette_variant(&OBJ_PAL as far *u8, CGRAM_OBJ_NEUTRAL,
+                           Color::rgb!(10, 10, 11), Color::rgb!(17, 17, 18),
+                           Color::rgb!(8, 8, 9), Color::rgb!(13, 13, 14));
+    // The airframe sheet has only the two greens; 7 and 8 are unused
+    // there, and recolouring them costs nothing and keeps one list.
+    struct_palette_variant(&HELI_PAL as far *u8, CGRAM_OBJ_HELI_ENEMY,
+                           Color::rgb!(12, 5, 4), Color::rgb!(22, 9, 6),
+                           Color::rgb!(10, 4, 3), Color::rgb!(17, 7, 5));
 }

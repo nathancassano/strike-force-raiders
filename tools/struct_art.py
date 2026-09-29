@@ -10,8 +10,10 @@ STRUCT_TILE_* constants depend on.
 
 The sheet is 16 tiles wide; a 16x16 OBJ cell at tile row r, column c is
 tile r*16 + c, and a cell's right neighbour is +2, its lower neighbour +32.
-Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
-6-13 (the sheet grows to 128x112):
+Rows 0-5 hold the munitions, the decks and the units; the airframe has a
+sheet of its own (tools/heli_art.py), and the cells it used to occupy -
+rows 0-1 and 14-15, columns 0-11 - are cleared here so the two cannot
+drift apart. This adds rows 6-13:
 
     row  6-7   turret (16x16) at col 0    balloon (16x16) at col 2
                chain (8x8) at col 4       bunker (32x24 in 32x32) at cols 6-9
@@ -22,9 +24,6 @@ Rows 0-5 hold the airframe, munitions, decks and units. This adds rows
                col 15: the radar's camera bracket (8x8 tile 31, radar.r65
                RADAR_BRACKET_TILE) - the window's edges, drawn as a sprite
                over the radar row
-    row 14-15  the airframe's turn frames (32x16 each): three-quarter view
-               at cols 0-3, head-on at cols 4-7, slight turn at cols 8-11
-               (heli.r65 HELI_TILE_TURN_*)
     row  4-5   col 6: the infantryman firing (tile 70, unit.r65
                UNIT_TILE_INFANTRY_FIRE) - the standing man with the rifle
                levelled and a flash at the muzzle
@@ -40,15 +39,25 @@ palette swap (greens -> red-browns) marks the owner.
     python3 tools/struct_art.py && make
 """
 
-import struct
+import os
+import sys
 
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bmp4 import save_bmp4
 
 BMP = 'assets/src/obj.bmp'
 SHEET_W, SHEET_H = 128, 128
 
 K = {'.': 0, 'k': 1, 'D': 2, 'G': 3, 'b': 4, 'w': 5, 'o': 6, 'd': 7,
      'g': 8, 'c': 9, 's': 10, 'r': 11}
+
+
+def clear(px, x0, y0, w, h):
+    for y in range(h):
+        for x in range(w):
+            px[x0 + x, y0 + y] = 0
 
 
 def stamp(px, x0, y0, rows):
@@ -164,68 +173,6 @@ def base():
     return rows
 
 
-# The airframe mid-turn: the level frame foreshortened. Three-quarter
-# view (nose still right, tail swinging toward the viewer), then head-on
-# (tail hidden, canopy centred). Same palette as the flight frames.
-TURN_34 = [
-    "....wwwwwwwwwwwwwwwwwwwwwwww....",
-    "...............kk...............",
-    "...............kk...............",
-    "................................",
-    "........kkkkkkkkkkkkkkkkkkk.....",
-    "....oooooGGGGGGGGGGDDDDDDDDD....",
-    "....ooooooGGGGGGGGGDDbbbbbbD....",
-    "....oooooDDDDDDDDDDDDbbbbbbD....",
-    "....kkkkkDDDDDDDDDDDDbbbbbbD....",
-    "........DDDDDDDDDDDDDDbbbbD.....",
-    "........DDDDDDDDDDDDDDDDDDD.....",
-    "........kkkkkkkkkkkkkkkkkkk.....",
-    "..............k.......k.........",
-    "............kkkkkkkkkkkkk.......",
-    "................................",
-    "................................",
-]
-# Just off the level frame: the tail foreshortened a little, the body a
-# few pixels narrower, the canopy starting to face the viewer.
-TURN_SLIGHT = [
-    "..wwwwwwwwwwwwwwwwwwwwwwwwwwww..",
-    "...............kk...............",
-    "...............kk...............",
-    "................................",
-    "..........kkkkkkkkkkkkkkkkkkkk..",
-    "..ooooooo.GGGGGGGGGGGDDDDDDDDDD.",
-    "..oooooookkGGGGGGGGGGDDbbbbbbbD.",
-    "..ooooooDDDDDDDDDDDDDDDbbbbbbbD.",
-    "..kkkkkkkkDDDDDDDDDDDDDbbbbbbbD.",
-    "..........DDDDDDDDDDDDDDbbbbbD..",
-    "..........DDDDDDDDDDDDDDDDDDDD..",
-    "..........kkkkkkkkkkkkkkkkkkkk..",
-    "...............k.........k......",
-    ".............kkkkkkkkkkkkkkk....",
-    "................................",
-    "................................",
-]
-
-TURN_HEAD = [
-    "..............wwww..............",
-    "...............kk...............",
-    "...............kk...............",
-    "................................",
-    "............kkkkkkkk............",
-    "...........kGGGGGGGGk...........",
-    "...........kGbbbbbbGk...........",
-    "...........kDbbbbbbDk...........",
-    "...........kDbbbbbbDk...........",
-    "...........kDDbbbbDDk...........",
-    "...........kDDDDDDDDk...........",
-    "............kkkkkkkk............",
-    ".............k....k.............",
-    "...........kkkkkkkkkkk..........",
-    "................................",
-    "................................",
-]
-
-
 # The missile, 8x8, heading east, north-east and north; the sprite's
 # flip bits turn those into the other five headings (muni.r65).
 MISSILE_E = [
@@ -321,35 +268,6 @@ RADAR_BRACKET = [
 ]
 
 
-def save_bmp4(im, path):
-    """Write a 16-colour indexed image as a 4-bit BMP.
-
-    bmp2chr -b4 refuses anything but a 4-bit file, and PIL only writes
-    8-bit indexed BMPs, so the header and packed rows are built here.
-    """
-    w, h = im.size
-    pal = im.getpalette()[:48]
-    px = im.load()
-    stride = ((w * 4 + 31) // 32) * 4
-    rows = bytearray()
-    for y in range(h - 1, -1, -1):              # bottom-up
-        row = bytearray(stride)
-        for x in range(w):
-            v = px[x, y] & 0xF
-            if x & 1:
-                row[x >> 1] |= v
-            else:
-                row[x >> 1] |= v << 4
-        rows += row
-    palette = b''.join(struct.pack('<BBBB', pal[i + 2], pal[i + 1], pal[i], 0)
-                       for i in range(0, 48, 3))
-    off = 14 + 40 + len(palette)
-    header = struct.pack('<2sIHHI', b'BM', off + len(rows), 0, 0, off)
-    info = struct.pack('<IiiHHIIiiII', 40, w, h, 1, 4, 0, len(rows), 2835, 2835, 16, 16)
-    with open(path, 'wb') as f:
-        f.write(header + info + palette + rows)
-
-
 def main():
     src = Image.open(BMP)
     assert src.mode == 'P' and src.size[0] == SHEET_W, (src.mode, src.size)
@@ -358,6 +276,8 @@ def main():
     im.paste(src, (0, 0))
     px = im.load()
 
+    clear(px, 0, 0, 96, 16)                     # the airframe's flight frames
+    clear(px, 0, 112, 96, 16)                   # ... and its turn frames
     stamp(px, 0, 48, TURRET)
     stamp(px, 16, 48, BALLOON)
     stamp(px, 32, 48, CHAIN)
@@ -365,9 +285,6 @@ def main():
     stamp(px, 80, 48, [r.ljust(32, '.') for r in bank()])
     stamp(px, 0, 80, [r.ljust(48, '.') for r in super_bunker()])
     stamp(px, 48, 80, base())
-    stamp(px, 0, 112, TURN_34)
-    stamp(px, 32, 112, TURN_HEAD)
-    stamp(px, 64, 112, TURN_SLIGHT)
     stamp(px, 48, 32, INFANTRY_FIRE)            # tile 70
     stamp(px, 64, 32, PARACHUTE)                # tile 72
     stamp(px, 120, 8, RADAR_BRACKET)            # tile 31
