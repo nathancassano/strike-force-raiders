@@ -38,8 +38,9 @@ far fn game_over(result: u8) {
     }
 }
 
-// game_reset - a fresh match from the same level. Everything that
-// boot_load initialised, minus the hardware.
+// game_reset - a fresh match of the current mission. Everything that
+// boot_load initialised, minus the hardware; the mission's row stands, so
+// choosing one is mission_set's business, not this one's.
 far fn game_reset() {
     pad_init();
     heli_init();

@@ -124,11 +124,16 @@ static struct_stats: [StructStat; 5] = [
 ];
 
 // ------------------------------------------------------------ layout ---
-// The level, west to east. A kind's x is its left edge in world pixels;
-// the two bases stand a screen inside each edge with the units' spawn
-// points just past them, the pads a few screens in (pad.r65), and the
-// field between carries the fought-over ground: a turret every ~1000 px,
-// bunkers between, the super bunker dead centre and neutral.
+// The level, west to east - and it must stay that way: the draw cull and
+// the munition test both stop at the first building east of what they are
+// looking at. A kind's x is its left edge in world pixels; the two bases
+// stand a screen inside each edge with the units' spawn points just past
+// them, the pads a few screens in (pad.r65), and the field between
+// carries the fought-over ground.
+//
+// The list is written by `mission_layout` (mission.r65) from the mission's
+// row, not held as data here: the campaign's difficulty curve is the one
+// place that decides how much of the field is fortified.
 #[soa]
 struct Placement {
     kind:  u8,
@@ -136,25 +141,8 @@ struct Placement {
     owner: u8,
 }
 
-const LEVEL_COUNT: u16 = 15;
-
-static level_layout: [Placement; 15] = [
-    Placement { kind: StructKind::Bank   as u8, x: 96,   owner: SIDE_PLAYER },
-    Placement { kind: StructKind::Base   as u8, x: 400,  owner: SIDE_PLAYER },
-    Placement { kind: StructKind::Turret as u8, x: 1536, owner: SIDE_PLAYER },
-    Placement { kind: StructKind::Bunker as u8, x: 2048, owner: SIDE_PLAYER },
-    Placement { kind: StructKind::Turret as u8, x: 2560, owner: SIDE_NONE },
-    Placement { kind: StructKind::Bunker as u8, x: 3072, owner: SIDE_NONE },
-    Placement { kind: StructKind::Turret as u8, x: 3584, owner: SIDE_NONE },
-    Placement { kind: StructKind::Super  as u8, x: 4076, owner: SIDE_NONE },
-    Placement { kind: StructKind::Turret as u8, x: 4608, owner: SIDE_NONE },
-    Placement { kind: StructKind::Bunker as u8, x: 5120, owner: SIDE_NONE },
-    Placement { kind: StructKind::Turret as u8, x: 5632, owner: SIDE_NONE },
-    Placement { kind: StructKind::Bunker as u8, x: 6144, owner: SIDE_ENEMY },
-    Placement { kind: StructKind::Turret as u8, x: 6656, owner: SIDE_ENEMY },
-    Placement { kind: StructKind::Base   as u8, x: 7728, owner: SIDE_ENEMY },
-    Placement { kind: StructKind::Bank   as u8, x: 8064, owner: SIDE_ENEMY },
-];
+#[lowram] static mut level_layout: [Placement; 16];
+#[lowram] static mut level_count:  u16;
 
 // -------------------------------------------------------------- pool ---
 // One record per placed structure, index-stable for the whole match. The
@@ -211,7 +199,7 @@ fn struct_set_owner(i: u16, owner: u8) {
 }
 
 far fn struct_init() {
-    for i in 0..LEVEL_COUNT {
+    for i in 0..level_count {
         let k: u16 = level_layout[i].kind as u16;
         let cols: u8 = struct_stats[k].cells_w;
         let rows: u8 = struct_stats[k].cells_h;
@@ -229,7 +217,7 @@ far fn struct_init() {
         if level_layout[i].kind == StructKind::Bunker as u8 { structs[i].bal = BALLOON_HP; }
         struct_set_owner(i, level_layout[i].owner);
     }
-    struct_count = LEVEL_COUNT;
+    struct_count = level_count;
 
     // RAM is garbage at power-on: every count starts at zero here.
     turret_count = 0;
@@ -237,7 +225,7 @@ far fn struct_init() {
     base_count = 0;
     bank_count = 0;
     super_i = 0;
-    for i in 0..LEVEL_COUNT {
+    for i in 0..level_count {
         if level_layout[i].kind == StructKind::Turret as u8 {
             turret_idx[turret_count] = i as u8;
             turret_count = turret_count + 1;
@@ -365,16 +353,16 @@ fn struct_balloon_draw(i: u16, sx: u16) {
 }
 
 // ------------------------------------------------------------ turrets ---
-// A turret sweeps TURRET_RANGE either side for the other side's units and,
+// A turret sweeps turret_range either side for the other side's units and,
 // if it is the enemy's, the helicopter - which it prefers, being the one
-// thing that can come to it. It fires a round every TURRET_RATE frames
+// thing that can come to it. It fires a round every turret_rate frames
 // while it has a target; that rate is the plan's difficulty dial. Damage
 // from gunfire is a scratch and from a tank shell a chunk (see the stats),
 // and while any of it stands it heals a point every TURRET_REPAIR frames.
 // At zero it is nobody's and does nothing until an engineer of either side
 // walks up to it, claims it, and stands there restoring it a point a frame.
-const TURRET_RANGE:  u16 = 340;
-const TURRET_RATE:   u8  = 12;            // tier 2 of 15/12/6/2/1
+// Both are the mission's now (mission.r65): `turret_range` and
+// `turret_rate`, the plan's difficulty dial.
 const TURRET_REPAIR: u8  = 32;
 const TURRET_MUZZLE: u16 = 8;             // px above the ground line
 const TURRET_W:      u16 = 16;
@@ -387,7 +375,7 @@ const TURRET_DMG_SHELL:  u8 = 16;
 // struct_turret_target - the nearest unit of the other side within reach,
 // or UNIT_MAX. The scan runs once per shot, not per frame.
 fn struct_turret_target(i: u16) -> u16 {
-    return struct_gun_target(i, TURRET_RANGE);
+    return struct_gun_target(i, turret_range);
 }
 
 // struct_gun_target - the nearest unit of another side within *range* of
@@ -442,10 +430,10 @@ fn struct_turret_tick(i: u16) {
     }
 
     // The other side's airframe first.
-    let hx: u16 = air_target(structs[i].owner, structs[i].x + (TURRET_W >> 1), TURRET_RANGE);
+    let hx: u16 = air_target(structs[i].owner, structs[i].x + (TURRET_W >> 1), turret_range);
     if hx != AIR_NONE {
         struct_turret_fire(i, hx, air_ty);
-        structs[i].t = TURRET_RATE;
+        structs[i].t = turret_rate;
         return;
     }
 
@@ -453,7 +441,7 @@ fn struct_turret_tick(i: u16) {
     if j < UNIT_MAX {
         let w: u16 = unit_stats[units[j].kind as u16].width;
         struct_turret_fire(i, units[j].x_px + (w >> 1), (GROUND_Y - 8) << 8);
-        structs[i].t = TURRET_RATE;
+        structs[i].t = turret_rate;
     } else {
         structs[i].t = TURRET_REPAIR;
         let max: u8 = struct_stats[StructKind::Turret as u16].max_hp;

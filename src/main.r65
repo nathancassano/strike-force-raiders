@@ -39,6 +39,7 @@ include!("unit.r65")
 include!("para.r65")
 include!("order.r65")
 include!("cpu.r65")
+include!("mission.r65")
 include!("hud.r65")
 include!("radar.r65")
 include!("game.r65")
@@ -89,10 +90,20 @@ fn boot_load() {
     muni_init();
     unit_init();
     para_init();
+    // The mission comes first: struct_init lays out what it placed, and
+    // every init below reads what it set. Until the front end exists the
+    // harness picks it here, from a shoulder button held at power-on -
+    // read by hand, since the auto-read wants a frame and an NMI, and a
+    // choice made after the inits would move every timing after it.
+    let mut m: u8 = MISSION_START;
+    let pad: u16 = pad_read_manual();
+    if (pad & JOY_L) != 0 { m = MISSION_HARNESS; }
+    if (pad & JOY_R) != 0 { m = MISSION_HARNESS_HOT; }
+    if (pad & JOY_L) != 0 && (pad & JOY_R) != 0 { m = MISSION_HARNESS_COL; }
+    mission_set(m);
     struct_init();
     econ_init();
     order_init();
-    cpu_level = CPU_LEVEL;
     cpu_init();
     foe_reset();
     hud_init();
@@ -134,14 +145,6 @@ fn main() -> ! {
         pad_read_ports();
         let held: u16 = pad_poll();
         let trig: u16 = pad_poll_trigger();
-
-        // Until the front end chooses a mission: R held in the first
-        // frames after boot picks the harder CPU row (cpu.r65).
-        if frames_loop < 32 && (held & JOY_R) != 0 && cpu_level != CPU_LEVEL_HELD {
-            cpu_level = CPU_LEVEL_HELD;
-            cpu_init();
-            foe_reset();
-        }
 
         if game_state == GAME_PLAYING {
             // Holding L is the order overlay: the d-pad walks the ring and

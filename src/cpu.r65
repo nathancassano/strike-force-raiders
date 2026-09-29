@@ -42,7 +42,7 @@ struct CpuStat {
     flags:        u8,
 }
 
-static cpu_stats: [CpuStat; 10] = [
+static cpu_stats: [CpuStat; 11] = [
     CpuStat { convoy_level: 1,  order_delay: 1320, fund_min: 60, fund_max: 99, clip_speed: 176, regen_time: 240, flags: 0x08 },
     CpuStat { convoy_level: 2,  order_delay: 1320, fund_min: 55, fund_max: 99, clip_speed: 192, regen_time: 210, flags: 0x18 },
     CpuStat { convoy_level: 3,  order_delay: 1320, fund_min: 50, fund_max: 90, clip_speed: 208, regen_time: 180, flags: 0x1C },
@@ -53,14 +53,14 @@ static cpu_stats: [CpuStat; 10] = [
     CpuStat { convoy_level: 8,  order_delay: 825,  fund_min: 25, fund_max: 50, clip_speed: 288, regen_time: 30,  flags: 0xFF },
     CpuStat { convoy_level: 9,  order_delay: 733,  fund_min: 20, fund_max: 50, clip_speed: 304, regen_time: 0,   flags: 0xFF },
     CpuStat { convoy_level: 10, order_delay: 660,  fund_min: 20, fund_max: 50, clip_speed: 320, regen_time: 0,   flags: 0xFF },
+    // The harness's logistics row, not the original's: the first row's
+    // tuning with trucks and engineers allowed and nothing hunted, so a
+    // case can fly the length of the field to meet a column that has a
+    // vehicle in it. Frozen; see mission.r65's harness rows.
+    CpuStat { convoy_level: 5,  order_delay: 1320, fund_min: 60, fund_max: 99, clip_speed: 176, regen_time: 240, flags: 0x03 },
 ];
 
-// Which row, until phase 11's mission table selects one: the first
-// mission's, where the airframe only wanders and refits. R held during
-// the first frames takes the eighth's instead - the harness's way to a
-// pilot that hunts and bombs until the front end can choose a mission.
-const CPU_LEVEL:      u8 = 0;
-const CPU_LEVEL_HELD: u8 = 7;
+// Which row is the mission's: mission.r65 sets `cpu_level` from its table.
 
 // -------------------------------------------------------------- convoys ---
 // The original's build orders, verbatim: M launcher, I infantry, E
@@ -135,6 +135,12 @@ static convoys: [Convoy; 25] = [
 
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut cpu_level:  u8;      // row of cpu_stats
+// Which convoy to buy, plus one; 0 leaves the pick free. The harness
+// missions set it (mission.r65): the suite is calibrated to a column of a
+// known shape, and a free pick rides on how many times the pilot has
+// reached for cpu_rand() before the first purchase - so any change in
+// foe.r65 would re-deal the opponent's whole army.
+#[lowram] static mut cpu_forced: u8;
 #[lowram] static mut cpu_funds:  u8;
 #[lowram] static mut cpu_acc:    u16;
 #[lowram] static mut cpu_seed:   u16;     // its own xorshift, see cpu_rand
@@ -151,7 +157,7 @@ static convoys: [Convoy; 25] = [
 // cpu_init - a fresh purse and queue. The row (cpu_level) is the
 // match's, set at boot and by the front end, and survives a reset.
 far fn cpu_init() {
-    cpu_funds = ECON_START;
+    cpu_funds = start_funds;
     cpu_acc = 0;
     cpu_seed = 0xC0DE;                    // any non-zero; fixed so a boot replays
     cpu_t = 64;                           // the first convoy comes early
@@ -183,6 +189,13 @@ fn cpu_afford(c: u16) -> u8 {
 // cpu_choose - one convoy the purse allows, at random: the original's
 // rule, with no reserve. Returns CONVOY_COUNT when nothing is affordable.
 fn cpu_choose() -> u16 {
+    if cpu_forced != 0 {
+        // Told what to buy, so the tier gate - a difficulty device - does
+        // not apply; the purse still does.
+        let f: u16 = (cpu_forced - 1) as u16;
+        if convoys[f].cost <= cpu_funds { return f; }
+        return CONVOY_COUNT;              // saving for it: wait a pause
+    }
     let mut n: u16 = 0;
     for c in 0..CONVOY_COUNT {
         if cpu_afford(c) != 0 { n = n + 1; }
@@ -233,8 +246,8 @@ far fn cpu_tick() {
     // Income, as the player's: its airframe's distance into the other
     // half against the same threshold.
     cpu_acc = cpu_acc + ((WORLD_W - foe_x_px) >> ECON_SHIFT);
-    if cpu_acc >= ECON_THRESH {
-        cpu_acc = cpu_acc - ECON_THRESH;
+    if cpu_acc >= econ_thresh {
+        cpu_acc = cpu_acc - econ_thresh;
         if cpu_funds < ECON_MAX { cpu_funds = cpu_funds + 1; }
     }
 

@@ -756,7 +756,8 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
       `kill_tank`, `kill_van`, `kill_men`, `use_missile`. The rest of AA's table (napalm,
       flame thrower, scatter bomb, stealth, suicide, kill_end, kill_missile, dumb missiles,
       jamming) is out: weapons the roster does not have, or already covered (van jamming).
-      Until phase 11 selects a row per mission, `CPU_LEVEL` picks one.
+      Phase 11's `mission_stats` names the row per mission (`cpu_row`), plus a
+      harness row of its own that allows trucks and engineers but hunts nothing.
     - **The purse.** The enemy earns as the player does, from its airframe's distance into the
       player's half against the same threshold: `(WORLD_W - x) >> 4` a frame. Until slice (b)
       the airframe is a stand-in parked mid-field, so the CPU earns a fund every ~2.6 s.
@@ -844,7 +845,56 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     And the sprite budget: eight bunched tanks and a bunker on one line were 36 tiles against
     the PPU's 34 with vehicles drawn as two 16x16 cells; the second cell's live half is now
     two 8x8 sprites, three tiles a line as the design table always budgeted (28 on that line).
-11. **Campaign.** Mission table, briefing and after-action screens, SRAM persistence.
+11. **Campaign.** Mission table, briefing and after-action screens, a typed continue code.
+    *Decided at the start of the phase (2026-09-29):*
+    - **Slices, in order:** (a) the mission table - one ROM row per mission driving every knob
+      that is a constant today, and the layout derived from it; (b) the screens - title,
+      briefing, after-action - on a BG1 text page with the field hidden; (c) the continue
+      code, encoded after each mission and typed in from the title; (d) the campaign loop
+      that strings them together and the equipment-to-funds conversion between missions.
+    - **One row per mission** (`mission_stats`, ten of them): the CPU capability row it uses
+      (phase 10's `cpu_stats` index, retiring `CPU_LEVEL`/`CPU_LEVEL_HELD` and the R-at-boot
+      hack), the turret tier (fire rate and range), the economy threshold, the player's
+      starting funds and lives, and the layout parameters below. `mission_set(n)` writes them
+      into the constants' new homes; `game_reset` keeps the mission, as `cpu_level` does now.
+    - **The battlefield is derived, not transcribed.** The tier decides how many turrets and
+      bunkers stand between the bases, how they are spaced, and how many start owned rather
+      than neutral; the two banks, two bases and the super bunker are fixed. A layout is
+      then ~6 bytes a mission rather than the ~1.5 KB of AA's placement lists, and the
+      generator is the one place the difficulty curve lives. The named battlefields (Cake
+      Walk ... Midnight Oasis) stay names on the briefing screen until phase 12.
+    - **No SRAM.** Progress is the design's continue code: the mission index and the carried
+      funds, encoded as letters from the glyph row, shown after each mission and typed in
+      from the title. It is testable from a movie, which a save file is not.
+    - *Open until slice (b):* how the text page hides the field (blanking BG2-4 and OBJ, or
+      a second BG1 map DMA'd over the strip), and whether the briefing borrows the order
+      dialog's box or gets its own.
+    *Slice (a) DONE.* `src/mission.r65`: `mission_stats`, one row per mission, holding the
+    opponent's `cpu_row`, the turret rate and range, the income threshold, the starting purse
+    and lives, and the layout's counts; `mission_set` writes them into the live variables the
+    constants became (`turret_rate`, `turret_range`, `econ_thresh`, `start_funds`,
+    `start_lives`) and lays the field out. `mission_layout` derives it as planned - banks and
+    bases fixed, the super bunker dead centre, turrets and bunkers alternating through the
+    middle either side of it, `owned` of them starting on a side - and `LAYOUT_MIDDLE_MAX`
+    clamps the derived ones to what is left of the 16-slot pool: the last two missions' 13
+    middle buildings plus the 5 fixed ones overflowed it, and `mission_place` had dropped the
+    enemy base and bank in silence. All ten layouts were dumped and read back.
+    *The harness is now three missions, not a hack* (rows 10-12, unreachable by playing).
+    They carry the pre-campaign hand-made field and its tuning, frozen, so that a ground case
+    does not move when the curve is tuned. Reaching them cost the in-loop `R`-at-boot hook,
+    which called `game_reset` three frames in and moved every timing after it: `boot_load`
+    now reads the pad by hand (`pad_read_manual` - the auto-read wants a frame and an NMI that
+    have not happened yet) and `mkmovie.py` holds the button *inside* the boot prefix it
+    already emits, so the choice costs no frames at all.
+    *Found on the way:* the opponent's convoy pick rides on the pilot's coin tosses - both
+    draw `cpu_rand`, so how many times the pilot has reached for it before the first purchase
+    decides what the purse can reach, and the whole army is re-dealt by any change to
+    `foe.r65`. Hence `cpu_forced`: a harness row names the convoy to buy (the tier gate does
+    not apply to a forced pick; the purse still does), and the third harness row pairs that
+    with a logistics `cpu_stats` row - trucks and engineers allowed, nothing hunted - so a
+    case can fly the length of the field to meet a vehicle. Seven cases were re-derived
+    against the frozen rows (`unit_kinds`, `tank_crush`, `launcher_fire`, `missile_unit`,
+    `missile_air`, `missile_foe`, `foe_hunt`); the suite is green at 93.
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in
     snesgss and wire the export into the Makefile.
 

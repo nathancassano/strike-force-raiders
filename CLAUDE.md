@@ -69,9 +69,11 @@ Select), and screenshots.
     ./play.sh build/fly.png wait60,right90,shot --check-mem16 0x20=0x0140
 
 Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN`/`yN`/`lN`/`rN`.
-Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. `r3` at the start holds R
-through the first frames, which picks the eighth mission's CPU row (`CPU_LEVEL_HELD`) instead
-of the first's - the harness's stand-in for a mission select until the front end exists.
+Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. A leading `@l`, `@r` or `@l+r`
+is a **power-on hold**: it holds that button through the boot prefix, costing no frames, and
+`boot_load` reads the pad by hand (`pad_read_manual`, before the auto-read is on) to pick one
+of the three harness missions - the stand-in for a mission select until the front end exists.
+Every case in the suite carries one; `tests/run.sh`'s header says what each opponent is.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -104,6 +106,7 @@ rotor_raiders/
 │   ├── struct.r65            # Buildings: level table, turrets, bunkers, balloons, super bunker, bases, banks
 │   ├── order.r65             # Funds, the L/R order ring, the order queue
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
+│   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the harness rows
 │   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
 │   ├── hud.r65               # BG1 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
 │   ├── radar.r65             # BG1 strip row 2: the radar, a 256x8 bitmap the game draws
@@ -263,12 +266,24 @@ the field from a `--dump wram` - every unit with its links and flags, the muniti
 structures, the CPU's purse and queue (`--brief` for one line per dump) - and
 `tools/timeline.sh` takes those dumps at several frames of one run.
 
+**The campaign** (`src/mission.r65`, phase 11, bank 2) is ten missions, `mission_stats` one
+row each: the opponent's `cpu_row` and every number that used to be a constant - the turrets'
+rate and range, the income threshold, the starting purse and lives - plus how many turrets,
+bunkers and pre-owned buildings the battlefield carries. `mission_set` writes the live values
+and calls `mission_layout`, which *derives* the field from those counts (the banks and bases
+fixed at the world's ends, the super bunker dead centre, turrets and bunkers alternating
+through the contested middle either side of it) rather than transcribing the original's
+fifteen levels; `LAYOUT_MIDDLE_MAX` keeps the derived buildings inside the 16-slot pool.
+Rows 10-12 are the **harness missions**: the hand-made pre-campaign field with frozen tuning,
+reachable only by holding a shoulder button at power-on, and the whole suite runs on them -
+see `tests/run.sh`'s header. Treat their rows, their convoys and their layout as part of the
+tests.
+
 **The CPU opponent** (`src/cpu.r65`, phase 10, in bank 2 with `hud.r65` and `order.r65` -
-bank 0 is full) is the 1991 game's: a capability row per mission (`cpu_stats`; `CPU_LEVEL`
-picks one until the mission table exists) and the convoy strings verbatim (`convoy_data`, gated
-by tier, priced by `convoys`). The match runs on the first mission's row (`CPU_LEVEL` 0;
-`cpu_level` is set at boot and by the front end, and survives a reset), where the pilot only
-wanders and refits; `scatter_bomb` (from mission 8) is what lets it bomb at all, and `kill_*`
+bank 0 is full) is the 1991 game's: a capability row per mission (`cpu_stats`, picked by the
+mission's `cpu_row`) and the convoy strings verbatim (`convoy_data`, gated by tier, priced by
+`convoys`). `cpu_level` is set by `mission_set` at boot and survives a reset. On the first
+mission's row the pilot only wanders and refits; `scatter_bomb` (from mission 8) is what lets it bomb at all, and `kill_*`
 say at what. It earns as the player does from its airframe's distance into
 the player's half, and - the original's rule, from the remake's `Inventory.js` - once the last
 convoy has left the gate and the row's `order_delay` (22 s, shorter past tier 5, plus up to a
@@ -277,7 +292,11 @@ random with its own xorshift, so `rand()`'s parachute sequence stays put; broke,
 whole pause. `fund_min`/`fund_max` are the player's purse at which it will raid the bank (not a
 reserve; the original has none). The convoy drains through `cpu_tick`'s emitter under the same
 gate rules as the player's orders. Its purchase sequence from a cold boot is fixed by
-`cpu_seed` and the airframe's flight, and a dozen suite cases are calibrated to the column.
+`cpu_seed` and the airframe's flight - but *only* by those: the pilot draws the same
+`cpu_rand`, so how often it has tossed a coin before the first purchase decides what the purse
+can reach, and any change to `foe.r65` re-deals the whole army. That is what `cpu_forced` is
+for: a harness mission names the convoy to buy (the tier gate does not apply to a forced pick,
+the purse still does), so the dozen cases calibrated to a column stay put.
 
 **The enemy airframe** (`src/foe.r65`) is a second helicopter on its own `foe_*` statics with
 copies of the player's physics, loadout, fuel, pad and loss rules (a second copy of a few

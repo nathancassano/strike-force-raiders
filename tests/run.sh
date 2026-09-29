@@ -6,6 +6,21 @@
 #
 #   ./tests/run.sh            run all cases
 #   ./tests/run.sh boot       run cases whose name matches 'boot'
+#
+# Every movie starts with a power-on hold that picks one of the three
+# harness missions (src/mission.r65), which exist so a case does not move
+# when the campaign's difficulty curve is tuned:
+#
+#   @l     the quiet opponent - its pilot only wanders and refits, and it
+#          buys what its purse and its tier allow, which at that row is
+#          men. Nearly every case is written against this.
+#   @r     the hot one - it hunts, bombs and fires missiles, and buys
+#          IMEV: five men, a missile truck, two engineers, a van.
+#   @l+r   the quiet pilot with that column's vehicles, buying MIVV, the
+#          truck leading - for a case that has to fly out and meet one.
+#
+# The hold costs no frames: it sits inside the boot prefix mkmovie.py puts
+# in front of every script, and boot_load reads the pad by hand.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -203,7 +218,7 @@ else
     # Rest: heli_init's spawn, untouched by a frame of no input.
     run_case heli_rest  "shot"                --check-mem16 0x$HX=0x0040 \
                                               --check-mem16 0x$HY=0x6000
-    run_case heli_right "wait20,right30,shot" --check-mem16 0x$HX=0x00AB
+    run_case heli_right "@l,wait20,right30,shot" --check-mem16 0x$HX=0x00AB
 
     # Leftward travel exercises the borrow path in heli_move_x. `>>` is a
     # logical shift even on signed types, so a negative delta cannot be
@@ -215,7 +230,7 @@ else
     # and the ground at y=168.
     run_case heli_wall  "wait20,left60,shot"  --check-mem16 0x$HX=0x0000
     run_case heli_ceil  "wait20,up60,shot"    --check-mem16 0x$HY=0x1000
-    run_case heli_floor "wait20,down30,wait40,shot"  --check-mem16 0x$HY=0x9800
+    run_case heli_floor "@l,wait20,down30,wait40,shot"  --check-mem16 0x$HY=0x9800
 
     # Tilt is cosmetic and derived from velocity ALONG THE NOSE: OAM sprite
     # 0's tile selects the frame (0 nose-down, 4 level, 8 nose-up). Using the
@@ -228,9 +243,9 @@ else
     # tells a correct mirror from a frame picked at random.
     TILT=$(printf '%04X' $((0x$OAMB + 2)))
     ATTR=$(printf '%04X' $((0x$OAMB + 3)))
-    run_case heli_tilt_level "shot"                --check-mem 0x$TILT=0x04 \
+    run_case heli_tilt_level "@l,shot"                --check-mem 0x$TILT=0x04 \
                                                    --check-mem 0x$ATTR=0x30
-    run_case heli_tilt_right "wait20,right60,shot" --check-mem 0x$TILT=0x00 \
+    run_case heli_tilt_right "@l,wait20,right60,shot" --check-mem 0x$TILT=0x00 \
                                                    --check-mem 0x$ATTR=0x30
     run_case heli_tilt_left  "wait20,right120,left60,shot" \
                                                    --check-mem 0x$TILT=0x02 \
@@ -246,7 +261,7 @@ else
     run_case heli_turn_mid   "wait20,right120,left10,shot" \
                                                    --check-mem 0x$TILT=0xE2 \
                                                    --check-mem 0x$ATTR=0x70
-    run_case heli_turn_stall "wait20,right120,left6,wait20,shot" \
+    run_case heli_turn_stall "@l,wait20,right120,left6,wait20,shot" \
                                                    --check-mem 0x$TILT=0xE0 \
                                                    --check-mem 0x$ATTR=0x30
     run_case heli_turn_back  "wait20,right120,left6,right6,wait2,shot" \
@@ -278,12 +293,12 @@ else
     run_case ammo_rest  "shot"              --check-mem 0x$GUN=0x40 \
                                             --check-mem 0x$BOMBS=0x0A
     # HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds.
-    run_case ammo_burst "wait10,b30,shot"   --check-mem 0x$GUN=0x3B
+    run_case ammo_burst "@l,wait10,b30,shot"   --check-mem 0x$GUN=0x3B
     # Bombs are edge-triggered: holding A must not empty the rack.
     run_case ammo_bomb  "wait10,a1,shot"    --check-mem 0x$BOMBS=0x09
-    run_case ammo_bomb2 "wait10,a1,wait5,a1,shot" --check-mem 0x$BOMBS=0x08
+    run_case ammo_bomb2 "@l,wait10,a1,wait5,a1,shot" --check-mem 0x$BOMBS=0x08
     # Firing past empty must stop at zero, not wrap to 255.
-    run_case ammo_empty "wait10,b400,shot"  --check-mem 0x$GUN=0x00
+    run_case ammo_empty "@l,wait10,b400,shot"  --check-mem 0x$GUN=0x00
 
     # The gun points where the nose points, and the nose follows the last
     # commanded direction rather than the coasting velocity.
@@ -294,7 +309,7 @@ else
     # which is what stops sustained fire from starving the pool.
     run_case muni_bomb_live   "wait10,a1,shot"          --check-mem 0x$KIND=0x02
     run_case muni_bomb_fall   "wait10,a1,wait10,shot"   --check-mem 0x$KIND=0x02
-    run_case muni_bomb_ground "wait10,a1,wait40,shot"   --check-mem 0x$KIND=0x00
+    run_case muni_bomb_ground "@l,wait10,a1,wait40,shot"   --check-mem 0x$KIND=0x00
     run_case muni_gun_live    "wait10,b1,shot"          --check-mem 0x$KIND=0x01
     run_case muni_gun_range   "wait10,b1,wait45,shot"   --check-mem 0x$KIND=0x00
     # A round leaves at muzzle height: the airframe's 8.8 y plus 7 px. This
@@ -346,14 +361,14 @@ else
 
     # Full rearm: fuel back to 100, and the reload countdowns give back rounds
     # at 20 frames each and bombs at 10 while the airframe sits.
-    run_case pad_rearm "wait20,b60,a1,right180,wait60,down30,wait40,wait120,shot" \
+    run_case pad_rearm "@l,wait20,b60,a1,right180,wait60,down30,wait40,wait120,shot" \
                                              --check-mem 0x$LAND=0x01 \
                                              --check-mem 0x$FUEL=0x64 \
                                              --check-mem 0x$GUN=0x3D \
                                              --check-mem 0x$BOMBS=0x0A
 
     # One unit per 64 frames aloft.
-    run_case fuel_burn "wait20,right240,shot" --check-mem 0x$FUEL=0x60
+    run_case fuel_burn "@l,wait20,right240,shot" --check-mem 0x$FUEL=0x60
 
     # Dry tank: gravity is allowed in exactly one place in the plan and this
     # is it. The airframe sinks with no input at all, and open ground is not
@@ -361,7 +376,7 @@ else
     # and by 7200 frames the next airframe is up at hover height with a
     # full tank less the few units it has burned since.
     LIVES=$(ramaddr heli_lives)
-    run_case fuel_dry "wait7200,shot" --check-mem 0x$LIVES=0x03 \
+    run_case fuel_dry "@l,wait7200,shot" --check-mem 0x$LIVES=0x03 \
                                       --check-mem16 0x$HY=0x6000 \
                                       --check-mem 0x$LAND=0x00
 fi
@@ -386,11 +401,11 @@ if [ -z "$UK" ] || [ -z "$UX" ] || [ -z "$FNMI" ]; then
     fail=$((fail+1))
 else
     # The player's base only sends what is ordered (phase 7); the enemy's
-    # sends the CPU's convoys (phase 10). The suite runs on the first
-    # mission's row (CPU_LEVEL 0: single-unit convoys, launchers and
-    # engineers bought as men, a pilot that only wanders and refits); R
-    # held in the first frames takes the eighth's, for the cases that
-    # need launchers, vans or a pilot that hunts and bombs. On row 0 the
+    # sends the CPU's convoys (phase 10). Most cases run on the quiet
+    # harness mission (`@l`: single-unit convoys, launchers and engineers
+    # bought as men, a pilot that only wanders and refits); the other two
+    # holds take the rows with a forced column and, for `@r`, a pilot
+    # that hunts and bombs. On the quiet row the
     # first buy, at frame 64, is I - five men - so the first unit out is
     # an infantryman marching west from x=7680: the pool is a tagged
     # enum, so slot 0's kind is the first byte of its tag plane. Every
@@ -400,27 +415,24 @@ else
     # waitN,shot --dump wram x.wram` and `tools/poolstat.py --brief
     # x.wram`; every figure below came from that.
     UO=$(ramaddr units__owner)
-    run_case unit_spawn "wait200,shot"  --check-mem 0x$UK=0x04 --check-mem 0x$UO=0x01
-    run_case unit_march "wait600,shot"  --check-mem16 0x$UX=0x1CED
+    run_case unit_spawn "@l,wait200,shot"  --check-mem 0x$UK=0x04 --check-mem 0x$UO=0x01
+    run_case unit_march "@l,wait600,shot"  --check-mem16 0x$UX=0x1CED
 
     # A spawn order of Kind values becomes a variant, and the hit points
-    # come from that variant's row of unit_stats. On the eighth mission's
-    # row (R held) the first convoy is tier 8's MTEEV... - launcher, tank,
-    # two engineers, van - so by frame 2400 one of each kind is out, each
-    # checked against its tag and its hp; the launcher's payload is
-    # `armed`, 1 until it fires, and the tank's its gun reload, which
-    # with nothing in range cycles 16..0 every seventeen frames
-    # (TANK_SCAN) - a phase; re-baseline it if a change shifts the column
-    # by a frame, but do not delete it.
+    # come from that variant's row of unit_stats. The hot harness row (R
+    # held) buys IMEV and nothing else - five men, a missile truck, two
+    # engineers and a van - so by frame 2400 the column is one of every
+    # kind but the tank, each checked against its tag and its hp; the
+    # launcher's payload is `armed`, 1 until it fires. The tank's row is
+    # covered by tank_crush, which buys one.
     at() { printf '%X' $((0x$1 + $2)); }            # tag plane: one byte per slot
     hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
-    run_case unit_kinds "r3,wait2401,shot" \
-        --check-mem 0x$(at "$UK" 0)=0x03  --check-mem 0x$(hp 0)=0x08 \
-        --check-mem 0x$(at "$UD" 0)=0x01 \
-        --check-mem 0x$(at "$UK" 1)=0x01  --check-mem 0x$(hp 1)=0x19 \
-        --check-mem 0x$(at "$UD" 1)=0x10 \
-        --check-mem 0x$(at "$UK" 2)=0x05  --check-mem 0x$(hp 2)=0x05 \
-        --check-mem 0x$(at "$UK" 4)=0x02  --check-mem 0x$(hp 4)=0x0C
+    run_case unit_kinds "@r,wait2401,shot" \
+        --check-mem 0x$(at "$UK" 0)=0x04  --check-mem 0x$(hp 0)=0x05 \
+        --check-mem 0x$(at "$UK" 5)=0x03  --check-mem 0x$(hp 5)=0x08 \
+        --check-mem 0x$(at "$UD" 5)=0x01 \
+        --check-mem 0x$(at "$UK" 6)=0x05  --check-mem 0x$(hp 6)=0x05 \
+        --check-mem 0x$(at "$UK" 8)=0x02  --check-mem 0x$(hp 8)=0x0C
 
     # March order (phase 10). One speed for every unit means nothing
     # overtakes, so each side's column is a list from its lead back, and
@@ -432,7 +444,7 @@ else
     # flag set. The wait is in vblanks and the loop drops a few percent of
     # them by here; the snapshot is loop frame ~9330, the bunker at 37.
     UB=$(ramaddr units__block)
-    run_case march_order "l+a3,wait3,l+a3,wait3,l+a3,wait9600,shot" --timeout 600000 \
+    run_case march_order "@l,l+a3,wait3,l+a3,wait3,l+a3,wait9600,shot" --timeout 600000 \
         --check-mem 0x$(at "$UB" 0)=0x01 --check-mem16 0x$(at "$UX" 0)=0x138B \
         --check-mem 0x$(at "$UB" 2)=0x01 --check-mem16 0x$(at "$UX" 4)=0x136C \
         --check-mem 0x$(at "$UB" 4)=0x01 --check-mem16 0x$(at "$UX" 8)=0x134D
@@ -485,14 +497,14 @@ else
     # 0.824 - the first mission's column is three squads of men, fifteen
     # riflemen sweeping, against the eight tanks - and the smart missiles
     # 0.821.
-    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
+    run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
                                                       --check-mem16 0x$FLOOP=0x0BC1
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
     # lanes measure 16 sprites / 32 tiles on one line against 32 / 34 - the
     # sprite budget, not the CPU, is what a bigger front runs into.
-    budget_case unit_oam "$EIGHT_TANKS,wait3600,right520,wait60,shot"
+    budget_case unit_oam "@l,$EIGHT_TANKS,wait3600,right520,wait60,shot"
 fi
 
 # ---------------------------------------------------------------------------
@@ -511,37 +523,37 @@ if [ -z "$FUNDS" ] || [ -z "$SEL" ] || [ -z "$LIVES" ]; then
     fail=$((fail+1))
 else
     # 32 funds, the tank selected, four lives.
-    run_case order_boot "wait60,shot" --check-mem 0x$FUNDS=0x20 --check-mem 0x$SEL=0x02 \
+    run_case order_boot "@l,wait60,shot" --check-mem 0x$FUNDS=0x20 --check-mem 0x$SEL=0x02 \
                                       --check-mem 0x$LIVES=0x04
 
     # One press buys one tank: it comes out of the player's base at x=512
     # marching east, and the cost comes off at once.
-    run_case order_tank "l+a3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
+    run_case order_tank "@l,l+a3,wait30,shot" --check-mem 0x$FUNDS=0x1C \
         --check-mem 0x$(at "$UK" 0)=0x01 --check-mem 0x$UO=0x00 --check-mem16 0x$UX=0x0211
 
     # Right moves the ring to infantry; one order is five men, and the gate
     # lets the next out only when the last is a convoy space (32 px, 128
     # frames at a man's pace) clear of it: a minute in, one is on the field
     # and four still wait in the emitter.
-    run_case order_infantry "l+right3,wait3,l+a3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
+    run_case order_infantry "@l,l+right3,wait3,l+a3,wait60,shot" --check-mem 0x$FUNDS=0x1B \
         --check-mem 0x$(at "$UK" 0)=0x04 --check-mem 0x$QMEN=0x04
 
     # Left twice wraps to the van. Its cap is six, counted on the field and
     # in the queue: the seventh press is refused and costs nothing, so the
     # purse is 32 - 6*2, and the first van is out.
     SEVEN="l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3,wait3,l+a3"
-    run_case order_cap "l+left3,wait3,l+left3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
+    run_case order_cap "@l,l+left3,wait3,l+left3,wait3,$SEVEN,wait80,shot" --check-mem 0x$FUNDS=0x14 \
         --check-mem 0x$SEL=0x00 --check-mem 0x$(at "$UK" 0)=0x02
 
     # Right three times from the tank is the helicopter: an extra life for 20.
-    run_case order_heli "l+right3,wait3,l+right3,wait3,l+right3,wait3,l+a3,wait10,shot" \
+    run_case order_heli "@l,l+right3,wait3,l+right3,wait3,l+right3,wait3,l+a3,wait10,shot" \
         --check-mem 0x$FUNDS=0x0C --check-mem 0x$LIVES=0x05 --check-mem 0x$SEL=0x05
 
     # Income. A push to the far end and a wait there pays out; the exact
     # figure is the threshold's - and, since phase 8, the no-fly zone's:
     # the enemy base's missiles send the airframe home part way, which is
     # why it is less than it was.
-    run_case econ_income "right1500,wait300,shot" --check-mem 0x$FUNDS=0x2A
+    run_case econ_income "@l,right1500,wait300,shot" --check-mem 0x$FUNDS=0x2A
 fi
 
 # ---------------------------------------------------------------------------
@@ -558,12 +570,12 @@ if [ -z "$HHP" ] || [ -z "$SHP" ]; then
 else
     # The enemy turret at x=6656 (level entry 12) lofts rounds at an
     # approaching airframe: 20 hp becomes 14 on the way in.
-    run_case turret_heli "wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
+    run_case turret_heli "@l,wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
 
     # Land in front of it and fire back: a round is a point off its 62 -
     # five of the fifteen fired land in this time (the rest are still in
     # flight or lost to its self-repair between), and its fire keeps coming.
-    run_case turret_gunfire "wait20,right1290,down30,wait40,b90,shot" \
+    run_case turret_gunfire "@l,wait20,right1290,down30,wait40,b90,shot" \
         --check-mem 0x$(at "$SHP" 12)=0x39 --check-mem 0x$HHP=0x0E
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
@@ -582,15 +594,15 @@ else
     HX=$(ramaddr heli_x_px)
     DEAD=$(ramaddr heli_dead)
     RISE=$(ramaddr heli_rising)
-    run_case balloon_kill "up20,right401,shot" --check-mem 0x$LIVES=0x03 \
+    run_case balloon_kill "@l,up20,right401,shot" --check-mem 0x$LIVES=0x03 \
         --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x78 --check-mem16 0x$CAM=0x0799
-    run_case balloon_pan "up20,right401,wait60,shot" \
+    run_case balloon_pan "@l,up20,right401,wait60,shot" \
         --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x3C --check-mem16 0x$CAM=0x0235
     expect_snes_none balloon_pan "14,22,28"                         # canopy
-    run_case balloon_rise "up20,right401,wait120,right10,shot" \
+    run_case balloon_rise "@l,up20,right401,wait120,right10,shot" \
         --check-mem16 0x$HX=0x0040 --check-mem 0x$DEAD=0x00 --check-mem 0x$RISE=0x01 \
         --check-mem16 0x$HY=0x9E00 --check-mem16 0x$CAM=0x0000
-    run_case balloon_respawn "up20,right401,wait192,right10,shot" \
+    run_case balloon_respawn "@l,up20,right401,wait192,right10,shot" \
         --check-mem16 0x$HX=0x004D --check-mem 0x$RISE=0x00 --check-mem16 0x$HY=0x6000
     expect_snes balloon_respawn "14,22,28" 0.02
 
@@ -599,7 +611,7 @@ else
     # at frame 64 and covers 2560 px at half a pixel a frame: by 5300 the
     # bunker is the enemy's and slot 0 is free.
     SOWN=$(ramaddr structs__owner)
-    run_case bunker_capture "wait5300,shot" --timeout 400000 \
+    run_case bunker_capture "@l,wait5300,shot" --timeout 400000 \
         --check-mem 0x$(at "$SOWN" 9)=0x01 --check-mem 0x$(at "$UK" 0)=0x00
 
     # Tanks shell the other side's turrets and bunkers, holding in place
@@ -612,7 +624,7 @@ else
     # come behind its men, who take the player's bunker before any tank
     # could shell it; the enemy side of the rule was checked on an earlier
     # column, and by planting a tank with the debugger.)
-    run_case tank_bunker "l+a3,wait3,l+a3,wait10600,shot" --timeout 600000 \
+    run_case tank_bunker "@l,l+a3,wait3,l+a3,wait10600,shot" --timeout 600000 \
         --check-mem 0x$(at "$SHP" 9)=0x00 --check-mem 0x$(at "$SOWN" 9)=0x02
 
     # Infantry gunfire: no round, the sweep that finds a target lands the
@@ -627,7 +639,7 @@ else
     # in vblanks and the loop drops some ten percent of them under fifteen
     # riflemen's sweeps by here, so the meeting drifts with every heavier
     # build; re-measure when it moves.
-    run_case rifle_fire "l+right3,wait3,l+a3,wait8200,shot" --timeout 400000 \
+    run_case rifle_fire "@l,l+right3,wait3,l+a3,wait8200,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 2)=0x00 --check-mem 0x$(at "$UK" 3)=0x00 \
         --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(hp 5)=0x01 \
         --check-mem 0x$(hp 6)=0x01 --check-mem 0x$(hp 7)=0x05 \
@@ -640,12 +652,12 @@ else
     # 6) is 200 px ahead of it. Its payload is the gun reload, cycling
     # 16..0 with nothing in range - a phase; re-baseline it if a change
     # shifts the column by a frame, but do not delete it.
-    run_case tank_crush "l+a3,wait7492,shot" --timeout 400000 \
+    run_case tank_crush "@l,l+a3,wait7492,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 1)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
         --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$(at "$UK" 4)=0x00 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(hp 0)=0x19 \
         --check-mem 0x$(at "$UK" 6)=0x04 --check-mem16 0x$(at "$UX" 12)=0x1134 \
-        --check-mem 0x$(at "$UD" 0)=0x0B
+        --check-mem 0x$(at "$UD" 0)=0x0A
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -653,17 +665,18 @@ else
 
     # The enemy base's missiles: an airframe pushed into its 320 px is lost
     # inside two hundred frames and comes back at the start with a life gone.
-    run_case base_missile "wait20,right1500,wait300,shot" --check-mem 0x$LIVES=0x03 \
+    run_case base_missile "@l,wait20,right1500,wait300,shot" --check-mem 0x$LIVES=0x03 \
                                                           --check-mem 0x$HHP=0x14
 
-    # The enemy column's launcher (the eighth row's first convoy leads
-    # with one, slot 0) fires its one homing missile at an airframe inside
-    # 224 px and is spent doing so: the slot is free, the missile lands
-    # for 10 of the 20 hp, and no life is lost. The airframe climbs first,
-    # to pass over the enemy airframe on the way, and stops at x~7100
-    # with the launcher at ~7000, short of the base's 320 px no-fly zone;
-    # the missile takes ~100 frames to climb to it.
-    run_case launcher_fire "r3,wait20,up40,right1400,wait120,shot" \
+    # The enemy column's launcher fires its one homing missile at an
+    # airframe inside LAUNCHER_RANGE (224 px) and is spent doing so: the
+    # slot is free, the missile lands for 10 of the 20 hp, and no life is
+    # lost. The third harness row (L+R) is the one for this: it buys MIVV,
+    # so the truck is the column's lead and slot 0, and its pilot hunts
+    # nothing, so the airframe can cross the field. It climbs first, to
+    # pass over the enemy airframe on the way, and stops at x~7080 with
+    # the truck just ahead, short of the base's 320 px no-fly zone.
+    run_case launcher_fire "@l+r,wait20,up40,right1400,wait120,shot" \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$HHP=0x0A \
         --check-mem 0x$LIVES=0x04
 
@@ -675,7 +688,7 @@ else
     # inside the 224 px too, holds, still armed (its payload 1), until
     # that missile is spent.
     MK=$(ramaddr muni_kind)
-    run_case launcher_one "l+left3,wait3,l+a3,wait3,l+a3,wait2262,shot" \
+    run_case launcher_one "@l,l+left3,wait3,l+a3,wait3,l+a3,wait2262,shot" \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 2)=0x03 \
         --check-mem 0x$(at "$UD" 2)=0x01 --check-mem 0x$(at "$MK" 5)=0x05
 
@@ -688,7 +701,7 @@ else
     # is what keeps a build a few hundred cycles slower from failing the
     # case.
     SMEN=$(ramaddr structs__men)
-    run_case super_manned "wait8200,shot" --timeout 400000 \
+    run_case super_manned "@l,wait8200,shot" --timeout 400000 \
         --check-mem 0x$(at "$SMEN" 7)=0x05 --check-mem 0x$(at "$SOWN" 7)=0x01
 fi
 
@@ -709,7 +722,7 @@ if [ -z "$RB" ]; then
     echo "FAIL radar:addr (radar_buf not found in build/main.asm)"; fail=$((fail+1))
 else
     rb() { printf '%X' $((0x$RB + $1)); }
-    run_case radar_boot "wait16,shot" \
+    run_case radar_boot "@l,wait16,shot" \
         --check-mem 0x$(rb 0)=0xFF --check-mem 0x$(rb 1)=0x00 \
         --check-mem 0x$(rb 2)=0xCF --check-mem 0x$(rb 3)=0x30 \
         --check-mem 0x$(rb 4)=0xCF --check-mem 0x$(rb 5)=0x30 \
@@ -721,7 +734,7 @@ else
         --check-mem 0x$(printf '%X' $((0x$OAMB + 10)))=0x1F
     # Flown east 240 frames: the airframe's block has left tile 0, so the
     # bank's tick stands alone, and the bracket sprite is at camera_x/32.
-    run_case radar_flown "wait20,right240,wait20,shot" \
+    run_case radar_flown "@l,wait20,right240,wait20,shot" \
         --check-mem 0x$(rb 2)=0xFF --check-mem 0x$(rb 3)=0x00 \
         --check-mem 0x$(rb 6)=0xEF --check-mem 0x$(rb 7)=0x10 \
         --check-mem 0x$(printf '%X' $((0x$OAMB + 8)))=0x25
@@ -741,9 +754,9 @@ OVS=$(ramaddr hud_ov_shown)
 if [ -z "$OVS" ]; then
     echo "FAIL overlay:addr (hud_ov_shown not found in build/main.asm)"; fail=$((fail+1))
 else
-    run_case overlay_show "wait30,l20,l+right3,l+select3" \
+    run_case overlay_show "@l,wait30,l20,l+right3,l+select3" \
         --check-mem 0x$OVS=0x01 --check-mem 0x$SEL=0x03 --check-mem16 0x$HX=0x0040
-    run_case overlay_hide "wait30,l20,l+right3,l10,wait5,shot" \
+    run_case overlay_hide "@l,wait30,l20,l+right3,l10,wait5,shot" \
         --check-mem 0x$OVS=0x00 --check-mem 0x$SEL=0x03 --check-mem16 0x$HX=0x0040
 fi
 
@@ -764,19 +777,19 @@ if [ -z "$MEN" ]; then
     echo "FAIL para:addr (heli_men not found in build/main.asm)"; fail=$((fail+1))
 else
     BOARD="l+right3,wait3,l+a3,wait20,right180,wait60,down30,wait40,wait2800"
-    run_case airlift_board "$BOARD,shot" --timeout 200000 \
+    run_case airlift_board "@l,$BOARD,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 4)=0x00
     # In the field: landed on open ground at x 714 facing east, the men walk
     # up behind the tail from the base and board there too; no deck needed.
-    run_case airlift_field "l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1600,shot" \
+    run_case airlift_field "@l,l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1600,shot" \
         --timeout 200000 --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 --check-mem 0x$ONPAD=0x00
     # Men aboard go down with the airframe: five aboard, then a balloon
     # (the player's own bunker's, at x=2048) and the next airframe has none.
-    run_case airlift_lost "$BOARD,up+right36,right220,shot" --timeout 200000 \
+    run_case airlift_lost "@l,$BOARD,up+right36,right220,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x00 --check-mem 0x$LIVES=0x03
     DROPS="x3,wait40,x3,wait40,x3,wait40,x3,wait40,x3"
-    run_case airlift_drop "$BOARD,up20,right40,$DROPS,wait140,shot" --timeout 200000 \
+    run_case airlift_drop "@l,$BOARD,up20,right40,$DROPS,wait140,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x00 \
         --check-mem 0x$(at "$UK" 21)=0x04 --check-mem 0x$(at "$UK" 22)=0x04 \
         --check-mem 0x$(at "$UK" 23)=0x04 --check-mem 0x$(at "$UK" 24)=0x00 \
@@ -799,13 +812,13 @@ else
     # Five passes into the enemy base's missiles lose all four airframes:
     # the match ends (2 = DEFEAT) and the last one is not replaced.
     PASS_="wait20,right1500,wait300"
-    run_case game_lost "$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,shot" --timeout 300000 \
+    run_case game_lost "@l,$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,shot" --timeout 300000 \
         --check-mem 0x$GS=0x02 --check-mem 0x$LIVES=0x00
 
     # Start begins a fresh match: playing, four lives, the airframe at the
     # start, the camera at the west edge.
     CAMX=$(ramaddr camera_x)
-    run_case game_reset "$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,start,wait10,shot" --timeout 300000 \
+    run_case game_reset "@l,$PASS_,$PASS_,$PASS_,$PASS_,$PASS_,start,wait10,shot" --timeout 300000 \
         --check-mem 0x$GS=0x00 --check-mem 0x$LIVES=0x04 \
         --check-mem16 0x$HX=0x0040 --check-mem16 0x$CAMX=0x0000
 fi
@@ -818,8 +831,8 @@ fi
 # airframe leaving its start at the far edge, faster as it flies deeper.
 # It buys as the original does: a random convoy it can afford, once the
 # last has left the gate and the row's pause (22 s here) has run. On
-# the first mission's row (CPU_LEVEL 0: tier 1, so single units, with
-# launchers and engineers bought as men) the first buy at frame 64 is I
+# the quiet harness row (tier 1, so single units, with launchers and
+# engineers bought as men) the first buy at frame 64 is I
 # - five men for 5 - so by loop frame 315 the purse reads 29 with no
 # income yet, the queue is drained, and the fifth man is waiting on the
 # gate. The whole purchase sequence from a cold boot is fixed by the seed
@@ -836,7 +849,7 @@ if [ -z "$CF" ] || [ -z "$CQ" ]; then
     echo "FAIL cpu:addr (cpu_funds/cpu_q not found in build/main.asm)"
     fail=$((fail+1))
 else
-    run_case cpu_purse "wait300,shot" --check-mem 0x$CF=0x1D \
+    run_case cpu_purse "@l,wait300,shot" --check-mem 0x$CF=0x1D \
         --check-mem 0x$(at "$CQ" 0)=0x03 \
         --check-mem 0x$CH=0x01 --check-mem 0x$CT=0x01 --check-mem 0x$CM=0x01
 fi
@@ -844,9 +857,9 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 10 - the enemy airframe and its pilot (src/foe.r65). The player's
 # physics and loadout on its own state, and a pilot adapted from Armor
-# Alley's: refit, dodge, hunt, bomb, wander, in that order. On the first
-# mission's row it only wanders and refits; R held in the first frames
-# takes the eighth's, where it hunts the player's airframe and bombs.
+# Alley's: refit, dodge, hunt, bomb, wander, in that order. On the quiet
+# harness row it only wanders and refits; `@r` takes the hot one, where
+# it hunts the player's airframe and bombs.
 # ---------------------------------------------------------------------------
 FX=$(ramaddr foe_x_px)
 FY=$(ramaddr foe_y)
@@ -863,7 +876,7 @@ else
     # Wander: from the far edge it flies west at its row's clip speed
     # (176/64 = 2.75 px/frame) toward the player's end on the weave (four
     # heights, one every 64 frames); at frame 1215 it is at 4768, full.
-    run_case foe_patrol "wait1200,shot" --check-mem16 0x$FX=0x12A0 \
+    run_case foe_patrol "@l,wait1200,shot" --check-mem16 0x$FX=0x12A0 \
         --check-mem 0x$FHP=0x14 --check-mem 0x$FS=0x00 --check-mem 0x$FL=0x04
 
     # The pad. Fuel drains a unit every 64 frames; under 14 plus a unit
@@ -871,7 +884,7 @@ else
     # airframe centred at 7075), comes down at 2 px/frame easing to 0.75
     # for the last 24, lands at ~5780 and refuels a unit every 4 frames -
     # and repairs a point every 16 - before leaving full at ~6220.
-    run_case foe_pad "wait6000,shot" --check-mem16 0x$FX=0x1BA3 \
+    run_case foe_pad "@l,wait6000,shot" --check-mem16 0x$FX=0x1BA3 \
         --check-mem16 0x$FY=0x9800 --check-mem 0x$FLAND=0x01 --check-mem 0x$FS=0x01
 
     # The player's turret at 1536 fires on it as on the player's: the
@@ -879,29 +892,29 @@ else
     # (the four-height, 16-frame weave at full vertical speed), and comes
     # out about seven points down each time - here 13 at frame 3000, and
     # alive; the deck repairs it.
-    run_case foe_turret "wait3000,shot" --check-mem 0x$FHP=0x0D --check-mem 0x$FL=0x04
+    run_case foe_turret "@l,wait3000,shot" --check-mem 0x$FHP=0x0D --check-mem 0x$FL=0x04
 
     # The player's gun. The airframe waits at x~764, where the wander's
     # west turn (900) brings the enemy airframe into the gun's 320 px,
     # and fires for 150 frames: five rounds land, a point each, and the
     # enemy fires back on the way past - it shoots whatever is level, in
     # reach and faced, whether or not it hunts.
-    run_case foe_gun "wait20,right130,wait2400,b150,shot" --check-mem 0x$FHP=0x0F \
+    run_case foe_gun "@l,wait20,right130,wait2400,b150,shot" --check-mem 0x$FHP=0x0F \
         --check-mem 0x$FL=0x04 --check-mem 0x$HHP=0x13
 
-    # The hunt (eighth row). Flown out to ~3100 and left hovering: the
-    # enemy airframe, hunting, arrives at a standoff, level, and fires
-    # until the player's airframe is lost - twenty points of gunfire -
-    # then wanders on, and is lost itself to the player's turret on its
-    # bombing pass.
-    run_case foe_hunt "r3,wait20,right600,wait900,shot" --check-mem 0x$LIVES=0x03 \
-        --check-mem 0x$FL=0x03
+    # The hunt (hot harness row). Flown out to ~3100 and left hovering:
+    # the enemy airframe, hunting, arrives at a standoff, level, and fires
+    # until the player's airframe is lost - twenty points of gunfire and a
+    # missile - then goes on to its next target with all four lives (what
+    # the player's turret does to it on a bombing pass is foe_turret's).
+    run_case foe_hunt "@r,wait20,right600,wait900,shot" --check-mem 0x$LIVES=0x03 \
+        --check-mem 0x$FL=0x04
 
     # The bombs (eighth row). A bought tank, marching east from the base,
     # is found by the pilot on its way in - kill_tank and scatter_bomb are
     # on - and bombed from a hover over it: by frame 3000 the slot is
     # free, the tank having reached ~2000 otherwise (unit_budget's).
-    run_case foe_bomb "r3,l+a3,wait3000,shot" --check-mem 0x$(at "$UK" 0)=0x00 \
+    run_case foe_bomb "@r,l+a3,wait3000,shot" --check-mem 0x$(at "$UK" 0)=0x00 \
         --check-mem 0x$LIVES=0x04
 
     # Smart missiles, the Y weapon: two per load, locked at launch on the
@@ -912,27 +925,34 @@ else
     # all men.
     MISS=$(ramaddr heli_missiles)
     FMISS=$(ramaddr foe_missiles)
-    run_case missile_hold "wait20,y1,wait20,shot" --check-mem 0x$MISS=0x02
+    run_case missile_hold "@l,wait20,y1,wait20,shot" --check-mem 0x$MISS=0x02
 
-    # A vehicle: flown east to ~7100 with the eighth row's column ahead,
-    # one press takes the tank at 7200 - slot 1, the column's lead - and
-    # leaves the engineer behind it the new lead.
-    run_case missile_unit "r3,wait20,right1400,y1,wait60,shot" \
-        --check-mem 0x$MISS=0x01 --check-mem 0x$(at "$UK" 1)=0x00 \
-        --check-mem 0x$(at "$UK" 2)=0x05
+    # A vehicle: flown east to ~6700 against the third harness row's MIVV
+    # column, one press takes the missile truck leading it at ~7100 -
+    # slot 0 - and leaves the man behind it the new lead. The airframe
+    # holds 400 px off, inside the missile's 640 but outside the truck's
+    # own 224, so the empty slot can only be the missile's work; it takes
+    # ~150 frames to cover the gap, and the men ahead of a mid-column
+    # vehicle would otherwise take the hit first (which is why the column
+    # for this one is led by the truck).
+    run_case missile_unit "@l+r,wait20,right1330,y1,wait180,shot" \
+        --check-mem 0x$MISS=0x01 --check-mem 0x$(at "$UK" 0)=0x00 \
+        --check-mem 0x$(at "$UK" 1)=0x04
 
-    # The other airframe: fired as it closes at ~2500 with the player at
-    # 2114, it runs it down inside forty frames - a life gone and the next
-    # one waiting out its row's regen_time at the far edge.
-    run_case missile_air "r3,wait20,right400,wait860,y1,wait40,shot" \
-        --check-mem 0x$MISS=0x01 --check-mem 0x$FL=0x03 --check-mem 0x$FDEAD=0x1D
+    # The other airframe: fired as it closes at ~2300 with the player at
+    # 2114, it runs it down inside seventy frames - a life gone and the
+    # next one waiting out its row's regen_time (30) at the far edge, four
+    # frames into the count when the shot is taken.
+    run_case missile_air "@r,wait20,right400,wait860,y1,wait70,shot" \
+        --check-mem 0x$MISS=0x01 --check-mem 0x$FL=0x03 --check-mem 0x$FDEAD=0x1A
 
     # And the pilot's own, the original's `useMissile`: parked at the
     # ceiling mid-field, the player is out of the gun's line but not the
-    # missile's - once the mode roll at frame 2048 turns the hunt on, the
-    # pilot climbs after it and spends one. The player is lost with its
-    # health untouched, which is what tells a missile from the gun.
-    run_case missile_foe "r3,wait20,up40,right600,wait1900,shot" \
+    # missile's - the hunting pilot climbs after it and spends one. The
+    # player is lost with its health untouched, which is what tells a
+    # missile from the gun; the shot is taken before the pilot is lost
+    # itself, since a fresh airframe comes with a fresh pair of missiles.
+    run_case missile_foe "@r,wait20,up40,right600,wait1400,shot" \
         --check-mem 0x$FMISS=0x01 --check-mem 0x$LIVES=0x03 --check-mem 0x$HHP=0x14
 
     # Two airframes that meet are both lost (foe_collide); the pilot
@@ -940,6 +960,35 @@ else
     # the meeting cannot be scripted in useful time - it was pinned here
     # before the pilot existed (a charge at the patrol: both lost, the
     # enemy's next airframe waiting out regen_time).
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 11 - the campaign (src/mission.r65). Every case above holds a
+# shoulder button at power-on and so runs on a frozen harness row; this
+# one boots with nothing held, which is the campaign's first mission, and
+# checks that mission_set and the derived layout ran.
+# ---------------------------------------------------------------------------
+MISSION=$(ramaddr mission)
+LCOUNT=$(ramaddr level_count)
+SKIND=$(ramaddr structs__kind)
+SX=$(ramaddr structs__x)
+if [ -z "$MISSION" ] || [ -z "$SX" ]; then
+    echo "FAIL mission:addr (mission symbols not found in build/main.asm)"
+    fail=$((fail+1))
+else
+    sk() { printf '%X' $((0x$SKIND + $1)); }
+    sx() { printf '%X' $((0x$SX + 2 * $1)); }
+    # Cake Walk: row 0 asks for two turrets, one bunker and nothing
+    # pre-owned, so the derived field is eight buildings west to east -
+    # bank, base, turret, bunker, the super bunker dead centre, turret,
+    # base, bank - with the middle three spaced through the contested
+    # span. The pool must come out sorted: the draw cull and the munition
+    # test both stop at the first building east of what they are asking
+    # about. Kinds: 0 turret, 1 bunker, 2 super, 3 base, 4 bank.
+    run_case mission_first "wait300,shot" \
+        --check-mem 0x$MISSION=0x00 --check-mem 0x$LCOUNT=0x08 \
+        --check-mem16 0x$(sx 2)=0x0600 --check-mem 0x$(sk 3)=0x01 \
+        --check-mem16 0x$(sx 4)=0x0FEC --check-mem16 0x$(sx 7)=0x1F80
 fi
 
 # ---------------------------------------------------------------------------

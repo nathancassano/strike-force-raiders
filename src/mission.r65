@@ -1,0 +1,271 @@
+// mission - the campaign's ten rows, and the battlefield each one lays out.
+//
+// Everything that was a tuning constant is a column here: which of the
+// CPU's capability rows the opponent uses, how fast and far the turrets
+// shoot, how quickly the purses fill, what the player starts with, and
+// the shape of the field. `mission_set` writes the row into the live
+// values the rest of the game reads, so a mission is chosen once and
+// nothing else has to know a campaign exists.
+//
+// The battlefield is derived rather than transcribed. The two banks, the
+// two bases and the super bunker dead centre are fixed; between them the
+// row says how many turrets and bunkers stand and how many of them each
+// side already owns, and `mission_layout` spaces them evenly across the
+// contested middle. That keeps a mission to a handful of bytes and puts
+// the difficulty curve in one table instead of ten placement lists.
+
+#[bank(2)]
+
+// The ten of the campaign, and two past them: the harness's fixed field,
+// against three opponents. None is reachable by playing - mission_set
+// clamps a campaign index to the tenth - and they exist so the suite's
+// cases have ground that does not move when the campaign's curve is
+// tuned. Their rows, their convoys and their layout are frozen; treat
+// them as part of the tests.
+const MISSION_COUNT:   u8 = 10;
+const MISSION_HARNESS: u8 = 10;   // quiet pilot, its own column: cpu_stats row 0
+const MISSION_HARNESS_HOT: u8 = 11;   // the hunting, bombing pilot, forced column
+const MISSION_HARNESS_COL: u8 = 12;   // logistics pilot, forced column
+const MISSION_ROWS:    u8 = 13;
+
+// Where a fresh boot starts, until the front end picks. In the meantime
+// the harness reaches its rows by holding a shoulder button through the
+// first frames - L for the quiet one, R for the hot one, both for the
+// quiet one with the forced column - which is what the suite's `@l`,
+// `@r` and `@l+r` movies do. The front end retires all three.
+const MISSION_START: u8 = 0;
+// What the forced harness rows buy. Forcing is the only way the suite
+// sees an enemy vehicle at a known place: left to itself the opponent
+// buys what its purse and its tier allow, at random, and the draw moves
+// with every change to the pilot.
+//
+// `IMEV` (index 11 of cpu.r65's table) is five men, a missile truck, two
+// engineers and a van - one of every kind but the tank, which is what a
+// case reading the stats table off a column wants. `MIVV` (index 12) is a
+// missile truck, five men and two vans: the truck leads, which is what a
+// case that has to reach a vehicle wants, since the column marches west
+// and anything fired at it from the west meets the lead first.
+const CONVOY_HARNESS:     u8 = 11;
+const CONVOY_HARNESS_COL: u8 = 12;
+
+// The names, eight capitals each, padded - the original's, in order.
+// The briefing screen reads them; until then they are the record of which
+// mission a row is.
+static mission_names: [u8; 80] = "CAKE WALONE GUN SUCKER PAIRBORNETWO GUN SUPERBNKSCRAPYRDBLINDSPTWASTELNDMIDNIGHT";
+
+#[soa]
+struct MissionStat {
+    cpu_row:    u8,       // index into cpu_stats (phase 10's capability table)
+    turret_rate: u8,      // frames between a turret's rounds: the difficulty dial
+    turret_range: u16,    // and how far it sweeps
+    econ_thresh: u16,     // the pace of both purses
+    start_funds: u8,
+    start_lives: u8,
+    turrets:    u8,       // how many stand between the bases ...
+    bunkers:    u8,
+    owned:      u8,       // ... and how many at each end start owned rather than neutral
+}
+
+// The curve. Turret rate follows the plan's 15/12/6 - capped at 6, since
+// the two hottest tiers would need more rounds than the munition pool
+// holds - and the field fills out as the missions climb: the first is two
+// turrets and a bunker, all neutral, the last a gauntlet with both ends
+// already fortified.
+//
+// `turrets + bunkers` may not pass LAYOUT_MIDDLE_MAX, nor either count
+// pass 8: the structure pool holds STRUCT_MAX with the two banks, the two
+// bases and the super bunker already in it, and struct.r65 indexes the
+// turrets and the bunkers through lists of eight. The last two missions
+// are harder by ownership and rate of fire rather than by count, which is
+// where the difficulty was going anyway - a field of sixteen buildings is
+// as many as one screen's worth of scanlines can carry.
+static mission_stats: [MissionStat; 13] = [
+    MissionStat { cpu_row: 0, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 2, bunkers: 1, owned: 0 },
+    MissionStat { cpu_row: 1, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 3, bunkers: 2, owned: 0 },
+    MissionStat { cpu_row: 2, turret_rate: 14, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 2, owned: 1 },
+    MissionStat { cpu_row: 3, turret_rate: 13, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 3, owned: 1 },
+    MissionStat { cpu_row: 4, turret_rate: 12, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 4, turrets: 5, bunkers: 3, owned: 1 },
+    MissionStat { cpu_row: 5, turret_rate: 11, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 3, turrets: 5, bunkers: 4, owned: 2 },
+    MissionStat { cpu_row: 6, turret_rate: 10, turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 4, owned: 2 },
+    MissionStat { cpu_row: 7, turret_rate: 9,  turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 5, owned: 2 },
+    MissionStat { cpu_row: 8, turret_rate: 8,  turret_range: 380, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 3 },
+    MissionStat { cpu_row: 9, turret_rate: 6,  turret_range: 400, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 4 },
+    // The harness rows: the tuning the suite's cases were written
+    // against, and a layout laid by hand rather than by the curve (see
+    // mission_layout_harness). The counts here are ignored - the hand
+    // layout decides - and the two differ only in the opponent they face.
+    // Frozen: changing either re-pins two dozen cases.
+    MissionStat { cpu_row: 0, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
+    MissionStat { cpu_row: 7, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
+    MissionStat { cpu_row: 10, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
+];
+
+// ---------------------------------------------------------------- state ---
+// The live values the game reads. They were constants until the campaign
+// came; the names are the constants' with the `_` of a variable.
+#[lowram] static mut mission:      u8;    // 0..MISSION_COUNT-1
+#[lowram] static mut turret_rate:  u8;
+#[lowram] static mut turret_range: u16;
+#[lowram] static mut econ_thresh:  u16;
+#[lowram] static mut start_funds:  u8;
+#[lowram] static mut start_lives:  u8;
+
+// mission_set - choose a mission. Writes the row into the live values and
+// lays the battlefield out; the callers' own inits then run against them,
+// so this comes before game_reset rather than inside it.
+far fn mission_set(n: u8) {
+    let mut m: u8 = n;
+    if m >= MISSION_ROWS { m = MISSION_COUNT - 1; }
+    mission = m;
+    let i: u16 = m as u16;
+    cpu_level    = mission_stats[i].cpu_row;
+    turret_rate  = mission_stats[i].turret_rate;
+    turret_range = mission_stats[i].turret_range;
+    econ_thresh  = mission_stats[i].econ_thresh;
+    start_funds  = mission_stats[i].start_funds;
+    start_lives  = mission_stats[i].start_lives;
+    // Two of the harness rows buy IMEV and nothing else - the column the
+    // suite's launcher and smart-missile cases need (see cpu_forced). The
+    // first harness row leaves the pick free: the older half of the
+    // suite is written against the column its purse happens to buy.
+    // (The third row pairs the forced column with cpu.r65's logistics
+    // row, which hunts nothing - the only way an airframe can cross the
+    // field to meet a vehicle.)
+    cpu_forced = 0;
+    if m == MISSION_HARNESS_HOT { cpu_forced = CONVOY_HARNESS + 1; }
+    if m == MISSION_HARNESS_COL { cpu_forced = CONVOY_HARNESS_COL + 1; }
+    mission_layout();
+}
+
+// ---------------------------------------------------------------- layout ---
+// Where the fixed buildings stand. The banks sit at the world's ends, the
+// bases a screen inside them; everything else is spaced across the
+// contested middle between MID_W and MID_E.
+const LAYOUT_BANK_W:  u16 = 96;
+const LAYOUT_BASE_W:  u16 = 400;
+const LAYOUT_BASE_E:  u16 = 7728;
+const LAYOUT_BANK_E:  u16 = 8064;
+const LAYOUT_SUPER:   u16 = 4076;         // dead centre, always neutral
+const LAYOUT_MID_W:   u16 = 1536;         // the first contested slot ...
+const LAYOUT_MID_E:   u16 = 6656;         // ... and the last
+// A slot is this wide; turrets and bunkers alternate through them, so the
+// spacing falls out of how many there are rather than a table of pixels.
+const LAYOUT_SLOT_MIN: u16 = 384;
+
+// mission_layout - fill the level's placement list for the current
+// mission. The pool is built from it by struct_init, which must run
+// after; boot_load and game_reset both order it that way.
+//
+// The super bunker holds the centre, so the contested slots are laid in
+// two groups either side of it - a single run would have put a building
+// on top of it. Each group is spread evenly from its outer end inward,
+// and the kinds alternate turret-first across the whole field.
+//
+// The buildings go down west to east, which `struct.r65` depends on: the
+// draw cull and the munition test both stop at the first building east of
+// what they are looking at.
+const LAYOUT_GAP: u16 = 512;              // clear air either side of the super bunker
+// What is left of the pool once the two banks, the two bases and the
+// super bunker have their places. A row asking for more than this would
+// have pushed the enemy's base and bank off the end of the list - and the
+// van that ends a match has nothing to fly into without them - so the
+// count is clamped here rather than trusted.
+const LAYOUT_MIDDLE_MAX: u16 = STRUCT_MAX - 5;
+
+fn mission_layout() {
+    if mission >= MISSION_HARNESS {
+        mission_layout_harness();
+        return;
+    }
+    let i: u16 = mission as u16;
+    let turrets: u16 = mission_stats[i].turrets as u16;
+    let bunkers: u16 = mission_stats[i].bunkers as u16;
+    let owned:   u16 = mission_stats[i].owned as u16;
+    let mut middle: u16 = turrets + bunkers;
+    if middle > LAYOUT_MIDDLE_MAX { middle = LAYOUT_MIDDLE_MAX; }
+    let west:    u16 = (middle + 1) >> 1;  // the odd one goes west, nearest the player
+    let east:    u16 = middle - west;
+
+    level_count = 0;
+    mission_place(StructKind::Bank as u8, LAYOUT_BANK_W, SIDE_PLAYER);
+    mission_place(StructKind::Base as u8, LAYOUT_BASE_W, SIDE_PLAYER);
+
+    // West: from LAYOUT_MID_W in toward the centre.
+    let w_span: u16 = LAYOUT_SUPER - LAYOUT_GAP - LAYOUT_MID_W;
+    let mut w_step: u16 = 0;
+    if west > 1 { w_step = div16(w_span, (west - 1) as u8); }
+    let mut placed_t: u16 = 0;
+    let mut placed_b: u16 = 0;
+    for k in 0..west {
+        let x: u16 = LAYOUT_MID_W + mul16(w_step, k);
+        let mut side: u8 = SIDE_NONE;
+        if k < owned { side = SIDE_PLAYER; }
+        mission_place(mission_kind(placed_t, placed_b, turrets), x, side);
+        if mission_kind(placed_t, placed_b, turrets) == StructKind::Turret as u8 {
+            placed_t = placed_t + 1;
+        } else {
+            placed_b = placed_b + 1;
+        }
+    }
+
+    mission_place(StructKind::Super as u8, LAYOUT_SUPER, SIDE_NONE);
+
+    // East: the mirror, laid from the centre out so the list stays sorted.
+    let e_span: u16 = LAYOUT_MID_E - (LAYOUT_SUPER + LAYOUT_GAP);
+    let mut e_step: u16 = 0;
+    if east > 1 { e_step = div16(e_span, (east - 1) as u8); }
+    for k in 0..east {
+        let mut x: u16 = LAYOUT_MID_E;
+        if east > 1 { x = LAYOUT_SUPER + LAYOUT_GAP + mul16(e_step, k); }
+        let mut side: u8 = SIDE_NONE;
+        if k + owned >= east { side = SIDE_ENEMY; }
+        mission_place(mission_kind(placed_t, placed_b, turrets), x, side);
+        if mission_kind(placed_t, placed_b, turrets) == StructKind::Turret as u8 {
+            placed_t = placed_t + 1;
+        } else {
+            placed_b = placed_b + 1;
+        }
+    }
+
+    mission_place(StructKind::Base as u8, LAYOUT_BASE_E, SIDE_ENEMY);
+    mission_place(StructKind::Bank as u8, LAYOUT_BANK_E, SIDE_ENEMY);
+}
+
+// mission_kind - turret or bunker for the next slot: they alternate, a
+// turret first, and whichever runs out first leaves the rest to the other.
+fn mission_kind(placed_t: u16, placed_b: u16, turrets: u16) -> u8 {
+    if placed_t >= turrets { return StructKind::Bunker as u8; }
+    if placed_t > placed_b { return StructKind::Bunker as u8; }
+    return StructKind::Turret as u8;
+}
+
+// mission_layout_harness - the suite's field, by hand: what the level
+// looked like before the campaign derived it, so the cases that are about
+// tanks and men rather than missions keep their ground. Frozen.
+fn mission_layout_harness() {
+    level_count = 0;
+    mission_place(StructKind::Bank   as u8, 96,   SIDE_PLAYER);
+    mission_place(StructKind::Base   as u8, 400,  SIDE_PLAYER);
+    mission_place(StructKind::Turret as u8, 1536, SIDE_PLAYER);
+    mission_place(StructKind::Bunker as u8, 2048, SIDE_PLAYER);
+    mission_place(StructKind::Turret as u8, 2560, SIDE_NONE);
+    mission_place(StructKind::Bunker as u8, 3072, SIDE_NONE);
+    mission_place(StructKind::Turret as u8, 3584, SIDE_NONE);
+    mission_place(StructKind::Super  as u8, 4076, SIDE_NONE);
+    mission_place(StructKind::Turret as u8, 4608, SIDE_NONE);
+    mission_place(StructKind::Bunker as u8, 5120, SIDE_NONE);
+    mission_place(StructKind::Turret as u8, 5632, SIDE_NONE);
+    mission_place(StructKind::Bunker as u8, 6144, SIDE_ENEMY);
+    mission_place(StructKind::Turret as u8, 6656, SIDE_ENEMY);
+    mission_place(StructKind::Base   as u8, 7728, SIDE_ENEMY);
+    mission_place(StructKind::Bank   as u8, 8064, SIDE_ENEMY);
+}
+
+// mission_place - append to the placement list, west to east.
+fn mission_place(kind: u8, x: u16, owner: u8) {
+    if level_count >= STRUCT_MAX { return; }
+    level_layout[level_count].kind = kind;
+    level_layout[level_count].x = x;
+    level_layout[level_count].owner = owner;
+    level_count = level_count + 1;
+}

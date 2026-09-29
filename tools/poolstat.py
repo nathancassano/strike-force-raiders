@@ -77,7 +77,8 @@ def report(path, d, brief):
         print("   " + " ".join(us))
         print("   " + " ".join(ss))
         return
-    print(f"frame {u16('frames_loop')} (nmi {u16('frames_nmi')})")
+    m = f" mission={u8('mission')}" if "mission" in d else ""
+    print(f"frame {u16('frames_loop')} (nmi {u16('frames_nmi')}){m}")
     print(f"heli x={u16('heli_x_px')} y={u16('heli_y') >> 8} hp={u8('heli_hp')} "
           f"gun={u8('heli_gun')} bombs={u8('heli_bombs')} missiles={u8('heli_missiles')} "
           f"lives={u8('heli_lives')} funds={u8('funds')}")
