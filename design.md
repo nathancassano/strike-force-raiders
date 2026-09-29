@@ -615,7 +615,7 @@ Each phase ends in a ROM verifiable on Mesen before the next begins.
 4. ~~**Weapons and munitions.**~~ **DONE.** 16-slot munition pool (SoA, rotating free cursor,
    power-of-two mask), gunfire and bombs, the plan's 64/10 loadout, facing via OAM hflip with
    the two airframe cells swapped, ground collision against `GROUND_Y`. `src/muni.r65`, weapons
-   in `src/heli.r65`. Smart missiles deferred - they need targets to seek.
+   in `src/heli.r65`. Smart missiles deferred to phase 10's slice (d) - they need targets.
    *Verified: `tests/run.sh` cases `ammo_*` assert the loadout, the 6-frame gun rate, the
    edge-triggered bomb, that firing past empty stops at zero rather than wrapping, and facing;
    `muni_*` walk a bomb from release to ground contact and a round to the end of its range.*
@@ -821,6 +821,13 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     pilot only wanders and refits - which is what the suite runs against, with R held at
     boot as the stand-in for a mission select (the eighth row) for the cases that need the
     hunt and the bombs. Also: **only one missile truck per side fires at a time**.
+    *Slice (d) DONE.* Smart missiles, the plan's Y weapon: two per load, one per 128 frames
+    on the deck, locked at launch on the other side's airframe within 640 px or failing that
+    the nearest of its vehicles, and an outright kill for either - buildings keep their own
+    rules and are passed by. A press with nothing to lock on to is refused rather than spend
+    one. The pilot fires its own under `use_missile` while hunting or once down to 8 points
+    (the original's retaliation), one every four seconds. *Verified:* `missile_hold`,
+    `missile_unit`, `missile_air`, `missile_foe`. **Phase 10 is complete.**
     *Open:* the original's CPU helicopter has unlimited lives; ours has four - on the
     first row it survives a match, on the eighth it spends them on the player's turret.
     *Found on the way:* a compiler bug - vreg-move coalescing tested interference against

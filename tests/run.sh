@@ -414,7 +414,7 @@ else
     # by a frame, but do not delete it.
     at() { printf '%X' $((0x$1 + $2)); }            # tag plane: one byte per slot
     hp() { printf '%X' $((0x$UHP + $1)); }          # slot N's hit points
-    run_case unit_kinds "r3,wait2400,shot" \
+    run_case unit_kinds "r3,wait2401,shot" \
         --check-mem 0x$(at "$UK" 0)=0x03  --check-mem 0x$(hp 0)=0x08 \
         --check-mem 0x$(at "$UD" 0)=0x01 \
         --check-mem 0x$(at "$UK" 1)=0x01  --check-mem 0x$(hp 1)=0x19 \
@@ -483,9 +483,10 @@ else
     # scan on height: this movie sits on the budget line, so a percent of
     # frame is a dozen frames. The pilot and the original's purchasing:
     # 0.824 - the first mission's column is three squads of men, fifteen
-    # riflemen sweeping, against the eight tanks.
-    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0BC9
+    # riflemen sweeping, against the eight tanks - and the smart missiles
+    # 0.821.
+    run_case unit_budget "$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
+                                                      --check-mem16 0x$FLOOP=0x0BC1
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -563,7 +564,7 @@ else
     # five of the fifteen fired land in this time (the rest are still in
     # flight or lost to its self-repair between), and its fire keeps coming.
     run_case turret_gunfire "wait20,right1290,down30,wait40,b90,shot" \
-        --check-mem 0x$(at "$SHP" 12)=0x39 --check-mem 0x$HHP=0x0D
+        --check-mem 0x$(at "$SHP" 12)=0x39 --check-mem 0x$HHP=0x0E
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact, at frame 421 of this climb: a life gone, the airframe
@@ -620,15 +621,17 @@ else
     # column's own pace and meet its leading men at x~4100 around loop
     # frame 7210. A hundred frames on, the exchange has gone both ways:
     # the player's first two men (slots 2 and 4) and the enemy's first
-    # (slot 3) have taken three hits of 2 each and are gone, the next pair
-    # (5 and 6) stand and fight. The wait is in vblanks and the loop drops
-    # some ten percent of them under fifteen riflemen's sweeps by here,
-    # so the meeting drifts with every heavier build; re-measure when it
-    # moves.
-    run_case rifle_fire "l+right3,wait3,l+a3,wait8112,shot" --timeout 400000 \
+    # (slot 3) are gone, and the pair now facing each other - the enemy's
+    # slot 5 and the player's slot 6 - are each down to their last point,
+    # with the next of each (7 and 8) untouched behind them. The wait is
+    # in vblanks and the loop drops some ten percent of them under fifteen
+    # riflemen's sweeps by here, so the meeting drifts with every heavier
+    # build; re-measure when it moves.
+    run_case rifle_fire "l+right3,wait3,l+a3,wait8200,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 2)=0x00 --check-mem 0x$(at "$UK" 3)=0x00 \
-        --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(hp 5)=0x05 \
-        --check-mem 0x$(hp 6)=0x05
+        --check-mem 0x$(at "$UK" 4)=0x00 --check-mem 0x$(hp 5)=0x01 \
+        --check-mem 0x$(hp 6)=0x01 --check-mem 0x$(hp 7)=0x05 \
+        --check-mem 0x$(hp 8)=0x05
     # ... and a tank does not stop for the other side's men: it drives
     # over them. A bought tank (slot 0, out before the CPU's first man)
     # meets the column at x~4190 around loop frame 7300 and has rolled
@@ -637,7 +640,7 @@ else
     # 6) is 200 px ahead of it. Its payload is the gun reload, cycling
     # 16..0 with nothing in range - a phase; re-baseline it if a change
     # shifts the column by a frame, but do not delete it.
-    run_case tank_crush "l+a3,wait7486,shot" --timeout 400000 \
+    run_case tank_crush "l+a3,wait7492,shot" --timeout 400000 \
         --check-mem 0x$(at "$UK" 1)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
         --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$(at "$UK" 4)=0x00 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(hp 0)=0x19 \
@@ -650,7 +653,7 @@ else
 
     # The enemy base's missiles: an airframe pushed into its 320 px is lost
     # inside two hundred frames and comes back at the start with a life gone.
-    run_case base_missile "wait20,right1500,wait200,shot" --check-mem 0x$LIVES=0x03 \
+    run_case base_missile "wait20,right1500,wait300,shot" --check-mem 0x$LIVES=0x03 \
                                                           --check-mem 0x$HHP=0x14
 
     # The enemy column's launcher (the eighth row's first convoy leads
@@ -852,6 +855,7 @@ FL=$(ramaddr foe_lives)
 FS=$(ramaddr foe_state)
 FLAND=$(ramaddr foe_landed)
 FGUN=$(ramaddr foe_gun)
+FDEAD=$(ramaddr foe_dead)
 if [ -z "$FX" ] || [ -z "$FL" ]; then
     echo "FAIL foe:addr (foe_x_px/foe_lives not found in build/main.asm)"
     fail=$((fail+1))
@@ -899,6 +903,37 @@ else
     # free, the tank having reached ~2000 otherwise (unit_budget's).
     run_case foe_bomb "r3,l+a3,wait3000,shot" --check-mem 0x$(at "$UK" 0)=0x00 \
         --check-mem 0x$LIVES=0x04
+
+    # Smart missiles, the Y weapon: two per load, locked at launch on the
+    # other side's airframe if it is in view, else on the nearest of its
+    # vehicles, and whatever one hits is gone outright. With neither in
+    # reach the press is refused and the missile is not spent - at boot
+    # the enemy airframe is a world away and the first row's column is
+    # all men.
+    MISS=$(ramaddr heli_missiles)
+    FMISS=$(ramaddr foe_missiles)
+    run_case missile_hold "wait20,y1,wait20,shot" --check-mem 0x$MISS=0x02
+
+    # A vehicle: flown east to ~7100 with the eighth row's column ahead,
+    # one press takes the tank at 7200 - slot 1, the column's lead - and
+    # leaves the engineer behind it the new lead.
+    run_case missile_unit "r3,wait20,right1400,y1,wait60,shot" \
+        --check-mem 0x$MISS=0x01 --check-mem 0x$(at "$UK" 1)=0x00 \
+        --check-mem 0x$(at "$UK" 2)=0x05
+
+    # The other airframe: fired as it closes at ~2500 with the player at
+    # 2114, it runs it down inside forty frames - a life gone and the next
+    # one waiting out its row's regen_time at the far edge.
+    run_case missile_air "r3,wait20,right400,wait860,y1,wait40,shot" \
+        --check-mem 0x$MISS=0x01 --check-mem 0x$FL=0x03 --check-mem 0x$FDEAD=0x1D
+
+    # And the pilot's own, the original's `useMissile`: parked at the
+    # ceiling mid-field, the player is out of the gun's line but not the
+    # missile's - once the mode roll at frame 2048 turns the hunt on, the
+    # pilot climbs after it and spends one. The player is lost with its
+    # health untouched, which is what tells a missile from the gun.
+    run_case missile_foe "r3,wait20,up40,right600,wait1900,shot" \
+        --check-mem 0x$FMISS=0x01 --check-mem 0x$LIVES=0x03 --check-mem 0x$HHP=0x14
 
     # Two airframes that meet are both lost (foe_collide); the pilot
     # climbs or dives out of a closing airframe's plane (foe_evade), so

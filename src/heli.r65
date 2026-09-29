@@ -75,6 +75,7 @@ const HELI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 // loosen without re-reading the economy section.
 const HELI_GUN_MAX:  u8 = 64;
 const HELI_BOMB_MAX: u8 = 10;
+const HELI_MISSILE_MAX: u8 = 2;           // the plan's loadout: two, and they are the match
 const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 
 // Where a round leaves the airframe: the nose when facing right, the tail
@@ -99,6 +100,7 @@ const HELI_FUEL_FILL:  u8 = 4;            // frames per unit on the deck
 // same job without a modulus, which for 20 and 10 would mean a mod8 call.
 const HELI_GUN_RELOAD:  u8 = 20;
 const HELI_BOMB_RELOAD: u8 = 10;
+const HELI_MISSILE_RELOAD: u8 = 128;      // the plan's: ~4.5 s a missile on the deck
 // The deck repairs too - the plan's "full rearm", and what the enemy
 // pilot's refit rule (health under 5 counts toward a return) assumes.
 const HELI_HP_REPAIR:   u8 = 16;          // frames per point
@@ -121,7 +123,8 @@ const HELI_CRASH_VY: Q10 = 160;           // 2.5 px/frame
 #[lowram] static mut heli_vy:    Q10;
 #[lowram] static mut heli_gun:   u8;      // rounds remaining
 #[lowram] static mut heli_bombs: u8;
-#[lowram] static mut heli_missiles: u8;   // smart missiles: none until phase 10's last slice
+#[lowram] static mut heli_missiles: u8;   // smart missiles, the Y weapon
+#[lowram] static mut heli_missile_t: u8;  // frames to the next one on the deck
 #[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
 #[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
 #[lowram] static mut heli_turn: u8;       // progress through a turn, 0 = none
@@ -165,7 +168,8 @@ far fn heli_init() {
     heli_vy = Q10(0);
     heli_gun = HELI_GUN_MAX;
     heli_bombs = HELI_BOMB_MAX;
-    heli_missiles = 0;
+    heli_missiles = HELI_MISSILE_MAX;
+    heli_missile_t = HELI_MISSILE_RELOAD;
     heli_gun_cd = 0;
     heli_face_left = 0;
     heli_turn = 0;
@@ -211,7 +215,7 @@ far fn heli_collide() {
     if muni_up[1] == 0 { return; }
     for m in 0..MUNI_MAX {
         let mk: u8 = muni_kind[m];
-        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB || mk == MUNI_SMART {
             // Anything not the player's own: the enemy's, or a
             // hostile-neutral super bunker's.
             if muni_owner[m] != SIDE_PLAYER {
@@ -221,8 +225,8 @@ far fn heli_collide() {
                     if my >= hy && my < hy + HELI_H {
                         muni_drop_bomb(m);
                         muni_kind[m] = MUNI_FREE;
-                        if mk == MUNI_BOMB {
-                            heli_lost();          // a bomb ends it outright
+                        if mk == MUNI_BOMB || mk == MUNI_SMART {
+                            heli_lost();          // a bomb or a smart missile ends it outright
                             return;
                         }
                         let mut dmg: u8 = 1;
@@ -262,6 +266,13 @@ far fn heli_rearm() {
     } else {
         heli_bomb_t = HELI_BOMB_RELOAD;
         if heli_bombs < HELI_BOMB_MAX { heli_bombs = heli_bombs + 1; }
+    }
+
+    if heli_missile_t > 0 {
+        heli_missile_t = heli_missile_t - 1;
+    } else {
+        heli_missile_t = HELI_MISSILE_RELOAD;
+        if heli_missiles < HELI_MISSILE_MAX { heli_missiles = heli_missiles + 1; }
     }
 
     if heli_hp_t > 0 {
@@ -312,6 +323,18 @@ far fn heli_fire(held: u16, trig: u16) {
                 if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
                 muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
                            v, vy, BULLET_LIFE, SIDE_PLAYER);
+            }
+        }
+    }
+
+    // Y: a smart missile, one per press. It leaves from the nose and
+    // locks on the way out; with nothing to lock on to it is not spent.
+    if (trig & JOY_Y) != 0 {
+        if heli_missiles > 0 {
+            let mut mx: u16 = heli_x_px + HELI_W;
+            if heli_face_left != 0 { mx = heli_x_px; }
+            if smart_spawn(mx, heli_y + (HELI_MUZZLE_Y << 8), SIDE_PLAYER) != 0 {
+                heli_missiles = heli_missiles - 1;
             }
         }
     }

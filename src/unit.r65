@@ -453,6 +453,53 @@ fn unit_advance(i: u16) {
     }
 }
 
+// smart_spawn - a helicopter's smart missile from (*x*, *y*), locked on
+// the other side's airframe if it is up and in view, else on the nearest
+// of its vehicles. Returns 0 with nothing fired when there is neither -
+// the missile is too scarce to waste on empty sky - or when the pool is
+// full. It leaves level, at the speed of whatever it is chasing; the
+// steering in muni_update turns it.
+far fn smart_spawn(x: u16, y: u16, owner: u8) -> u8 {
+    let mut tgt: u8 = SMART_TGT_AIR;
+    let mut air: u8 = 0;
+    if owner == SIDE_PLAYER {
+        if foe_dead == 0 && foe_rising == 0 && unit_apart(foe_x_px, x) < SMART_VIEW { air = 1; }
+    } else {
+        if heli_dead == 0 && heli_rising == 0 && unit_apart(heli_x_px, x) < SMART_VIEW { air = 1; }
+    }
+    if air == 0 {
+        tgt = unit_nearest_vehicle(owner, x, SMART_VIEW);
+        if tgt == UNIT_NONE { return 0; }
+    }
+    let mut v: Q10 = SMART_SPEED;
+    if owner == SIDE_ENEMY { v = Q10(0) - SMART_SPEED; }
+    muni_spawn(MUNI_SMART, x, y, v, Q10(0), SMART_LIFE, owner);
+    if muni_last >= MUNI_MAX { return 0; }
+    muni_tgt[muni_last] = tgt;
+    return 1;
+}
+
+// unit_nearest_vehicle - the nearest vehicle of another side to *x*
+// within *range*, or UNIT_NONE. A smart missile's fallback target: men
+// are not worth one.
+far fn unit_nearest_vehicle(mine: u8, x: u16, range: u16) -> u8 {
+    let mut best: u8 = UNIT_NONE;
+    let mut best_d: u16 = range;
+    for i in 0..UNIT_MAX {
+        let k: u8 = units[i].kind as u8;
+        if k != UnitType::Free as u8 && k < UnitType::Infantry as u8 {
+            if units[i].owner != mine {
+                let d: u16 = unit_apart(units[i].x_px + (UNIT_W >> 1), x);
+                if d < best_d {
+                    best_d = d;
+                    best = i as u8;
+                }
+            }
+        }
+    }
+    return best;
+}
+
 // unit_target - nearest opposing unit within *range* ahead of unit *self_i*.
 fn unit_target(self_i: u16, range: u16) -> u16 {
     let x: u16 = units[self_i].x_px;
@@ -772,6 +819,9 @@ fn unit_damage_for(mk: u8, i: u16) -> u8 {
     }
     if mk == MUNI_BLAST {
         return 25;                        // a bomb kills what it lands on
+    }
+    if mk == MUNI_SMART {
+        return 255;                       // and so does a smart missile
     }
     return 0;
 }

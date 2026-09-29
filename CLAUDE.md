@@ -313,7 +313,17 @@ bunker, the bases and launchers all go through it, and a missile homes on the ai
 side that did not fire it. The CPU's purse reads its real position, and the radar plots it red.
 
 Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
-(`src/muni.r65`). OAM order follows the plan's importance rule: the helicopter takes slots 0-1
+(`src/muni.r65`). Two kinds home: `MUNI_MISSILE`, the buildings' and the launchers'
+anti-air missile, which steers at the other side's airframe and does 10 of its 20 points;
+and `MUNI_SMART`, either airframe's Y weapon, which locks its target at launch (`smart_spawn`:
+the other side's airframe within 640 px, else the nearest of its vehicles - never a man, and
+never nothing, since a press with neither in reach is refused rather than spend one of the
+two it carries) and kills what it hits outright, airframe or unit. Buildings keep their own
+rules, which is to say a smart missile passes them. `muni_tgt` holds the lock; a target that
+dies mid-flight leaves it flying on to expire. Both airframes reload one per 128 frames on
+the deck, and the pilot fires one (`CPU_USE_MISSILE`, four seconds apart) while hunting or
+once it is down to 8 points - the original's retaliation.
+ OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px
 culled rather than parked off-screen.
 
@@ -348,7 +358,8 @@ cell drawn over the standing man's, or at 3 px/frame with none when the chute fa
 the frame the unit pool has room. Draw order: after the munitions.
 
 Controls: hold L for the order dialog - Left/Right move the highlight, A buys - and the d-pad
-and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck.
+and A do not reach the airframe while L is down; B gun, A bomb, Y smart missile, X drop, Up
+lifts off a deck.
 The dialog (`hud_overlay`) is a box on BG1 rows 2-9 composed once at init into an 8-row
 shadow (composing it on the press cost a frame) and DMA'd as one 512-byte block on show and
 cursor move, with an all-transparent twin DMA'd on hide; its border and cursor tiles are stamped
