@@ -236,7 +236,11 @@ the economy threshold scales with the same turret tier. One row per mission hold
 Super Bunker, Scrapyard, Blind Spot, Wasteland, Midnight Oasis.
 
 **Between missions:** surviving equipment converts to starting funds (helicopter 20, van 15,
-end bunker 20, tank 5, bunker 4, turret 3, infantry 2, launcher 2). ~~Persist to SRAM.~~
+end bunker 20, tank 5, bunker 4, turret 3, infantry 2, launcher 2). *Revised in slice (d):*
+that list is on the original's money scale, not ours - `ECON_MAX` is 99 and the continue code
+carries seven bits, and four surviving airframes alone are 80, so any win at all saturated the
+carry. The airframes now do not convert (the next mission deals its row's lives anyway) and a
+ground unit converts at what it cost to buy; the buildings keep the values above. ~~Persist to SRAM.~~
 *Decided: no SRAM.* Progress is a **continue code** shown after each mission and typed in from
 the title screen; it encodes the mission index and the carried funds.
 
@@ -925,6 +929,17 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     vblank, rather than re-blitting the page in force blank on every keypress. New cases:
     `code_type`, `code_continue` (NKCH is mission 5 carrying 32), `code_bad` (one letter out
     starts a new campaign), and `screen_after` now pins the code it spells. Green at 101.
+    *Slice (d) DONE.* The loop closes: the after-action page settles the mission
+    (`campaign_settle`) and Start goes on to the next briefing with what it settled, or back to
+    the same mission after a defeat, or to the end page once the tenth is taken. The conversion
+    is the revision recorded above - purchase price for a ground unit, the original's values
+    for a held building, nothing for an airframe - and the page reports it in three lines,
+    purse, salvage and carried, so the number in the code is one that was shown. *Verified with
+    the debugger*, the winning side being unscriptable: `set` game_state to GAME_WON at a
+    snapshot break and step the movie's Start presses - mission 1 won with 32 in hand salvages
+    20 and carries 52 into mission 2's briefing, and mission 10 won reaches the end page. New
+    case `campaign_retry` drives the losing side end to end. Green at 102.
+    **Phase 11 is complete.**
 12. **Art and audio.** Replace programmer art with real pixel art; author music and SFX in
     snesgss and wire the export into the Makefile.
 

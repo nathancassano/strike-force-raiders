@@ -1053,15 +1053,36 @@ else
     # airframe takes HELI_RESPAWN plus its climb - which ends the match,
     # and Start on the frozen field brings up the after-action page. It
     # spells the code for the next run - JKDG, this mission again with
-    # the purse as it stands, since the match was lost - and leaves it
-    # typed into the title's field.
-    run_case screen_after \
-        "start,wait10,start,wait20,down40,wait200,down40,wait200,down40,wait200,down40,wait240,start,wait20,shot" \
+    # the purse the row deals, since the match was lost - and leaves it
+    # typed into the title's field. The salvage line reads 20: the
+    # player's base, all the field it still holds with its airframes
+    # gone and the middle of the first mission nobody's.
+    LOSE_MOVIE="start,wait10,start,wait20,down40,wait200,down40,wait200,down40,wait200,down40,wait240,start,wait20"
+    run_case screen_after "$LOSE_MOVIE,shot" \
         --check-mem 0x$GSTATE=0x03 --check-mem 0x$SKIND2=0x03 \
         --check-mem 0x$LIVES=0x00 \
+        --check-mem 0x$(ramaddr after_salvage)=0x14 \
+        --check-mem 0x$(ramaddr after_carry)=0x20 \
         --check-mem 0x$CLET=0x09 --check-mem 0x$(printf '%X' $((0x$CLET + 1)))=0x0A \
         --check-mem 0x$(printf '%X' $((0x$CLET + 2)))=0x03 \
         --check-mem 0x$(printf '%X' $((0x$CLET + 3)))=0x06
+    # Slice (d), the campaign loop. Start on the after-action page goes on
+    # to the next mission's briefing carrying what it settled - or back to
+    # the same mission after a defeat, which is what this drives: mission
+    # unchanged, and the purse the row deals rather than the carry.
+    #
+    # The winning side of the loop cannot be scripted in useful time (see
+    # game_won: the van end takes a march across the world, and the enemy
+    # airframe's four lives take as long). It was driven through the
+    # debugger instead - `set` game_state to GAME_WON at a snapshot_point
+    # break, then step the movie's Start presses:
+    #   mission 1 won with 32 in hand -> salvage 20, carried 52, and the
+    #   briefing that follows is mission 2 opening with 52;
+    #   mission 10 won -> after_done, and Start brings up the end page.
+    run_case campaign_retry \
+        "$LOSE_MOVIE,start,wait20,shot" \
+        --check-mem 0x$MISSION=0x00 --check-mem 0x$SKIND2=0x02 \
+        --check-mem 0x$SFUNDS=0x20
 fi
 
 # ---------------------------------------------------------------------------

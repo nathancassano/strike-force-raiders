@@ -91,6 +91,12 @@ bars, which read as vertical artifacts. The sky's bars are gone too; the hills s
 `tests/run.sh` is the regression suite; every completed phase leaves a case behind and the
 whole suite re-runs after each new phase. `./tests/run.sh NAME` filters.
 
+A state a movie cannot reach - a won match, a planted unit - is driven through the interactive
+debugger instead: pipe `break $<snapshot_point>`, `continue`, `set <addr> <val>`, `continue`,
+`screenshot <file>` / `dump wram <file>` into `mesen-gdb ROM --headless --turbo --movie x.mmo`.
+The REPL screenshots and dumps as batch mode does, and the movie keeps supplying input across
+the `set`, so the press *after* the planted state still lands.
+
 Trust VRAM/OAM dumps (`--dump`) over screenshots when debugging graphics. Measure performance
 in scanlines via the V-counter, not Mesen's "Cycles:" counter, which is blind to memory speed.
 
@@ -306,8 +312,14 @@ scrambled and cut into nibbles, each a letter A..P, so 1000 of the 65536 spellin
 anything and a mistyped one is rejected rather than silently starting the wrong mission. The
 d-pad types it over the title (a held direction repeats), the line under it says live what the
 code reads as - the mission it opens, or NEW GAME - and Start takes exactly that, the code's
-purse displacing the row's `start_funds`. The after-action page spells the code for the next
-run and leaves it typed in, so continuing is one press. Typing redraws only the five rows the
+purse displacing the row's `start_funds`. The after-action page settles the mission and spells the code for the next
+run, leaving it typed in so continuing is one press: **a won mission carries its purse plus
+what survived it** (`campaign_salvage` - a ground unit at what order.r65 charged for it, a held
+building at the design's value, the base 20), a lost one is fought again with the purse its row
+deals. The airframes deliberately do *not* convert: the original pays 20 a surviving
+helicopter, which against a two-digit purse saturates the carry on any win at all. Start on
+that page goes straight to the next mission's briefing, or to the end page once the tenth is
+taken. Typing redraws only the five rows the
 field occupies, DMA'd from the page shadow in vblank (`screen_flush`); everything else about a
 page is composed once. The glyphs are the HUD's - capitals, digits and
 spaces, nothing else, which is why the mission names spell their hyphens as spaces. **The front

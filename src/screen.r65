@@ -26,6 +26,7 @@ const SCREEN_NONE:  u8 = 0;
 const SCREEN_TITLE: u8 = 1;
 const SCREEN_BRIEF: u8 = 2;
 const SCREEN_AFTER: u8 = 3;
+const SCREEN_END:   u8 = 4;               // the campaign, won
 
 // The map is 32x32; 224 scanlines show 28 rows of it.
 const SCREEN_COLS: u16 = 32;
@@ -60,7 +61,7 @@ const SCREEN_READ_ROW:  u16 = 17;
 // Every word a page can say, one run of capitals after another, indexed
 // rather than pointed at: a near pointer to a static in this bank would be
 // read against DBR 0 and find bank 0's ROM instead.
-static scr_text: [u8; 101] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEATCODENEW GAME";
+static scr_text: [u8; 132] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEATCODENEW GAMEPURSESALVAGECARRIEDCAMPAIGN WON";
 const T_TITLE:  u16 = 0;    const T_TITLE_N:  u16 = 13;
 const T_SUB:    u16 = 13;   const T_SUB_N:    u16 = 21;
 const T_START:  u16 = 34;   const T_START_N:  u16 = 11;
@@ -73,6 +74,10 @@ const T_WON:    u16 = 76;   const T_WON_N:    u16 = 7;
 const T_LOST:   u16 = 83;   const T_LOST_N:   u16 = 6;
 const T_CODE:   u16 = 89;   const T_CODE_N:   u16 = 4;
 const T_NEW:    u16 = 93;   const T_NEW_N:    u16 = 8;
+const T_PURSE:  u16 = 101;  const T_PURSE_N:  u16 = 5;
+const T_SALV:   u16 = 106;  const T_SALV_N:   u16 = 7;
+const T_CARRY:  u16 = 113;  const T_CARRY_N:  u16 = 7;
+const T_CAMP:   u16 = 120;  const T_CAMP_N:   u16 = 12;
 
 // ------------------------------------------------------ continue code ---
 // Progress between missions is a typed code, not a save file: four
@@ -136,6 +141,74 @@ fn code_mission() -> u8 {
 // has said the code is good.
 fn code_purse() -> u8 {
     return ((code_value() >> 5) & 0x007F) as u8;
+}
+
+// -------------------------------------------------------- the campaign ---
+// What a won mission hands the next one: the equipment that survived it,
+// in funds. A lost mission hands over nothing - it is fought again as its
+// row describes it.
+//
+// Two departures from the original's conversion list, both forced by the
+// size of our purse (ECON_MAX is 99, two HUD digits, and the continue
+// code's seven bits). Its list pays 20 a surviving helicopter and 15 a
+// van, which against a 99 cap saturates on any win at all - four
+// airframes alone are 80 - and hands mission 2 a purse it cannot spend.
+// So: the airframes do not convert (the next mission deals its row's
+// lives anyway, and paying for them as well counts them twice), and a
+// ground unit converts at what it cost to put there, order.r65's price.
+// The buildings keep the original's values: they are not bought, so
+// there is no price to use instead, and holding the field should pay.
+
+// By unit tag, in UnitType order: free, tank, van, launcher, infantry,
+// engineer. An infantry order is five men for five funds, so a man is
+// one; an engineer order is two men for five.
+static salvage_unit: [u8; 6] = [0, 4, 2, 3, 1, 2];
+// And by StructKind: turret, bunker, super bunker, base, bank. The base
+// is the original's "end bunker"; the bank is not on its list.
+static salvage_struct: [u8; 5] = [3, 4, 4, 20, 0];
+
+#[lowram] static mut after_salvage: u8;   // what the field was worth ...
+#[lowram] static mut after_carry:   u8;   // ... and what the next mission gets
+#[lowram] static mut after_next:    u8;   // the mission Start goes on to
+#[lowram] static mut after_done:    u8;   // ... or 1 if that was the last
+
+// campaign_salvage - the player's surviving equipment, in funds. Capped
+// at the purse's two digits, which the code's seven bits also assume.
+fn campaign_salvage() -> u8 {
+    let mut v: u16 = 0;
+    for i in 0..UNIT_MAX {
+        if units[i].owner == SIDE_PLAYER {
+            v = v + (salvage_unit[units[i].kind as u16] as u16);
+        }
+    }
+    let mut k: u16 = 0;
+    while k < struct_count {
+        if structs[k].owner == SIDE_PLAYER {
+            v = v + (salvage_struct[structs[k].kind as u16] as u16);
+        }
+        k = k + 1;
+    }
+    if v > (ECON_MAX as u16) { v = ECON_MAX as u16; }
+    return v as u8;
+}
+
+// campaign_settle - work out what the after-action page reports and what
+// Start does next: the mission to go on to, and the purse it opens with.
+fn campaign_settle() {
+    after_salvage = campaign_salvage();
+    after_next = mission;
+    after_carry = start_funds;            // a retry gets the row's own
+    after_done = 0;
+    if game_state == GAME_WON {
+        let mut v: u16 = (funds as u16) + (after_salvage as u16);
+        if v > (ECON_MAX as u16) { v = ECON_MAX as u16; }
+        after_carry = v as u8;
+        if mission + 1 < MISSION_COUNT {
+            after_next = mission + 1;
+        } else {
+            after_done = 1;
+        }
+    }
 }
 
 // ----------------------------------------------------------- composing ---
@@ -287,18 +360,30 @@ fn screen_after() {
         screen_centre(6, T_LOST, T_LOST_N);
     }
     screen_name(9, mission);
-    screen_stat(12, T_FUNDS, T_FUNDS_N, funds);
-    screen_stat(14, T_LIVES, T_LIVES_N, heli_lives);
-    // The code for the next run: the mission after this one if it was
-    // won, this one again if it was not, and the purse as it stands. It
-    // is left typed into the title's field, so continuing is one press.
-    let mut m: u8 = mission;
-    if game_state == GAME_WON && m + 1 < MISSION_COUNT { m = m + 1; }
-    code_set(m, funds);
-    screen_text(17, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
+    // The reckoning: what was in the purse, what the field was worth, and
+    // what the next mission opens with. A won mission carries the two
+    // added together; a lost one carries its own row's funds, and the
+    // salvage line is there to say what was on the field when it went.
+    campaign_settle();
+    screen_stat(11, T_PURSE, T_PURSE_N, funds);
+    screen_stat(13, T_SALV,  T_SALV_N,  after_salvage);
+    screen_stat(15, T_CARRY, T_CARRY_N, after_carry);
+    // The code for the next run, left typed into the title's field, so
+    // continuing later is one press.
+    code_set(after_next, after_carry);
+    screen_text(18, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
     for k in 0..CODE_LEN {
-        screen_put(17, SCREEN_CODE_COL + (k << 1), hud_letter(0x41 + code_letters[k]));
+        screen_put(18, SCREEN_CODE_COL + (k << 1), hud_letter(0x41 + code_letters[k]));
     }
+    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+}
+
+// The campaign, won: the tenth mission taken. Nothing carries on from
+// here - Start goes back to the title, where a code still opens any
+// mission that was reached.
+fn screen_end() {
+    screen_centre(8,  T_WON,  T_WON_N);
+    screen_centre(11, T_CAMP, T_CAMP_N);
     screen_centre(SCREEN_PROMPT, T_START, T_START_N);
 }
 
@@ -324,6 +409,7 @@ far fn screen_show(kind: u8) {
     if kind == SCREEN_TITLE { screen_title(); }
     if kind == SCREEN_BRIEF { screen_brief(); }
     if kind == SCREEN_AFTER { screen_after(); }
+    if kind == SCREEN_END   { screen_end(); }
     screen_blit();
     game_state = GAME_SCREEN;
 }
@@ -433,6 +519,21 @@ far fn screen_tick(held: u16, trig: u16) {
     if screen_kind == SCREEN_BRIEF {
         screen_hide();
         game_reset();
+        return;
+    }
+    if screen_kind == SCREEN_AFTER {
+        // The campaign strung together: on to the next mission's
+        // briefing with what was carried, or back to the one just lost.
+        // Taking the tenth is the end of it.
+        // (campaign_settle decided this while the page was composed -
+        // game_state has been GAME_SCREEN since it went up.)
+        if after_done != 0 {
+            screen_show(SCREEN_END);
+            return;
+        }
+        mission_set(after_next);
+        start_funds = after_carry;        // mission_set wrote the row's
+        screen_show(SCREEN_BRIEF);
         return;
     }
     screen_show(SCREEN_TITLE);
