@@ -165,6 +165,11 @@ const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
 // it has cleared it, and under nobody's control.
 const HELI_Y_HOVER: u16 = 96 << 8;
 const HELI_RISE:    u16 = 1 << 8;         // px/frame, 8.8
+// An airframe lost a third or more of its flight band off the ground
+// gets one man out of the door before it goes. Landed, it is at
+// HELI_Y_MAX, under the line, so this is also the "in the air" test.
+// The band is 16..152, 136 px; a third is 45 (`/ 3` does not fold).
+const HELI_Y_BAIL:  u16 = HELI_Y_MAX - (45 << 8);
 
 // heli_init - place the airframe. Statics are declared bare because an
 // initializer on a mutable static trips the __init_start MVN/DBR bug.
@@ -189,15 +194,19 @@ far fn heli_init() {
     heli_bomb_t = HELI_BOMB_RELOAD;
     heli_hp_t = HELI_HP_REPAIR;
     heli_hp = HELI_HP_MAX;
-    heli_men = 0;                         // the men aboard went with it
+    heli_men = 0;                         // the men left aboard went with it
     heli_dead = 0;
     heli_rising = 0;
     heli_cam_step = 0;
 }
 
 // heli_lost - the airframe is gone. The next one starts from the pad
-// with a full load; the last one is the match.
+// with a full load; the last one is the match. High enough up, one of the
+// men aboard bails out as a paratrooper; the rest go with it.
 far fn heli_lost() {
+    if heli_men > 0 && heli_y <= HELI_Y_BAIL {
+        para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
+    }
     heli_lives = heli_lives - 1;
     if heli_lives == 0 {
         game_over(GAME_LOST);

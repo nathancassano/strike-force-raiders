@@ -803,6 +803,15 @@ else
     # (the player's own bunker's, at x=2048) and the next airframe has none.
     run_case airlift_lost "@l,$BOARD,up+right36,right220,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x00 --check-mem 0x$LIVES=0x03
+    # Lost a third of the band up or higher, one man bails out first: the
+    # balloon catches it at hover height, so one paratrooper is in the air
+    # ten frames on. A crash at the ground line from the same load drops
+    # nobody.
+    PL=$(ramaddr para_live)
+    run_case airlift_bail "@l,$BOARD,up+right36,right220,wait10,shot" --timeout 200000 \
+        --check-mem 0x$PL=0x01 --check-mem 0x$MEN=0x00 --check-mem 0x$LIVES=0x03
+    run_case airlift_crash "@l,$BOARD,up40,wait60,down80,wait5,shot" --timeout 200000 \
+        --check-mem 0x$PL=0x00 --check-mem 0x$MEN=0x00 --check-mem 0x$LIVES=0x03
     DROPS="x3,wait40,x3,wait40,x3,wait40,x3,wait40,x3"
     run_case airlift_drop "@l,$BOARD,up20,right40,$DROPS,wait140,shot" --timeout 200000 \
         --check-mem 0x$MEN=0x00 \

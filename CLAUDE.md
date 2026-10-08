@@ -432,7 +432,8 @@ airframe's middle boards it (five at most, and they count against the infantry c
 from an 8-slot pool of its own - units have no y - who sinks at 0.75 px/frame under a canopy
 cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
-the frame the unit pool has room. Draw order: after the munitions.
+the frame the unit pool has room. An airframe lost a third of its flight band up or higher
+(`HELI_Y_BAIL`) with men aboard drops one of them first; the rest go with it. Draw order: after the munitions.
 
 Controls: on the title, the d-pad types the continue code and Start takes what the page says;
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
