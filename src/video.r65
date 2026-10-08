@@ -201,42 +201,7 @@ far fn gnd_hdma_init() {
 // ---------------------------------------------------------------- setup ---
 // video_load - one-time PPU setup. Must run inside force blank.
 far fn video_load() {
-    // Mode 0 gives each layer its own 32-colour CGRAM block. A 2bpp tile
-    // draws from a 4-colour sub-palette, and every tilemap entry here names
-    // sub-palette 0, so only the first four colours of each block are used.
-    dma_copy_cgram(0, &BG1_PAL as far *u8, 0, BG1_PAL_SIZE);
-    dma_copy_cgram(0, &BG2_PAL as far *u8, 32, BG2_PAL_SIZE);
-    dma_copy_cgram(0, &BG3_PAL as far *u8, 64, BG3_PAL_SIZE);
-    dma_copy_cgram(0, &BG4_PAL as far *u8, 96, BG4_PAL_SIZE);
-    dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
-    dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
-    struct_palettes();              // the recoloured variants of both
-
-    dma_copy_vram(0, &BG1_CHR as far *u8, VRAM_BG1C, BG1_CHR_SIZE);
-    dma_copy_vram(0, &BG2_CHR as far *u8, VRAM_BG2C, BG2_CHR_SIZE);
-    dma_copy_vram(0, &BG3_CHR as far *u8, VRAM_BG3C, BG3_CHR_SIZE);
-    dma_copy_vram(0, &BG4_CHR as far *u8, VRAM_BG4C, BG4_CHR_SIZE);
-    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
-    dma_copy_vram(0, &BG2_MAP as far *u8, VRAM_BG2, BG2_MAP_SIZE);
-    dma_copy_vram(0, &BG3_MAP as far *u8, VRAM_BG3, BG3_MAP_SIZE);
-    dma_copy_vram(0, &BG4_MAP as far *u8, VRAM_BG4, BG4_MAP_SIZE);
-    dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
-    dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
-
-    set_bgmode!(0, 0);             // mode 0, all layers 8x8 tiles
-    set_bg1_map!(0x1E, 0);         // 32x32 - HUD does not scroll
-    set_bg2_map!(0x1C, 1);         // 64x32 - wraps at 512px
-    set_bg3_map!(0x1A, 1);
-    set_bg4_map!(0x18, 1);
-    set_bg12_chr!(0, 1);           // 4K-word units: $0000, $1000
-    set_bg34_chr!(2, 3);           // ... $2000, $3000
-
-    // Scroll registers show line (v+1), so -1 puts tilemap row 0 at the top.
-    set_bg1_vscroll!(0xFFFF);
-    set_bg2_vscroll!(0xFFFF);
-    set_bg3_vscroll!(0xFFFF);
-    set_bg4_vscroll!(0xFFFF);
-    set_bg1_hscroll!(0);
+    video_upload();                 // palettes, tiles, maps and layer registers
 
     camera_x = 0;
     focus_x = CAM_MID;
@@ -318,4 +283,49 @@ far fn focus_move(dx: i16) {
 far fn scroll_update() {
     set_bg2_hscroll!(camera_x >> 2);
     set_bg3_hscroll!(camera_x >> 3);
+}
+
+// ------------------------------------------------------------- uploads ---
+// The asset half of video_load, in bank 2 with the other boot-only code:
+// it runs once, in force blank, and bank 0 is full. Everything it calls
+// is far (the DMA helpers, struct_palettes) or a register write.
+#[bank(2)]
+
+far fn video_upload() {
+    // Mode 0 gives each layer its own 32-colour CGRAM block. A 2bpp tile
+    // draws from a 4-colour sub-palette, and every tilemap entry here names
+    // sub-palette 0, so only the first four colours of each block are used.
+    dma_copy_cgram(0, &BG1_PAL as far *u8, 0, BG1_PAL_SIZE);
+    dma_copy_cgram(0, &BG2_PAL as far *u8, 32, BG2_PAL_SIZE);
+    dma_copy_cgram(0, &BG3_PAL as far *u8, 64, BG3_PAL_SIZE);
+    dma_copy_cgram(0, &BG4_PAL as far *u8, 96, BG4_PAL_SIZE);
+    dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
+    dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
+    struct_palettes();              // the recoloured variants of both
+
+    dma_copy_vram(0, &BG1_CHR as far *u8, VRAM_BG1C, BG1_CHR_SIZE);
+    dma_copy_vram(0, &BG2_CHR as far *u8, VRAM_BG2C, BG2_CHR_SIZE);
+    dma_copy_vram(0, &BG3_CHR as far *u8, VRAM_BG3C, BG3_CHR_SIZE);
+    dma_copy_vram(0, &BG4_CHR as far *u8, VRAM_BG4C, BG4_CHR_SIZE);
+    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
+    dma_copy_vram(0, &BG2_MAP as far *u8, VRAM_BG2, BG2_MAP_SIZE);
+    dma_copy_vram(0, &BG3_MAP as far *u8, VRAM_BG3, BG3_MAP_SIZE);
+    dma_copy_vram(0, &BG4_MAP as far *u8, VRAM_BG4, BG4_MAP_SIZE);
+    dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
+    dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
+
+    set_bgmode!(0, 0);             // mode 0, all layers 8x8 tiles
+    set_bg1_map!(0x1E, 0);         // 32x32 - HUD does not scroll
+    set_bg2_map!(0x1C, 1);         // 64x32 - wraps at 512px
+    set_bg3_map!(0x1A, 1);
+    set_bg4_map!(0x18, 1);
+    set_bg12_chr!(0, 1);           // 4K-word units: $0000, $1000
+    set_bg34_chr!(2, 3);           // ... $2000, $3000
+
+    // Scroll registers show line (v+1), so -1 puts tilemap row 0 at the top.
+    set_bg1_vscroll!(0xFFFF);
+    set_bg2_vscroll!(0xFFFF);
+    set_bg3_vscroll!(0xFFFF);
+    set_bg4_vscroll!(0xFFFF);
+    set_bg1_hscroll!(0);
 }
