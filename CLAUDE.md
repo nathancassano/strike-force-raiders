@@ -427,8 +427,8 @@ pinned figure dropped more than that because that movie sits on the budget line 
 over it by a hair drops whole.
 
 The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`heli_landed`;
-`heli_on_pad` says whether it rearms), and a player infantryman within 5 px behind a landed
-airframe's tail boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
+`heli_on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
+airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
 from an 8-slot pool of its own - units have no y - who sinks at 0.75 px/frame under a canopy
 cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman

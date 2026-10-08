@@ -2,10 +2,11 @@
 // way down.
 //
 // This is the "rescue" the title descends from. A friendly infantryman
-// who walks up to within PARA_PICKUP px behind a landed airframe climbs
-// aboard - the pad does not restore men, the field does - and X drops one
-// out of the door as a paratrooper. One chute in ten fails and the man
-// splats; the rest land and walk on as ordered infantry would.
+// who walks under the middle of a landed airframe, within PARA_PICKUP px
+// of its centre, climbs aboard - the pad does not restore men, the field
+// does - and X drops one out of the door as a paratrooper. One chute in
+// ten fails and the man splats; the rest land and walk on as ordered
+// infantry would.
 //
 // A paratrooper is the one thing on the field with a height that is not
 // the airframe's, so he gets his own small pool rather than a unit slot:
@@ -16,7 +17,7 @@
 
 const PARA_MAX:    u16 = 8;
 const PARA_MASK:   u16 = 7;
-const PARA_PICKUP: u16 = 5;               // px behind the tail
+const PARA_PICKUP: u16 = 5;               // px either side of the airframe's centre
 const PARA_ABOARD: u8  = 5;               // the design's limit
 
 // Descent in 8.8 px/frame: a chute drifts down, a failed one drops.
@@ -74,21 +75,14 @@ far fn para_drop(x: u16, y: u16, owner: u8) {
     }
 }
 
-// para_pickup - one tick on the deck: a friendly infantryman within
-// PARA_PICKUP px behind the tail boards. "Behind" is the side away from
-// the nose, so it depends on the facing; a man walking east passes under
-// a west-facing airframe and boards at its tail as he leaves it.
+// para_pickup - one tick on the deck: a friendly infantryman centred
+// within PARA_PICKUP px of the airframe's centre boards. The window is the
+// middle of the airframe whatever its facing; a man is centred on it when
+// his left edge is (HELI_W - UNIT_MAN_W) / 2 past the airframe's.
 far fn para_pickup() {
     if heli_men >= PARA_ABOARD { return; }
-    let mut lo: u16 = 0;
-    let mut hi: u16 = 0;
-    if heli_face_left != 0 {
-        lo = heli_x_px + HELI_W;
-        hi = lo + PARA_PICKUP;
-    } else {
-        hi = heli_x_px;
-        if hi > PARA_PICKUP + UNIT_MAN_W { lo = hi - PARA_PICKUP - UNIT_MAN_W; }
-    }
+    let lo: u16 = heli_x_px + (HELI_W - UNIT_MAN_W) / 2 - PARA_PICKUP;
+    let hi: u16 = lo + PARA_PICKUP * 2;
     for j in 0..UNIT_MAX {
         if units[j].kind as u8 == UnitType::Infantry as u8 {
             if units[j].owner == SIDE_PLAYER {

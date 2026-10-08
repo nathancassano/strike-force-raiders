@@ -779,8 +779,8 @@ fi
 # The airlift (design.md, decided after phase 9).
 #
 # Five men are bought and the airframe lands on the player's pad facing
-# east, so its tail is west and the men walk up behind it: each boards
-# within 5 px of the tail. Lifted off, X drops one per press; a chute
+# east and the men walk up from the west: each boards under its middle,
+# within 5 px of its centre. Lifted off, X drops one per press; a chute
 # takes ~20 frames from this height, and a landed man is an infantryman
 # again. The RNG is consumed by nothing else, so from a cold boot the
 # sequence is fixed: the third and fourth chutes are the ones in ten that
@@ -796,7 +796,7 @@ else
         --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 \
         --check-mem 0x$(at "$UK" 0)=0x00 --check-mem 0x$(at "$UK" 4)=0x00
     # In the field: landed on open ground at x 714 facing east, the men walk
-    # up behind the tail from the base and board there too; no deck needed.
+    # up under it from the base and board there too; no deck needed.
     run_case airlift_field "@l,l+right3,wait3,l+a3,wait20,right120,wait60,down30,wait40,wait1600,shot" \
         --timeout 200000 --check-mem 0x$MEN=0x05 --check-mem 0x$LAND=0x01 --check-mem 0x$ONPAD=0x00
     # Men aboard go down with the airframe: five aboard, then a balloon

@@ -151,7 +151,7 @@ man's pace that put five in a heap.)*
 - Reload while landed: +1 gun/20f, +1 bomb/10f, +1 missile/128f. Ammo is the real bottleneck
   (~21 s from empty) — that gating is deliberate, keep it.
 - **Men are not restored by the pad** — you pick them up off the ground: a friendly infantryman
-  **within 5 px behind a landed airframe** boards it, five aboard at most. **X drops them as
+  **within 5 px of a landed airframe's middle** boards it, five aboard at most. **X drops them as
   paratroopers** (parachute sprite, the ~10 % failure below), one per press; a man who lands
   walks on as ordered infantry would.
 - **Losing an airframe**: the sprite goes, the view pans home inside 120 frames, and the next
@@ -268,7 +268,7 @@ to deliver briefings and in-battle warnings (van approaching, bank robbed, low f
 - **Barrage balloons kill helicopters on contact**. ~~A *detached* chain is neutral and
   dangerous to both sides.~~ *Dropped after phase 9: the balloon is shot down and regrows; the
   chain never detaches.*
-- **Landing next to friendly infantry picks them up** (max 5, within 5 px behind the airframe).
+- **Landing next to friendly infantry picks them up** (max 5, within 5 px of the airframe's middle).
   This is the "rescue" the title descends from, and the reason to airlift men to forward bunkers
   rather than walk them across.
 - ~~**Enemy infantry touching your landed helicopter destroys it.**~~ *Dropped after phase 9:
@@ -733,8 +733,8 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    hidden glyph row and read back from the tilemap like the digits. Start resets by re-running
    every subsystem's init. *Verified: the loss and the reset by suite (five passes into the
    enemy base's missiles); the van end by planting one at the enemy base with the debugger.*
-9b. ~~**The airlift.**~~ **DONE.** `src/para.r65`: boarding within 5 px behind a landed
-   airframe's tail, X drops paratroopers from an 8-slot pool with its own y, one chute in ten
+9b. ~~**The airlift.**~~ **DONE.** `src/para.r65`: boarding within 5 px of a landed
+   airframe's middle, X drops paratroopers from an 8-slot pool with its own y, one chute in ten
    fails, a landed man is an infantryman again; men aboard count against the cap. With it the
    order controls moved to the overlay scheme - hold L, Left/Right, A - freeing X, and the
    overlay itself is a BG1 dialog under the strip: icon, name and cost per line, a cursor on the
