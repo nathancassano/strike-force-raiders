@@ -151,6 +151,8 @@ far fn para_draw() {
                     bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
                     cx = (sx - UNIT_MIRROR_MAN + PARA_CHUTE_DX) & 0x01FF;
                 }
+                // A failed chute: the man tumbles, head down (OAM vflip).
+                if st == PARA_FALLING { attr = attr | 0x8000; }
                 let y: u8 = (para_y[i] >> 8) as u8;
                 let m: u16 = oam_take();
                 if m < OAM_SLOTS {
