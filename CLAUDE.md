@@ -428,8 +428,9 @@ navy, blue, red - written at boot by `radar_palette`) so a side reads by colour:
 player's, red the enemy's (no white: 2bpp is three colours and transparent). Vehicles only - men are not shown. Buildings are ticks in a base image
 rebuilt when `struct_set_owner` flags it (MVN-copied into the shadow each redraw); units and
 the airframe are plotted over it, and the camera window is an 8x8 sprite (`radar_draw`, OBJ
-tile 31, the slot after the airframe's) so it follows the camera every frame. An enemy van within `RADAR_JAM` px of
-the airframe turns the redraw into noise. It costs ~2.5% of a frame on average; `unit_budget`'s
+tile 31, the slot after the airframe's) so it follows the camera every frame. An enemy van jams it wherever the airframe
+is: from the westmost enemy van's tile to the east end the redraw is blank navy (`radar_blank`), so
+the edge follows the van. It costs ~2.5% of a frame on average; `unit_budget`'s
 pinned figure dropped more than that because that movie sits on the budget line and a frame
 over it by a hair drops whole.
 

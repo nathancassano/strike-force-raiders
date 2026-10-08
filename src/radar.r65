@@ -36,8 +36,10 @@
 //
 // Buildings only move when they change hands, so they are drawn once
 // into a base image (rebuilt when struct_set_owner says so) that each
-// redraw starts from; the rest is plotted over it. An enemy van within
-// RADAR_JAM px of the airframe jams the picture: the redraw is noise.
+// redraw starts from; the rest is plotted over it. An enemy van jams the
+// picture wherever it is: from the westmost van's tile to the row's east
+// end the redraw is blank navy, so what lies past the van - its own
+// column, the enemy's half - is hidden, and the edge follows the van west.
 //
 // 2bpp: plane 0 is bit 0 of the colour, plane 1 bit 1. Navy is colour 1,
 // blue 2, red 3 - so the base is plane 0 all ones, and a blue pixel
@@ -52,8 +54,8 @@ const RADAR_PAL:    u16 = 1;                     // BG sub-palette: CGRAM 4..7
 const RADAR_TILE:   u16 = BG1_CHR_SIZE >> 4;     // first tile past the art
 const RADAR_SHIFT:  u16 = 5;                     // 8192 px -> 256
 const RADAR_PERIOD: u16 = 16;
-const RADAR_JAM:    u16 = 512;                   // the campaign table's, later
 const RADAR_BYTES:  u16 = 512;
+const RADAR_TILES:  u16 = 32;
 const RADAR_BRACKET_TILE: u8  = 31;              // tools/struct_art.py
 const RADAR_BRACKET_ATTR: u16 = 0x3000;          // priority 3, OBJ palette 0
 const RADAR_Y:      u16 = RADAR_ROW << 3;        // the row's first scanline
@@ -67,7 +69,7 @@ static radar_bit: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 #[lowram] static mut radar_dirty: u8;            // shadow to VRAM
 #[lowram] static mut radar_map_dirty: u8;        // map row to VRAM, once
 #[lowram] static mut radar_base_dirty: u8;       // rebuild the base first
-#[lowram] static mut radar_jam:   u8;            // seen on this redraw's unit pass
+#[lowram] static mut radar_jam:   u16;           // first tile a van jams this redraw; RADAR_TILES none
 
 // radar_palette - the sub-palette: transparent, the strip's navy, blue,
 // red. CGRAM, so force blank only: boot, not the reset.
@@ -88,7 +90,7 @@ far fn radar_init() {
 
     radar_map_dirty = 1;
     radar_dirty = 0;
-    radar_jam = 0;
+    radar_jam = RADAR_TILES;
     radar_build_base();
     radar_base_dirty = 0;
 }
@@ -180,24 +182,20 @@ fn radar_copy(to_shadow: u8) {
     }
 }
 
-// radar_noise - static: a few random bytes smeared down the row.
-fn radar_noise() {
-    let a: u16 = rand();
-    let b: u16 = rand();
-    let mut i: u16 = 0;
-    let mut k: u8 = a as u8;
+// radar_blank - navy over the shadow from tile *t* to the row's end:
+// what a jamming van hides.
+fn radar_blank(t: u16) {
+    let mut i: u16 = t << 4;
     while i < RADAR_BYTES {
-        radar_buf[i] = k;
-        radar_buf[i + 1] = k ^ (b as u8);
-        k = k + ((a >> 8) as u8) + 0x35;
+        radar_buf[i] = 0xFF;
+        radar_buf[i + 1] = 0x00;
         i = i + 2;
     }
 }
 
 // radar_units - plot the vehicles *from* .. *to* (a man's tag is Infantry
-// or above), noting an enemy van near enough to jam the picture.
+// or above), noting the westmost enemy van, which jams the picture.
 fn radar_units(from: u16, to: u16) {
-    let hx: u16 = heli_x_px;
     for j in from..to {
         let t: u8 = units[j].kind as u8;
         if t != UnitType::Free as u8 && t < UnitType::Infantry as u8 {
@@ -207,11 +205,7 @@ fn radar_units(from: u16, to: u16) {
                 radar_blue2(x, 6);
             } else {
                 radar_red2(x, 6);
-                if t == UnitType::Van as u8 {
-                    let mut d: u16 = 0;
-                    if ux > hx { d = ux - hx; } else { d = hx - ux; }
-                    if d < RADAR_JAM { radar_jam = 1; }
-                }
+                if t == UnitType::Van as u8 && (x >> 3) < radar_jam { radar_jam = x >> 3; }
             }
         }
     }
@@ -227,18 +221,13 @@ far fn radar_update() {
             radar_build_base();
         }
         radar_copy(1);
-        radar_jam = 0;
+        radar_jam = RADAR_TILES;
         return;
     }
     if step == 1 { radar_units(0, UNIT_MAX >> 1); return; }
     if step == 2 { radar_units(UNIT_MAX >> 1, UNIT_MAX); return; }
     if step != 3 { return; }
 
-    if radar_jam != 0 {
-        radar_noise();
-        radar_dirty = 1;
-        return;
-    }
     if heli_dead == 0 {
         let h: u16 = (heli_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
         radar_blue2(h, 1);
@@ -249,6 +238,7 @@ far fn radar_update() {
         radar_red2(f, 1);
         if f < 255 { radar_red2(f + 1, 1); }
     }
+    if radar_jam < RADAR_TILES { radar_blank(radar_jam); }
     radar_dirty = 1;
 }
 

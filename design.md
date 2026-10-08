@@ -257,7 +257,7 @@ L overlay; the airframe's own gauges are on a third row along the bottom of the 
 |---|---|
 | 0 | `$` purse · lives · men aboard |
 | 27 (bottom) | health bar · fuel bar · gun / bombs / missiles counts |
-| 1 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
+| 1 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* a jammed span is blank, from the jamming van's tile to the east end; *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
 
 Plus an **avatar pop-in at the bottom right** of the screen: a character portrait that slides in
 to deliver briefings and in-battle warnings (van approaching, bank robbed, low fuel).
