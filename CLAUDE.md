@@ -374,7 +374,12 @@ base's missiles) and 128 px from the far edge. After every decision `foe_under_b
 the height to hover within 224 px of a balloon, and every frame `foe_evade` overrides the
 height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames at
 full vertical speed with four times the thrust), one from the air a step over or under, and the
-player's airframe closing within 192 px gets a climb or dive out of its plane. The gun fires at
+player's airframe about to overlap gets a climb or dive out of its plane (`foe_avoid_due`: within a
+standoff, or closing - both airframes' speed, the pilot's own not counted in a hunt - fast enough to
+cover the gap in 16 frames, a shift of the speed). It is deliberately imperfect: it looks every
+fourth frame, and one encounter in four it is blind for `FOE_BLIND` frames, chosen from the frame
+count rather than `cpu_rand` so the purchases stay put; a head-on charge gets through about one
+time in sixteen. The gun fires at
 the player's airframe within 320 px, more than a width off, within 1.5 heights and faced. Modes
 as the original's: every ~34 s `foe_attack` (7 in 8) and `foe_hunt` (attack and
 `kill_copter`); a point of gunfire with the player's airframe in view tosses a coin, at most

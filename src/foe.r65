@@ -64,6 +64,20 @@ const FOE_STANDOFF: u16 = HELI_W + 16;    // gun range: sit this far off the tar
 const FOE_CLOSE:    u16 = HELI_W + 160;   // ... and clear its plane inside this when it closes:
                                           // a charge closes 8.75 px a frame and the climb takes
                                           // twenty frames to get going
+// Avoiding the other airframe is deliberately not perfect. It looks every
+// fourth frame - a reaction time, and three frames in four skip it - and
+// only 16 frames ahead along the closing speed, less than the climb
+// needs to get going, so two airframes charging each other flat out can
+// still meet. The look is a shift: the closing speed in Q10 (1/64 px a
+// frame) >> 2 is the distance covered in 16 frames. At the 10 px/frame
+// of a mutual charge that is 160 px, which FOE_CLOSE's early-out covers.
+// And on one encounter in four the pilot does not see the player at all
+// for FOE_BLIND frames - long enough, at a charge, to meet it. Which
+// encounters is two bits of the frame count at first sight, not cpu_rand:
+// a draw of that would re-deal the CPU's purchases.
+const FOE_AVOID_MASK: u16 = 3;            // look on frames where this is clear
+const FOE_BLIND:      u8  = 24;
+const FOE_LOOK_SHIFT: u16 = 2;            // Q10 >> 2: px covered in 16 frames
 const FOE_ALIGN:    u16 = 6;              // bomb when the centres are this close
 const FOE_PASS:     u16 = 192;            // a bombing pass over a building runs this far past it
 const FOE_BOMB_CD:  u8  = 40;             // frames between bombs
@@ -128,6 +142,9 @@ const FOE_TGT_NONE:   u8 = 0xFF;
 #[lowram] static mut foe_pass:   u16;     // a bombing pass's far end; AIR_NONE between passes
 #[lowram] static mut foe_pass_tgt: u8;    // ... and what it is over
 #[lowram] static mut foe_clip:  Q10;      // the row's clip_speed, read once
+#[lowram] static mut foe_avoid: u8;       // frames left of a step out of the other airframe's plane
+#[lowram] static mut foe_seen:  u8;       // 1 while an encounter with it lasts
+#[lowram] static mut foe_blind: u8;       // frames left of not seeing it
 #[lowram] static mut foe_tx:    u16;      // where it is flying to, decided
 #[lowram] static mut foe_ty:    u16;      // ... every FOE_THINK frames
 
@@ -160,6 +177,9 @@ far fn foe_init() {
     foe_rising = 0;
     foe_state = FOE_WANDER;
     foe_clip = cpu_stats[cpu_level as u16].clip_speed;
+    foe_avoid = 0;
+    foe_seen = 0;
+    foe_blind = 0;
     foe_tx = FOE_START_X;
     foe_ty = HELI_Y_HOVER;
     foe_dir = 1;
@@ -548,6 +568,28 @@ fn foe_think() {
     foe_choose();
 }
 
+// foe_avoid_due - is the player's airframe about to overlap this one?
+// In its plane (two heights), and either already within a standoff or
+// closing fast enough to cover the gap between them within 16 frames. The closing speed is both airframes' - the old test counted
+// only the player's, so the pilot flew its own wander and bombing passes
+// straight into a hovering player - except in a hunt, whose approach is
+// to a standoff it brakes for: counting it would climb out of every gun
+// run. No multiply or divide: the look is a shift of the speed.
+fn foe_avoid_due() -> u8 {
+    if heli_dead > 0 || heli_rising != 0 { return 0; }
+    let apart: u16 = unit_apart(heli_x_px, foe_x_px);
+    if apart >= FOE_CLOSE { return 0; }                    // the usual look ends here
+    if unit_apart(heli_y >> 8, foe_y >> 8) >= FOE_DODGE_Y { return 0; }
+    if apart < FOE_STANDOFF { return 1; }                  // already on top
+    let mut fvx: Q10 = foe_vx;
+    if foe_state == FOE_HUNT { fvx = Q10(0); }
+    let mut rel: Q10 = fvx - heli_vx;                      // the player east of it
+    if heli_x_px < foe_x_px { rel = heli_vx - fvx; }
+    if rel <= Q10(0) { return 0; }                         // holding apart, or opening
+    if apart - HELI_W < ((rel.0 as u16) >> FOE_LOOK_SHIFT) { return 1; }
+    return 0;
+}
+
 // foe_evade - a round of another side coming at the airframe overrides
 // the height chosen, never the heading: the original zeroes the sideways
 // part of a turret dodge, and a bombing pass has to carry on. A round
@@ -558,27 +600,33 @@ fn foe_evade() {
     if foe_state == FOE_PAD && foe_landed != 0 { return; }
 
     // The other airframe about to overlap - the original's
-    // avoidAboveOrBelow: within FOE_CLOSE sideways (a standoff, plus the
-    // way a charge at 8 px a frame closes it inside the dodge's reaction)
-    // and two heights up or down, get out of its plane, upward for choice.
-    if heli_dead == 0 && heli_rising == 0 {
-        // Closing: the player coming this way, or already on top.
-        let mut closing: u8 = 0;
-        if heli_x_px < foe_x_px { if heli_vx > Q10(0) { closing = 1; } } else { if heli_vx < Q10(0) { closing = 1; } }
-        if unit_apart(heli_x_px, foe_x_px) < FOE_STANDOFF { closing = 1; }
-        if closing != 0 && unit_apart(heli_x_px, foe_x_px) < FOE_CLOSE {
+    // avoidAboveOrBelow: get out of its plane, upward for choice. A step
+    // under way is held until the next look, ahead of any round.
+    if foe_avoid > 0 {
+        foe_avoid = foe_avoid - 1;
+        return;
+    }
+    if foe_blind > 0 {
+        foe_blind = foe_blind - 1;
+    } else if (frames_loop & FOE_AVOID_MASK) == 0 {
+        if foe_avoid_due() == 0 {
+            foe_seen = 0;
+        } else if foe_seen == 0 && ((frames_loop >> 2) & 3) == 0 {
+            foe_seen = 1;                 // missed it
+            foe_blind = FOE_BLIND;
+        } else {
+            foe_seen = 1;
             let hy: u16 = heli_y >> 8;
             let fy: u16 = foe_y >> 8;
-            if unit_apart(hy, fy) < FOE_DODGE_Y {
-                if foe_state != FOE_PAD { foe_state = FOE_DODGE; }
-                if fy > HELI_Y_MIN_PX + FOE_DODGE_Y + 8 && hy >= fy {
-                    foe_ty = foe_y - ((FOE_DODGE_Y + 8) << 8);
-                } else {
-                    foe_ty = foe_y + ((FOE_DODGE_Y + 8) << 8);
-                    if foe_ty > HELI_Y_MAX - (8 << 8) { foe_ty = HELI_Y_MAX - (8 << 8); }
-                }
-                return;
+            if foe_state != FOE_PAD { foe_state = FOE_DODGE; }
+            if fy > HELI_Y_MIN_PX + FOE_DODGE_Y + 8 && hy >= fy {
+                foe_ty = foe_y - ((FOE_DODGE_Y + 8) << 8);
+            } else {
+                foe_ty = foe_y + ((FOE_DODGE_Y + 8) << 8);
+                if foe_ty > HELI_Y_MAX - (8 << 8) { foe_ty = HELI_Y_MAX - (8 << 8); }
             }
+            foe_avoid = FOE_AVOID_MASK as u8;
+            return;
         }
     }
 

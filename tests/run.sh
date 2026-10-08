@@ -933,6 +933,12 @@ else
     # the player's turret does to it on a bombing pass is foe_turret's).
     run_case foe_hunt "@r,wait20,right600,wait900,shot" --check-mem 0x$LIVES=0x03 \
         --check-mem 0x$FL=0x04
+    # Avoidance on both airframes' closing speed: the player hovers in the
+    # wander's path at x 989 and the pilot steps out of its plane on every
+    # pass. Counting only the player's speed, it flew into the hover and
+    # both were lost by frame 1500.
+    run_case foe_avoid "@l,right175,wait1500,shot" --check-mem 0x$LIVES=0x04 \
+        --check-mem 0x$FL=0x04
 
     # The bombs (eighth row). A bought tank, marching east from the base,
     # is found by the pilot on its way in - kill_tank and scatter_bomb are
