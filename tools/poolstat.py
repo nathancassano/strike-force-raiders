@@ -15,7 +15,7 @@ import sys
 
 KINDS = {0: "free", 1: "tank", 2: "van", 3: "launcher", 4: "infantry", 5: "engineer"}
 ORDERS = {0: "V", 1: "M", 2: "T", 3: "I", 4: "E", 5: "-"}
-MUNI = {0: "free", 1: "bullet", 2: "bomb", 3: "shell", 4: "blast", 5: "missile", 6: "smart"}
+MUNI = {0: "free", 1: "bullet", 2: "bomb", 3: "shell", 4: "blast", 5: "missile"}
 STRUCT = {0: "turret", 1: "bunker", 2: "super", 3: "base", 4: "bank"}
 FOE = {0: "wander", 1: "pad", 2: "dodge", 3: "hunt", 4: "bomb", 5: "struct"}
 OWNER = "PEN"
@@ -70,7 +70,7 @@ def report(path, d, brief):
         if "foe_x_px" in d:
             foe = (f" foe@{u16('foe_x_px')},{u16('foe_y') >> 8} hp{u8('foe_hp')} "
                    f"f{u8('foe_fuel')} g{u8('foe_gun')} b{u8('foe_bombs')} "
-                   f"m{u8('foe_missiles')} L{u8('foe_lives')} "
+                   f"L{u8('foe_lives')} "
                    f"{FOE.get(u8('foe_state'), '?')}")
         print(f"{path}: f{u16('frames_loop')} heli@{u16('heli_x_px')} hp{u8('heli_hp')} "
               f"L{u8('heli_lives')} ${u8('funds')} cpu${u8('cpu_funds')} muni{ms}{foe}")
@@ -80,7 +80,7 @@ def report(path, d, brief):
     m = f" mission={u8('mission')}" if "mission" in d else ""
     print(f"frame {u16('frames_loop')} (nmi {u16('frames_nmi')}){m}")
     print(f"heli x={u16('heli_x_px')} y={u16('heli_y') >> 8} hp={u8('heli_hp')} "
-          f"gun={u8('heli_gun')} bombs={u8('heli_bombs')} missiles={u8('heli_missiles')} "
+          f"gun={u8('heli_gun')} bombs={u8('heli_bombs')} "
           f"lives={u8('heli_lives')} funds={u8('funds')}")
     if "cpu_funds" in d:
         q = [ORDERS.get(u8("cpu_q", i), "?") for i in range(u8("cpu_head"), u8("cpu_tail"))]
@@ -95,7 +95,6 @@ def report(path, d, brief):
                      f"hunt={u8('foe_hunt')} tgt={u8('foe_tgt')} bombed={u8('foe_bombed')}x{u8('foe_bombed_n')}")
         print(f"foe  x={u16('foe_x_px')} y={u16('foe_y') >> 8} vx={u16('foe_vx')} hp={u8('foe_hp')} "
               f"fuel={u8('foe_fuel')} gun={u8('foe_gun')} bombs={u8('foe_bombs')} "
-              f"missiles={u8('foe_missiles')}/{u8('foe_missile_cd')} "
               f"lives={u8('foe_lives')} state={FOE.get(u8('foe_state'), '?')} landed={u8('foe_landed')} "
               f"dead={u8('foe_dead')} rising={u8('foe_rising')}{extra}")
     heads = [u8("unit_head", 0), u8("unit_head", 1)]
@@ -119,11 +118,7 @@ def report(path, d, brief):
         if k == 0:
             continue
         side = "P" if u8("muni_owner", i) == 0 else "E"
-        tgt = ""
-        if k == 6 and "muni_tgt" in d:
-            v = u8("muni_tgt", i)
-            tgt = f" -> {'air' if v == 0xFF else 'unit ' + str(v)}"
-        print(f"  {i:2d} {side} {MUNI.get(k, k):8s}{tgt} x={u16('muni_x_px', i):5d} "
+        print(f"  {i:2d} {side} {MUNI.get(k, k):8s} x={u16('muni_x_px', i):5d} "
               f"y={u16('muni_y', i) >> 8:3d} life={u8('muni_life', i)}")
 
 

@@ -19,14 +19,15 @@
 // the purchasing - the original buys whatever it can afford); `clip_speed`
 // and `regen_time` are for the airframe (Q10 top speed, frames to the
 // next one). The flags follow the original's ramp: mission 1 hunts tanks
-// and nothing else, mission 8 has everything on.
+// and nothing else, mission 8 has everything on. Bit 0x40 is the original's
+// `useMissile`; the rows still carry it, but the smart missile is out of the
+// game and nothing reads it.
 const CPU_BUILD_TRUCK:     u8 = 0x01;     // may buy launchers (else M -> I)
 const CPU_BUILD_ENGINEERS: u8 = 0x02;     // may buy engineers (else E -> I)
 const CPU_KILL_COPTER:     u8 = 0x04;
 const CPU_KILL_TANK:       u8 = 0x08;
 const CPU_KILL_VAN:        u8 = 0x10;
 const CPU_KILL_MEN:        u8 = 0x20;
-const CPU_USE_MISSILE:     u8 = 0x40;
 const CPU_SCATTER_BOMB:    u8 = 0x80;     // the airframe drops bombs at all (the original's
                                           // scatterBombB, on from mission 8; the kill_* flags
                                           // say at what)

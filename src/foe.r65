@@ -2,7 +2,7 @@
 //
 // A second helicopter, the CPU's, with the player's airframe's physics,
 // loadout, fuel, pad and loss rules on its own state, and the world's
-// response to it: the player's gun, bombs and missiles against it, the
+// response to it: the player's gun and bombs against it, the
 // player's turrets, base and super bunker firing at it, balloons and the
 // other airframe ending it on contact, and its lives as the second way to
 // win.
@@ -19,7 +19,8 @@
 // the reactions are the original's too: a mode roll every half minute
 // (attack seven times in eight), a coin toss to start hunting when its
 // gunfire hits, a bomb limit per target. Clouds, paratroopers, kamikaze
-// runs and the missile counter-measures are not here.
+// runs, the smart missile (`useMissile`) and the missile counter-measures
+// are not here.
 //
 // The player's airframe keeps its own module: its state is a set of
 // statics, and a second copy of the few routines that read them is
@@ -83,12 +84,6 @@ const FOE_PASS:     u16 = 192;            // a bombing pass over a building runs
 const FOE_BOMB_CD:  u8  = 40;             // frames between bombs
 const FOE_BOMB_TANK: u8 = 3;              // bombs per tank; one for anything else
 const FOE_RESPOND:  u8  = 60;             // frames between coin tosses on being hit
-// The smart missile, the original's `useMissile`: it goes at the player's
-// airframe while hunting, or in retaliation once the airframe is down to
-// FOE_MISSILE_HP - the original fires one when its energy falls under the
-// difficulty's threshold and the shot that did it was a helicopter's.
-const FOE_MISSILE_HP: u8 = 8;
-const FOE_MISSILE_CD: u8 = 240;           // one at a time, four seconds apart
 // The weave: the wander's height cycles through these, one every 64
 // frames - the original's sine wave, biased upward. Under fire from the
 // ground it is the second, twice as tall and four times as quick: the
@@ -121,9 +116,6 @@ const FOE_TGT_NONE:   u8 = 0xFF;
 #[lowram] static mut foe_gun_t: u8;
 #[lowram] static mut foe_bombs: u8;
 #[lowram] static mut foe_bomb_t: u8;
-#[lowram] static mut foe_missiles: u8;
-#[lowram] static mut foe_missile_t: u8;   // ... to the next one on the deck
-#[lowram] static mut foe_missile_cd: u8;  // ... and until it may fire another
 #[lowram] static mut foe_hp_t:  u8;
 #[lowram] static mut foe_landed: u8;
 #[lowram] static mut foe_dead:  u8;       // frames until the next airframe; 0 = flying
@@ -168,9 +160,6 @@ far fn foe_init() {
     foe_gun_t = HELI_GUN_RELOAD;
     foe_bombs = HELI_BOMB_MAX;
     foe_bomb_t = HELI_BOMB_RELOAD;
-    foe_missiles = HELI_MISSILE_MAX;
-    foe_missile_t = HELI_MISSILE_RELOAD;
-    foe_missile_cd = 0;
     foe_hp_t = HELI_HP_REPAIR;
     foe_landed = 0;
     foe_dead = 0;
@@ -271,7 +260,7 @@ far fn foe_collide() {
     if muni_up[SIDE_PLAYER as u16] == 0 { return; }
     for m in 0..MUNI_MAX {
         let mk: u8 = muni_kind[m];
-        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB || mk == MUNI_SMART {
+        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
             if muni_owner[m] == SIDE_PLAYER {
                 let mx: u16 = muni_x_px[m];
                 let my: u16 = muni_y[m] >> 8;
@@ -279,8 +268,8 @@ far fn foe_collide() {
                     if my >= fy && my < fy + HELI_H {
                         muni_drop_bomb(m);
                         muni_kind[m] = MUNI_FREE;
-                        if mk == MUNI_BOMB || mk == MUNI_SMART {
-                            foe_lost();   // a bomb or a smart missile ends it outright
+                        if mk == MUNI_BOMB {
+                            foe_lost();   // a bomb ends it outright
                             return;
                         }
                         let mut dmg: u8 = 1;
@@ -441,12 +430,6 @@ fn foe_rearm() {
     } else {
         foe_bomb_t = HELI_BOMB_RELOAD;
         if foe_bombs < HELI_BOMB_MAX { foe_bombs = foe_bombs + 1; }
-    }
-    if foe_missile_t > 0 {
-        foe_missile_t = foe_missile_t - 1;
-    } else {
-        foe_missile_t = HELI_MISSILE_RELOAD;
-        if foe_missiles < HELI_MISSILE_MAX { foe_missiles = foe_missiles + 1; }
     }
     if foe_hp_t > 0 {
         foe_hp_t = foe_hp_t - 1;
@@ -783,24 +766,6 @@ fn foe_under_balloons() {
 fn foe_fire() {
     if foe_gun_cd > 0 { foe_gun_cd = foe_gun_cd - 1; }
     if foe_bomb_cd > 0 { foe_bomb_cd = foe_bomb_cd - 1; }
-    if foe_missile_cd > 0 { foe_missile_cd = foe_missile_cd - 1; }
-
-    // The smart missile first: it is the one shot that ends the other
-    // airframe outright, so it is not held back for the gun's range.
-    if foe_missile_cd == 0 && foe_missiles > 0 && heli_dead == 0 && heli_rising == 0 {
-        if (cpu_stats[cpu_level as u16].flags & CPU_USE_MISSILE) != 0 {
-            if foe_hunt != 0 || foe_hp <= FOE_MISSILE_HP {
-                if unit_apart(heli_x_px, foe_x_px) < FOE_VIEW {
-                    let mut mx: u16 = foe_x_px + HELI_W;
-                    if foe_face_left != 0 { mx = foe_x_px; }
-                    if smart_spawn(mx, foe_y + (HELI_MUZZLE_Y << 8), SIDE_ENEMY) != 0 {
-                        foe_missiles = foe_missiles - 1;
-                        foe_missile_cd = FOE_MISSILE_CD;
-                    }
-                }
-            }
-        }
-    }
 
     if foe_gun_cd == 0 && foe_gun > 0 && heli_dead == 0 && heli_rising == 0 {
         let dx: u16 = unit_apart(heli_x_px, foe_x_px);
@@ -904,7 +869,7 @@ far fn foe_update() {
         foe_vy = Q10(0);
         foe_rearm();
         if foe_fuel == HELI_FUEL_MAX && foe_gun == HELI_GUN_MAX && foe_bombs == HELI_BOMB_MAX
-           && foe_missiles == HELI_MISSILE_MAX && foe_hp == HELI_HP_MAX {
+           && foe_hp == HELI_HP_MAX {
             foe_landed = 0;
             foe_state = FOE_WANDER;
         }

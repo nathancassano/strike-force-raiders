@@ -25,23 +25,11 @@ const MUNI_SHELL:  u8 = 3;                // tank main gun
 const MUNI_BLAST:  u8 = 4;
 // A base's or a launcher's anti-air missile: it steers toward the other
 // side's helicopter every frame (see muni_update) and lives MISSILE_LIFE
-// frames. It is the buildings' weapon; the airframes' own is MUNI_SMART.
+// frames. It is the buildings' and the missile trucks' weapon; the
+// airframes carry none (kind 6, the old smart missile, is unused).
 const MUNI_MISSILE: u8 = 5;
 const MISSILE_SPEED: Q10 = 3 * 64;        // 3 px/frame along either axis
 const MISSILE_LIFE:  u8  = 180;           // 3 s: slow enough to dodge, long enough to chase
-
-// A helicopter's smart missile (the plan's Y weapon). It locks its target
-// at launch - the other side's airframe, or failing that the nearest of
-// its vehicles - and kills what it hits outright, airframe or unit;
-// buildings keep their own rules, which is to say it passes them by. Two
-// per load and 128 frames a reload, so it is the scarcest thing either
-// airframe carries.
-const MUNI_SMART:  u8 = 6;
-const SMART_SPEED: Q10 = 4 * 64;          // 4 px/frame: under the airframe's 5, so a
-                                          // level run outpaces it and only a turn does not
-const SMART_LIFE:  u8  = 180;             // ~720 px of reach
-const SMART_VIEW:  u16 = 640;             // what it will lock on to at launch
-const SMART_TGT_AIR: u8 = 0xFF;           // muni_tgt: the other side's airframe
 
 // Gunfire crosses the screen fast and flat; a bomb inherits the airframe's
 // horizontal speed and accelerates downward from rest.
@@ -74,7 +62,6 @@ const MUNI_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 #[lowram] static mut muni_vx:    [Q10; 16];
 #[lowram] static mut muni_vy:    [Q10; 16];
 #[lowram] static mut muni_life:  [u8; 16];    // frames left, 0 = unlimited
-#[lowram] static mut muni_tgt:   [u8; 16];    // MUNI_SMART: the locked target
 #[lowram] static mut muni_owner: [u8; 16];    // 0 player, 1 enemy - decides
                                               // who a round can hurt
 #[lowram] static mut muni_cursor: u16;
@@ -204,44 +191,6 @@ far fn muni_update() {
                 }
             }
 
-            if kind == MUNI_SMART {
-                // The same steering, at the target it locked at launch.
-                // A target that has gone - an airframe down, a unit dead -
-                // leaves it flying the way it was, to expire.
-                let t: u8 = muni_tgt[i];
-                let mut tx: u16 = 0;
-                let mut ty: u16 = 0;
-                let mut up: u8 = 0;
-                if t == SMART_TGT_AIR {
-                    if muni_owner[i] == SIDE_PLAYER {
-                        if foe_dead == 0 && foe_rising == 0 {
-                            tx = foe_x_px + (HELI_W >> 1);
-                            ty = foe_y + ((HELI_H >> 1) << 8);
-                            up = 1;
-                        }
-                    } else {
-                        if heli_dead == 0 && heli_rising == 0 {
-                            tx = heli_x_px + (HELI_W >> 1);
-                            ty = heli_y + ((HELI_H >> 1) << 8);
-                            up = 1;
-                        }
-                    }
-                } else {
-                    let u: u16 = t as u16;
-                    if units[u].kind as u8 != UnitType::Free as u8 {
-                        tx = units[u].x_px + (unit_stats[units[u].kind as u16].width >> 1);
-                        ty = (UNIT_BASE_Y + (UNIT_H >> 1)) << 8;
-                        up = 1;
-                    }
-                }
-                if up != 0 {
-                    muni_vx[i] = SMART_SPEED;
-                    if tx < muni_x_px[i] { muni_vx[i] = Q10(0) - SMART_SPEED; }
-                    muni_vy[i] = SMART_SPEED;
-                    if ty < muni_y[i] { muni_vy[i] = Q10(0) - SMART_SPEED; }
-                }
-            }
-
             if kind == MUNI_BOMB {
                 let v: Q10 = muni_vy[i] + BOMB_GRAVITY;
                 if v > BOMB_VY_MAX {
@@ -300,7 +249,7 @@ far fn muni_draw() {
                 let mut tile: u8 = MUNI_TILE_BULLET;
                 if kind == MUNI_BOMB { tile = MUNI_TILE_BOMB; }
                 if kind == MUNI_SHELL { tile = MUNI_TILE_SHELL; }
-                if kind == MUNI_MISSILE || kind == MUNI_SMART { tile = MUNI_TILE_MISSILE; }
+                if kind == MUNI_MISSILE { tile = MUNI_TILE_MISSILE; }
                 let slot: u16 = oam_take();
                 if slot < OAM_SLOTS {
                     oam.set_full!(slot as u8, sx & 0x01FF, (muni_y[i] >> 8) as u8,

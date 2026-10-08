@@ -393,7 +393,7 @@ the player's airframe within 320 px, more than a width off, within 1.5 heights a
 as the original's: every ~34 s `foe_attack` (7 in 8) and `foe_hunt` (attack and
 `kill_copter`); a point of gunfire with the player's airframe in view tosses a coin, at most
 once a second, to start hunting. Not adapted: clouds, paratroopers, the kamikaze run, and the
-smart-missile counter-measures (slice (d)). Both decks now repair (`HELI_HP_REPAIR`, a point
+smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
 per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
 `struct_collide` runs before `unit_collide`, which spends the blast, and the blast is snapped
 to the ground line - so four bombs take a turret and three a bunker; and a climbing round (a
@@ -406,23 +406,17 @@ bunker, the bases and launchers all go through it, and a missile homes on the ai
 side that did not fire it. The CPU's purse reads its real position, and the radar plots it red.
 
 Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
-(`src/muni.r65`). Two kinds home: `MUNI_MISSILE`, the buildings' and the launchers'
-anti-air missile, which steers at the other side's airframe and does 10 of its 20 points;
-and `MUNI_SMART`, either airframe's Y weapon, which locks its target at launch (`smart_spawn`:
-the other side's airframe within 640 px, else the nearest of its vehicles - never a man, and
-never nothing, since a press with neither in reach is refused rather than spend one of the
-two it carries) and kills what it hits outright, airframe or unit. Buildings keep their own
-rules, which is to say a smart missile passes them. `muni_tgt` holds the lock; a target that
-dies mid-flight leaves it flying on to expire. Both airframes reload one per 128 frames on
-the deck, and the pilot fires one (`CPU_USE_MISSILE`, four seconds apart) while hunting or
-once it is down to 8 points - the original's retaliation.
- OAM order follows the plan's importance rule: the helicopter takes slots 0-1
+(`src/muni.r65`). One kind homes: `MUNI_MISSILE`, the buildings' and the launchers'
+anti-air missile, which steers at the other side's airframe and does 10 of its 20 points.
+**Neither airframe carries a missile**: the smart missile (Y, `MUNI_SMART`, kind 6) was built
+and then removed - Y does nothing in battle, kind 6 is unused, and bit 0x40 of the CPU rows'
+flags (the original's `useMissile`) is read by nothing. OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px
 culled rather than parked off-screen.
 
 The HUD is BG1 rows 0-1 at the top and row 27 at the bottom. Row 0 (`src/hud.r65`: `$` purse,
 lives, men aboard) and row 27 (the airframe: H and F gauges of six bar cells, G rounds, B
-bombs, M missiles - over the dirt, the last visible row in 224-line mode, where nothing else is
+bombs - over the dirt, the last visible row in 224-line mode, where nothing else is
 drawn) are composed into one 64-word shadow and DMA'd in vblank, 64 bytes each, when a shown
 value changes; row 2, navy in the art, is cleared once at boot. Their glyphs (digits, `$`, brackets, six unit icons on **map row 28
 of `bg1.bmp`**, capitals on 29, the dialog's box/cursor/bar cells on 30 - all below the 224
@@ -455,8 +449,8 @@ the frame the unit pool has room. An airframe lost a third of its flight band up
 Controls: on the title, the d-pad types the continue code and Start takes what the page says;
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
 dialog - Left/Right move the highlight, A buys - and the d-pad
-and A do not reach the airframe while L is down; B gun, A bomb, Y smart missile, X drop, Up
-lifts off a deck.
+and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck;
+Y is unassigned.
 The dialog (`hud_overlay`) is a box on BG1 rows 2-9 composed once at init into an 8-row
 shadow (composing it on the press cost a frame) and DMA'd as one 512-byte block on show and
 cursor move, with an all-transparent twin DMA'd on hide; its border and cursor tiles are stamped

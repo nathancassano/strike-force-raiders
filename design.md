@@ -144,11 +144,9 @@ man's pace that put five in a heap.)*
   airframe lost, a life gone. So is **touching down faster than 2.5 px/frame** (`HELI_CRASH_VY`),
   deck or not - a full-stick descent has to be eased off a dozen frames out.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
-- Ammo: **64 rounds, 10 bombs, 2 smart missiles, up to 5 men.**
-- **Smart missiles** (Y): a missile seeks the nearest enemy helicopter, or failing that the
-  nearest enemy vehicle, and **kills whatever it hits outright** - unit or helicopter; buildings
-  keep their own rules.
-- Reload while landed: +1 gun/20f, +1 bomb/10f, +1 missile/128f. Ammo is the real bottleneck
+- Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
+  slice (d)) and then removed from the game, for both airframes.
+- Reload while landed: +1 gun/20f, +1 bomb/10f. Ammo is the real bottleneck
   (~21 s from empty) — that gating is deliberate, keep it.
 - **Men are not restored by the pad** — you pick them up off the ground: a friendly infantryman
   **within 5 px of a landed airframe's middle** boards it, five aboard at most. **X drops them as
@@ -165,7 +163,7 @@ man's pace that put five in a heap.)*
 | D-pad | Fly (Up also lifts off a deck) |
 | B | Gun (held) |
 | A | Bomb (per press) |
-| Y | Smart missile (per press) |
+| Y | — (unassigned; was the smart missile, removed) |
 | X | Drop a paratrooper (per press) |
 | L (held) | Order overlay: d-pad highlights a unit type, A buys |
 | R | *(free)* |
@@ -256,7 +254,7 @@ L overlay; the airframe's own gauges are on a third row along the bottom of the 
 | Row | Contents |
 |---|---|
 | 0 | `$` purse · lives · men aboard |
-| 27 (bottom) | health bar · fuel bar · gun / bombs / missiles counts |
+| 27 (bottom) | health bar · fuel bar · gun / bombs counts |
 | 1 | **the radar**: 256 px = the whole 8192 px world at 32 world px per pixel, **pixel-plotted into a row of 2bpp tiles** redrawn from a shadow each frame it changes. Friendly and enemy dots, buildings as ticks; a jammed span reads as static. *Amended:* a jammed span is blank, from the jamming van's tile to the east end; *Amended:* the camera window is the one OAM sprite on the row, so it tracks the camera every frame without a redraw; vehicles only, no men; blue ours, red theirs. |
 
 Plus an **avatar pop-in at the bottom right** of the screen: a character portrait that slides in
@@ -839,6 +837,8 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     one. The pilot fires its own under `use_missile` while hunting or once down to 8 points
     (the original's retaliation), one every four seconds. *Verified:* `missile_hold`,
     `missile_unit`, `missile_air`, `missile_foe`. **Phase 10 is complete.**
+    *Later removed:* the smart missile is out of the game for both airframes - Y does
+    nothing, the HUD's `M` counter is gone, and the four cases above gave way to `y_inert`.
     *Open:* the original's CPU helicopter has unlimited lives; ours has four - on the
     first row it survives a match, on the eighth it spends them on the player's turret.
     *Found on the way:* a compiler bug - vreg-move coalescing tested interference against

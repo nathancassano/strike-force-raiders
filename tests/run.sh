@@ -947,43 +947,12 @@ else
     run_case foe_bomb "@r,l+a3,wait3000,shot" --check-mem 0x$(at "$UK" 0)=0x00 \
         --check-mem 0x$LIVES=0x04
 
-    # Smart missiles, the Y weapon: two per load, locked at launch on the
-    # other side's airframe if it is in view, else on the nearest of its
-    # vehicles, and whatever one hits is gone outright. With neither in
-    # reach the press is refused and the missile is not spent - at boot
-    # the enemy airframe is a world away and the first row's column is
-    # all men.
-    MISS=$(ramaddr heli_missiles)
-    FMISS=$(ramaddr foe_missiles)
-    run_case missile_hold "@l,wait20,y1,wait20,shot" --check-mem 0x$MISS=0x02
-
-    # A vehicle: flown east to ~6700 against the third harness row's MIVV
-    # column, one press takes the missile truck leading it at ~7100 -
-    # slot 0 - and leaves the man behind it the new lead. The airframe
-    # holds 400 px off, inside the missile's 640 but outside the truck's
-    # own 224, so the empty slot can only be the missile's work; it takes
-    # ~150 frames to cover the gap, and the men ahead of a mid-column
-    # vehicle would otherwise take the hit first (which is why the column
-    # for this one is led by the truck).
-    run_case missile_unit "@l+r,wait20,right1330,y1,wait180,shot" \
-        --check-mem 0x$MISS=0x01 --check-mem 0x$(at "$UK" 0)=0x00 \
-        --check-mem 0x$(at "$UK" 1)=0x04
-
-    # The other airframe: fired as it closes at ~2300 with the player at
-    # 2114, it runs it down inside seventy frames - a life gone and the
-    # next one waiting out its row's regen_time (30) at the far edge, four
-    # frames into the count when the shot is taken.
-    run_case missile_air "@r,wait20,right400,wait860,y1,wait70,shot" \
-        --check-mem 0x$MISS=0x01 --check-mem 0x$FL=0x03 --check-mem 0x$FDEAD=0x1A
-
-    # And the pilot's own, the original's `useMissile`: parked at the
-    # ceiling mid-field, the player is out of the gun's line but not the
-    # missile's - the hunting pilot climbs after it and spends one. The
-    # player is lost with its health untouched, which is what tells a
-    # missile from the gun; the shot is taken before the pilot is lost
-    # itself, since a fresh airframe comes with a fresh pair of missiles.
-    run_case missile_foe "@r,wait20,up40,right600,wait1400,shot" \
-        --check-mem 0x$FMISS=0x01 --check-mem 0x$LIVES=0x03 --check-mem 0x$HHP=0x14
+    # Y fires nothing: the smart missile is out of the game, for both
+    # airframes. A smoke test - the press must launch nothing and break
+    # nothing (muni_up[SIDE_PLAYER] counts the player's munitions in
+    # flight). The code itself being gone is checked by grep, not here.
+    MU=$(ramaddr muni_up)
+    run_case y_inert "@l,wait20,y1,wait20,shot" --check-mem 0x$MU=0x00
 
     # Two airframes that meet are both lost (foe_collide); the pilot
     # climbs or dives out of a closing airframe's plane (foe_evade), so
