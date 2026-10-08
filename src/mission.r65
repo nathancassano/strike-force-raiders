@@ -48,15 +48,15 @@ const MISSION_START: u8 = 0;
 const CONVOY_HARNESS:     u8 = 11;
 const CONVOY_HARNESS_COL: u8 = 12;
 
-// The names, sixteen capitals each, padded to that width - the
-// original's, in order, with its hyphens spelled as spaces (the glyph row
-// has capitals and digits, nothing else). The briefing screen reads them
+// The names, sixteen characters each, padded to that width - the
+// original's, in order, in capitals for the pages' console font. The
+// briefing screen reads them
 // by mission index; MISSION_NAME_W is the stride - a power of two, so the
 // index is a shift rather than the 57-cycle mul8 - and the trailing
 // spaces are trimmed off before it centres one.
 const MISSION_NAME_W:  u16 = 16;
 const MISSION_NAME_SH: u16 = 4;
-static mission_names: [u8; 160] = "CAKE WALK       ONE GUN         SUCKER PUNCH    AIRBORNE        TWO GUN         SUPER BUNKER    SCRAPYARD       BLIND SPOT      WASTELAND       MIDNIGHT OASIS  ";
+static mission_names: [u8; 160] = "CAKE WALK       ONE-GUN         SUCKER PUNCH    AIRBORNE        TWO-GUN         SUPER BUNKER    SCRAPYARD       BLIND SPOT      WASTELAND       MIDNIGHT OASIS  ";
 
 #[soa]
 struct MissionStat {
