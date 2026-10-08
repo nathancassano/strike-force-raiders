@@ -258,7 +258,10 @@ tank and an airframe of the same side match. Turrets and the super bunker loft r
 moor a balloon on a chain that kills any helicopter on contact (a bunker shelled to 0 hp is nobody's
 and balloonless but still capturable - the man who takes it restores it); a manned super bunker also fires
 along the ground at units of any other side outside its box; the base fires homing missiles
-(`MUNI_MISSILE`) inside 320 px; the bank's gun falls silent after two shells and an enemy
+(`MUNI_MISSILE`) inside 320 px, from a launcher on its tower that shows the reload - a missile
+on the rails when ready, empty for the `BASE_RATE` countdown after a shot (tiles 236/238, drawn
+inline in `struct_draw` behind the bunker test, since the stress movie sits on the budget line
+and even a per-building compare cost it frames); the bank's gun falls silent after two shells and an enemy
 infantryman at the player's bank halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
 `tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp`; the airframe's

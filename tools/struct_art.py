@@ -20,6 +20,8 @@ drift apart. This adds rows 6-13:
                bank   (32x24 in 32x32) at cols 10-13
     row 10-13  super bunker (40x24 in 48x32) at cols 0-5
                base (64x32) at cols 6-13
+    row 14-15  cols 12-15: the base's missile launcher, loaded at tile 236
+               and empty at 238 (16x16 each), drawn on the base's tower
     row 1      cols 12-14: the missile heading E, NE, N (8x8 tiles 28-30)
                col 15: the radar's camera bracket (8x8 tile 31, radar.r65
                RADAR_BRACKET_TILE) - the window's edges, drawn as a sprite
@@ -258,6 +260,48 @@ PARACHUTE = [
 ]
 
 
+# The base's missile launcher, one cell standing on the tower: a cradle
+# with two rails, loaded and empty (struct.r65 STRUCT_TILE_LAUNCHER_*).
+# The missile stands between the rails nose up, the way it leaves; the
+# cradle carries the owner's greens so the palette swap marks it too.
+LAUNCHER_LOADED = [
+    "................",
+    "................",
+    "................",
+    ".......kk.......",
+    "......krrk......",
+    ".....ckrrkc.....",
+    ".....ckwwkc.....",
+    ".....ckwwkc.....",
+    ".....ckwwkc.....",
+    ".....ckwwkc.....",
+    "....kcksskck....",
+    "....kkkookkk....",
+    "..kkkkkkkkkkkk..",
+    "..kGGGGGGGGGGk..",
+    "..kDDDDDDDDDDk..",
+    "..kkkkkkkkkkkk..",
+]
+LAUNCHER_EMPTY = [
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    ".....c....c.....",
+    ".....c....c.....",
+    ".....c....c.....",
+    ".....c....c.....",
+    ".....c....c.....",
+    "....kc....ck....",
+    "....kk....kk....",
+    "..kkkkkkkkkkkk..",
+    "..kGGGGGGGGGGk..",
+    "..kDDDDDDDDDDk..",
+    "..kkkkkkkkkkkk..",
+]
+
+
 # The man of tile 68 mid-stride, legs passing: the second frame of the
 # walk, the standing frame the first. Body unchanged in columns 2-7 so the
 # facing-left mirror (UNIT_MIRROR_MAN) holds for both frames.
@@ -320,6 +364,8 @@ def main():
     stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
     stamp(px, 104, 8, MISSILE_NE)
     stamp(px, 112, 8, MISSILE_N)
+    stamp(px, 96, 112, LAUNCHER_LOADED)         # tile 236
+    stamp(px, 112, 112, LAUNCHER_EMPTY)         # tile 238
     save_bmp4(im, BMP)
     print(f"structures stamped; {BMP} is now {im.size[0]}x{im.size[1]}")
 

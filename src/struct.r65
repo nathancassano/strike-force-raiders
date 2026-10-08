@@ -60,6 +60,8 @@ const STRUCT_TILE_SUPER:  u8 = 160;
 const STRUCT_TILE_BASE:   u8 = 166;
 const STRUCT_TILE_BALLOON: u8 = 98;
 const STRUCT_TILE_CHAIN:   u8 = 100;      // an 8x8 tile
+const STRUCT_TILE_LAUNCHER_LOADED: u8 = 236;
+const STRUCT_TILE_LAUNCHER_EMPTY:  u8 = 238;
 
 // ----------------------------------------------------------- bunkers ---
 // A bunker is taken by an infantryman - not an engineer - of another side
@@ -98,9 +100,13 @@ const SUPER_MEN_MAX:   u8 = 5;
 // A helicopter within BASE_RANGE of a base draws a smart missile every
 // BASE_RATE frames: the plan's no-fly zone. Nothing hurts a base; a van
 // reaching it ends the match (phase 9).
+// The missile stands on a launcher on the base's tower, and the launcher
+// shows the reload: empty from the shot until the countdown runs out, so
+// a pilot can see when the next one is ready.
 const BASE_W:     u16 = 64;
 const BASE_RANGE: u16 = 320;
 const BASE_RATE:  u8  = 45;
+const BASE_LAUNCHER_DX: u16 = 24;          // the tower's left edge in the base
 
 // ---------------------------------------------------------------- bank ---
 // The end bunker holds the funds. Its gun covers BANK_RANGE like a
@@ -307,8 +313,22 @@ far fn struct_draw() {
                 row_tile = row_tile + 32;
                 ty = ty + 16;
             }
-            if structs[i].kind == StructKind::Bunker as u8 {
+            let kind: u8 = structs[i].kind;
+            if kind == StructKind::Bunker as u8 {
                 if structs[i].bal > 0 { struct_balloon_draw(i, sx); }
+            } else {
+                // The base's launcher, one cell on the tower: loaded while the
+                // countdown is spent, empty while it reloads. Inline rather than
+                // a call: it runs every frame a base is in view.
+                if kind == StructKind::Base as u8 {
+                    let slot: u16 = oam_take();
+                    if slot < OAM_SLOTS {
+                        let mut tile: u16 = STRUCT_TILE_LAUNCHER_LOADED as u16;
+                        if structs[i].t != 0 { tile = STRUCT_TILE_LAUNCHER_EMPTY as u16; }
+                        oam.set_full!(slot as u8, (sx + BASE_LAUNCHER_DX) & 0x01FF, structs[i].top - 16, tile | attr);
+                        oam.set_size!(slot as u8, 1);
+                    }
+                }
             }
         }
         if i < struct_count { i = i + 1; }
