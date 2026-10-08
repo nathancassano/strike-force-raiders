@@ -35,15 +35,23 @@ const FOE_START_X: u16 = WORLD_W - 64 - HELI_W;
 const FOE_LIVES:   u8  = 4;
 const FOE_ATTR:    u16 = (HELI_ATTR & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY;
 
-// The pilot. It flies toward a spot, at its row's clip speed far from it,
-// at a walk inside FOE_SLOW, and coasts to rest inside FOE_NEAR.
+// The pilot flies the player's airframe with the player's stick: each
+// frame it holds a direction or lets go, and the player's thrust, drag,
+// top speed and turn do the rest. It lets go once the coast under drag
+// covers what is left (FOE_STOP), so it arrives rather than overshoots,
+// and is at rest inside FOE_NEAR.
 const FOE_NEAR:    u16 = 8;
-const FOE_SLOW:    u16 = 64;
-const FOE_WALK:    Q10 = 64;              // 1 px/frame
-const FOE_SINK:    Q10 = 128;             // 2 px/frame, under HELI_CRASH_VY
-const FOE_SINK_LOW: Q10 = 48;             // ... and the last FOE_SLOW_Y px gently
-const FOE_SLOW_Y:  u16 = 24;
-const FOE_JUMP:    u16 = 36;              // a height change this big is a jink: full speed
+const FOE_NEAR_Y:  u16 = 2;
+const FOE_WALK:    Q10 = 64;              // 1 px/frame: slow enough to call stopped over the deck
+const FOE_LAND_DEEP: u16 = 12;            // a landing aims this far under the deck, so the coast
+                                          // still touches down - at ~1.75 px/frame, under HELI_CRASH_VY
+
+// FOE_STOP[v >> 3] - pixels an airframe coasts at speed v (Q10, either
+// axis) with the stick let go: drag takes 8 a frame on both. Bucket i is
+// figured at its top speed (8i + 7), so the pilot lets go a touch early.
+static FOE_STOP: [u8; 41] = [0, 1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 9, 10, 12, 13, 15, 17, 19,
+                             22, 24, 26, 29, 32, 35, 38, 41, 44, 47, 51, 54, 58, 62, 66,
+                             70, 74, 79, 83, 88, 93, 97, 102];
 const HELI_Y_MIN_PX: u16 = 16;            // HELI_Y_MIN in pixels
 const FOE_HP_PASS: u8  = 16;              // a pass over a turret costs about ten; under this, leave them
 const FOE_FUEL_LOW: u8 = 14;              // the original's needsFuel (25), less the trip home added at the check
@@ -59,8 +67,10 @@ const FOE_DODGE_Y:  u16 = 2 * HELI_H;
 const FOE_AIM_Y:    u16 = HELI_H + (HELI_H >> 1);   // 1.5 heights, for the gun
 const FOE_EDGE:     u16 = 128;            // turn this far from the world's far end ...
 const FOE_WEST:     u16 = 900;            // ... and here at the player's, short of the
-                                          // base's 320 px no-fly zone (400 + 64 + 320)
-const FOE_BALLOON_X: u16 = 224;           // keep under a balloon this near: a second of flight, the descent is slow
+                                          // base's 320 px no-fly zone (400 + 64 + 320):
+                                          // no decision sends the airframe west of it
+const FOE_BALLOON_X: u16 = 320;           // keep under a balloon this near: from a jink's top the
+                                          // descent on the player's thrust takes ~48 frames, 240 px
 const FOE_STANDOFF: u16 = HELI_W + 16;    // gun range: sit this far off the target
 const FOE_CLOSE:    u16 = HELI_W + 160;   // ... and clear its plane inside this when it closes:
                                           // a charge closes 8.75 px a frame and the climb takes
@@ -133,7 +143,8 @@ const FOE_TGT_NONE:   u8 = 0xFF;
 #[lowram] static mut foe_respond: u8;     // throttle on the chase coin toss
 #[lowram] static mut foe_pass:   u16;     // a bombing pass's far end; AIR_NONE between passes
 #[lowram] static mut foe_pass_tgt: u8;    // ... and what it is over
-#[lowram] static mut foe_clip:  Q10;      // the row's clip_speed, read once
+#[lowram] static mut foe_turn:  u8;       // progress through a turn, 0 = none (heli_turn's)
+#[lowram] static mut foe_low:   u8;       // a balloon is near: no height above hover, dodge or not
 #[lowram] static mut foe_avoid: u8;       // frames left of a step out of the other airframe's plane
 #[lowram] static mut foe_seen:  u8;       // 1 while an encounter with it lasts
 #[lowram] static mut foe_blind: u8;       // frames left of not seeing it
@@ -165,7 +176,8 @@ far fn foe_init() {
     foe_dead = 0;
     foe_rising = 0;
     foe_state = FOE_WANDER;
-    foe_clip = cpu_stats[cpu_level as u16].clip_speed;
+    foe_turn = 0;
+    foe_low = 0;
     foe_avoid = 0;
     foe_seen = 0;
     foe_blind = 0;
@@ -362,53 +374,80 @@ fn foe_move_y(v: Q10) {
     }
 }
 
-// foe_steer - one frame of flying toward (*tx*, *ty*): tx the world x the
-// airframe's left edge should reach, ty the 8.8 height. The stick is the
-// player's - thrust toward a target speed, drag toward rest - with the
-// target speed stepped down as the spot nears so it arrives rather than
-// overshoots. Facing follows the way it is going, and holds at rest.
-fn foe_steer(tx: u16, ty: u16) {
-    let clip: Q10 = foe_clip;
-    let mut want: Q10 = Q10(0);
-    let x: u16 = foe_x_px;
-    if tx > x {
-        let d: u16 = tx - x;
-        if d > FOE_SLOW { want = clip; } else { if d > FOE_NEAR { want = FOE_WALK; } }
-        if d > FOE_NEAR { foe_face_left = 0; }
-    } else {
-        let d: u16 = x - tx;
-        if d > FOE_SLOW { want = Q10(0) - clip; } else { if d > FOE_NEAR { want = Q10(0) - FOE_WALK; } }
-        if d > FOE_NEAR { foe_face_left = 1; }
-    }
-    let mut ax: Q10 = HELI_THRUST_X;
-    if want == Q10(0) { ax = HELI_DRAG_X; }
-    foe_vx = approach(foe_vx, want, ax);
+// foe_stop - how far the airframe coasts from speed *v* (Q10, >= 0).
+fn foe_stop(v: Q10) -> u16 {
+    let mut i: u16 = (v.0 as u16) >> 3;
+    if i > 40 { i = 40; }
+    return FOE_STOP[i] as u16;
+}
 
-    // Vertically: FOE_SINK either way, which the gentler vertical thrust
-    // can bring down to FOE_SINK_LOW inside the last FOE_SLOW_Y pixels
-    // without overshooting - and the full HELI_VY_MAX for a jump of
-    // FOE_JUMP or more, which is the jink under fire: a round lofted at
-    // the airframe is aimed where it was, and four pixels a frame is what
-    // puts it somewhere else by the time the round arrives.
-    let mut wanty: Q10 = Q10(0);
-    if ty > foe_y {
-        let d: u16 = (ty - foe_y) >> 8;
-        if d > FOE_JUMP { wanty = HELI_VY_MAX; } else {
-            if d > FOE_SLOW_Y { wanty = FOE_SINK; } else { if d > 0 { wanty = FOE_SINK_LOW; } }
+// foe_turn_step - heli_turn_step on this airframe: *want* 0 right, 1 left,
+// 2 no direction held (the turn stalls). The facing changes only when the
+// swing completes, so the gun keeps its old side until then.
+fn foe_turn_step(want: u8) {
+    if foe_turn == 0 {
+        if want < 2 && want != foe_face_left { foe_turn = 1; }
+        return;
+    }
+    if want == 2 { return; }
+    if want != foe_face_left {
+        foe_turn = foe_turn + 1;
+        if foe_turn > HELI_TURN_STEPS {
+            foe_face_left = want;
+            foe_turn = 0;
         }
     } else {
-        let d: u16 = (foe_y - ty) >> 8;
-        if d > FOE_JUMP { wanty = Q10(0) - HELI_VY_MAX; } else {
-            if d > FOE_SLOW_Y { wanty = Q10(0) - FOE_SINK; } else { if d > 0 { wanty = Q10(0) - FOE_SINK_LOW; } }
+        foe_turn = foe_turn - 1;
+    }
+}
+
+// foe_steer - one frame of flying toward (*tx*, *ty*): tx the world x the
+// airframe's left edge should reach, ty the 8.8 height. The stick is
+// digital, as the player's is: a direction held asks full speed and gets
+// the player's thrust, none asks rest and gets the player's drag. A
+// direction is held while the spot is further than the coast from here;
+// moving away from it, the coast is nothing, so it holds toward it and
+// the thrust brakes and turns it, as a player reversing the stick does.
+fn foe_steer(tx: u16, ty: u16) {
+    let mut want: u8 = 2;
+    let mut vx: Q10 = Q10(0);
+    let x: u16 = foe_x_px;
+    if tx > x + FOE_NEAR {
+        let mut stop: u16 = 0;
+        if foe_vx > Q10(0) { stop = foe_stop(foe_vx); }
+        if tx - x > stop { vx = HELI_VX_MAX; want = 0; }
+    } else {
+        if x > tx + FOE_NEAR {
+            let mut stop: u16 = 0;
+            if foe_vx < Q10(0) { stop = foe_stop(Q10(0) - foe_vx); }
+            if x - tx > stop { vx = Q10(0) - HELI_VX_MAX; want = 1; }
         }
     }
-    // A jink or an evasion gets four times the vertical thrust: the
-    // player's ramp takes twenty frames to reach full climb, and a charge
-    // closes the whole evasion distance in that.
+    foe_turn_step(want);
+    let mut ax: Q10 = HELI_THRUST_X;
+    if vx == Q10(0) { ax = HELI_DRAG_X; }
+    foe_vx = approach(foe_vx, vx, ax);
+
+    // Vertically the same. A landing aims under the deck, so the coast
+    // reaches it; move_y stops the airframe at the floor.
+    let mut aim: u16 = ty;
+    if ty >= HELI_Y_MAX { aim = HELI_Y_MAX + (FOE_LAND_DEEP << 8); }
+    let y: u16 = foe_y;
+    let mut vy: Q10 = Q10(0);
+    if aim > y + (FOE_NEAR_Y << 8) {
+        let mut stop: u16 = 0;
+        if foe_vy > Q10(0) { stop = foe_stop(foe_vy); }
+        if ((aim - y) >> 8) > stop { vy = HELI_VY_MAX; }
+    } else {
+        if y > aim + (FOE_NEAR_Y << 8) {
+            let mut stop: u16 = 0;
+            if foe_vy < Q10(0) { stop = foe_stop(Q10(0) - foe_vy); }
+            if ((y - aim) >> 8) > stop { vy = Q10(0) - HELI_VY_MAX; }
+        }
+    }
     let mut ay: Q10 = HELI_THRUST_Y;
-    if wanty == Q10(0) { ay = HELI_DRAG_Y; }
-    if wanty == HELI_VY_MAX || wanty == Q10(0) - HELI_VY_MAX { ay = HELI_THRUST_Y << 2; }
-    foe_vy = approach(foe_vy, wanty, ay);
+    if vy == Q10(0) { ay = HELI_DRAG_Y; }
+    foe_vy = approach(foe_vy, vy, ay);
 }
 
 // --------------------------------------------------------------- tick ---
@@ -503,6 +542,10 @@ fn foe_ground_target() -> u8 {
                 if foe_bombed_n >= limit { want = 0; }
             }
         }
+        // Under the player's base missiles is out of reach: the bomb is
+        // released from a hover over the man, and the hover would be in
+        // the no-fly zone.
+        if units[u].x_px + 12 < FOE_WEST { want = 0; }
         if want != 0 {
             let d: u16 = unit_apart(units[u].x_px + 12, cx);
             if d < best_d {
@@ -532,6 +575,9 @@ fn foe_struct_target() -> u16 {
                 if k == StructKind::Bunker as u8 && foe_bombed == (FOE_TGT_STRUCT | (i as u8)) {
                     if foe_bombed_n >= 1 { want = 0; }
                 }
+                // A pass runs FOE_PASS beyond the building; one that would
+                // end inside the no-fly zone is not begun.
+                if structs[i].x + (structs[i].w >> 1) < FOE_WEST + FOE_PASS { want = 0; }
                 if want != 0 {
                     let d: u16 = unit_apart(structs[i].x + (structs[i].w >> 1), cx);
                     if d < best_d {
@@ -546,9 +592,12 @@ fn foe_struct_target() -> u16 {
 }
 
 // foe_think - the priority list. Sets the state, the spot to fly to and
-// the bomb target for the coming FOE_THINK frames.
+// the bomb target for the coming FOE_THINK frames. Whatever was chosen,
+// the spot is never inside the player's base's missile range: a hunt
+// that follows the player home stops at the edge of it.
 fn foe_think() {
     foe_choose();
+    if foe_tx < FOE_WEST { foe_tx = FOE_WEST; }
 }
 
 // foe_avoid_due - is the player's airframe about to overlap this one?
@@ -740,18 +789,20 @@ fn foe_choose() {
 }
 
 // foe_under_balloons - after every decision: a balloon near enough to
-// fly into keeps the airframe at hover height, under it. The original
+// fly into keeps the airframe at hover height, under it, and sets foe_low
+// so the every-frame dodge cannot jink it back up. The original
 // steers around chains and balloons with its whiskers; here the chain
 // is vertical and the balloon's bottom is above hover height, so under
 // is always clear.
 fn foe_under_balloons() {
-    if foe_ty >= HELI_Y_HOVER { return; }
+    foe_low = 0;
     let cx: u16 = foe_x_px + (HELI_W >> 1);
     for n in 0..bunker_count {
         let i: u16 = bunker_idx[n] as u16;
         if structs[i].bal > 0 {
             if unit_apart(structs[i].x + BALLOON_DX + (BALLOON_W >> 1), cx) < FOE_BALLOON_X {
-                foe_ty = HELI_Y_HOVER;
+                foe_low = 1;
+                if foe_ty < HELI_Y_HOVER { foe_ty = HELI_Y_HOVER; }
                 return;
             }
         }
@@ -901,6 +952,8 @@ far fn foe_update() {
         foe_under_balloons();
     }
     foe_evade();                          // every frame: a round, or the other airframe, is quick
+    // ... but never up into a balloon: a jink's top is above it.
+    if foe_low != 0 && foe_ty < HELI_Y_HOVER { foe_ty = HELI_Y_HOVER; }
     foe_steer(foe_tx, foe_ty);
     foe_fire();
 
@@ -934,6 +987,17 @@ far fn foe_draw() {
     if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
     if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
 
+    // The player's turn swing (heli_draw).
+    let mut face: u8 = foe_face_left;
+    if foe_turn > 0 {
+        let step: u8 = div8(foe_turn - 1, HELI_TURN_HOLD as u16);
+        if step == 0 { tile = HELI_TILE_TURN_SLIGHT; }
+        if step == 1 { tile = HELI_TILE_TURN_34; }
+        if step == 2 { tile = HELI_TILE_TURN_HEAD; }
+        if step == 3 { tile = HELI_TILE_TURN_34;     face = 1 - face; }
+        if step == 4 { tile = HELI_TILE_TURN_SLIGHT; face = 1 - face; }
+    }
+
     // Culled on the full 16-bit offset, as the units are: the 9-bit OAM
     // field would alias a position screens away onto the window.
     let d: u16 = foe_x_px - camera_x;
@@ -946,7 +1010,7 @@ far fn foe_draw() {
     let mut attr: u16 = base;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;
-    if foe_face_left != 0 {
+    if face != 0 {
         attr = base | 0x4000;
         near = tile + 2;
         far_ = tile;

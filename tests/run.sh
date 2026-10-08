@@ -453,10 +453,13 @@ else
     # 117 px short of the bunker at 5120, the enemy's since its men took
     # it, to shell it, and the two behind pack up at exactly width + gap
     # (31 px, a pixel of it the odd-frame step) and halt in turn - every
-    # flag set. The wait is in vblanks and the loop drops a few percent of
-    # them by here; the snapshot is loop frame ~9330, the bunker at 37.
+    # flag set. The wait is in vblanks and the loop drops several percent
+    # of them by here; the snapshot is loop frame ~9340, the bunker at 37.
+    # The column is halted from wait10000 to past wait10600, so the wait sits
+    # mid-window rather than at the edge, where a faster or slower loop moves
+    # the snapshot before the column has arrived.
     UB=$(ramaddr units__block)
-    run_case march_order "@l,l+a3,wait3,l+a3,wait3,l+a3,wait9600,shot" --timeout 600000 \
+    run_case march_order "@l,l+a3,wait3,l+a3,wait3,l+a3,wait10200,shot" --timeout 600000 \
         --check-mem 0x$(at "$UB" 0)=0x01 --check-mem16 0x$(at "$UX" 0)=0x138B \
         --check-mem 0x$(at "$UB" 2)=0x01 --check-mem16 0x$(at "$UX" 4)=0x136C \
         --check-mem 0x$(at "$UB" 4)=0x01 --check-mem16 0x$(at "$UX" 8)=0x134D
@@ -508,10 +511,19 @@ else
     # frame is a dozen frames. The pilot and the original's purchasing:
     # 0.824 - the first mission's column is three squads of men, fifteen
     # riflemen sweeping, against the eight tanks - and the smart missiles
-    # 0.821. The rifle's timer as an Infantry method and its shot as pool
-    # code, once a payload's self stopped being a pool index: 0.809.
+    # 0.821. The enemy airframe on the player's vertical inertia (no
+    # quadrupled thrust on a jink), which keeps it in the fight longer:
+    # 0.820. A compiler fix that stopped nested ifs being read as loops
+    # (R65 d875bb3) cost the register promotion they had been getting by
+    # accident; INC/DEC on memory and one TYX per X write won some back:
+    # 0.791. Reusing an index X already holds instead of reloading it from
+    # its stack slot (`units[j].kind` then `.owner` then `.x_px`, j and j*2):
+    # 0.833. The enemy pilot stepping out of the player's plane on both
+    # airframes' closing speed changed the match the movie plays: 0.835.
+    # The enemy column's van blanking the radar east of it wherever the
+    # airframe is: 0.835 still, three ticks up.
     run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
-                                                      --check-mem16 0x$FLOOP=0x0B93
+                                                      --check-mem16 0x$FLOOP=0x0BF5
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three
@@ -582,16 +594,17 @@ if [ -z "$HHP" ] || [ -z "$SHP" ]; then
     fail=$((fail+1))
 else
     # The enemy turret at x=6656 (level entry 12) lofts rounds at an
-    # approaching airframe: 20 hp becomes 14 on the way in.
-    run_case turret_heli "@l,wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x0F
+    # approaching airframe: 20 hp becomes 17 on the way in (15 before the
+    # enemy airframe took the player's inertia - the run's phase moved).
+    run_case turret_heli "@l,wait20,right1290,wait90,shot" --check-mem 0x$HHP=0x11
 
     # Land in front of it and fire back: a round is a point off its 62 -
-    # four of the fifteen fired land in this time (the rest are still in
+    # three of the fifteen fired land in this time (the rest are still in
     # flight or lost to its self-repair between), and its fire keeps
     # coming. How many have landed by this frame is a phase; re-baseline
     # it if a change shifts the run by a frame, but do not delete it.
     run_case turret_gunfire "@l,wait20,right1290,down30,wait40,b90,shot" \
-        --check-mem 0x$(at "$SHP" 12)=0x3A --check-mem 0x$HHP=0x0E
+        --check-mem 0x$(at "$SHP" 12)=0x3B --check-mem 0x$HHP=0x10
 
     # The balloon over the player's own bunker (x=2048) kills the airframe
     # on contact, at frame 421 of this climb: a life gone, the airframe
@@ -671,8 +684,8 @@ else
         --check-mem 0x$(at "$UK" 1)=0x00 --check-mem 0x$(at "$UK" 2)=0x00 \
         --check-mem 0x$(at "$UK" 3)=0x00 --check-mem 0x$(at "$UK" 4)=0x00 \
         --check-mem 0x$(at "$UK" 5)=0x00 --check-mem 0x$(hp 0)=0x19 \
-        --check-mem 0x$(at "$UK" 6)=0x04 --check-mem16 0x$(at "$UX" 12)=0x1135 \
-        --check-mem 0x$(at "$UD" 0)=0x0C
+        --check-mem 0x$(at "$UK" 6)=0x04 --check-mem16 0x$(at "$UX" 12)=0x1137 \
+        --check-mem 0x$(at "$UD" 0)=0x10
     # The super bunker as a tank target was checked with the debugger: a
     # bought tank planted at x=3968 before the bunker at 4076 given three
     # enemy men held, put them out one a shell, and moved on once it was
@@ -680,7 +693,10 @@ else
 
     # The enemy base's missiles: an airframe pushed into its 320 px is lost
     # inside two hundred frames and comes back at the start with a life gone.
-    run_case base_missile "@l,wait20,right1500,wait300,shot" --check-mem 0x$LIVES=0x03 \
+    # The push is held to 1520 vblanks: at 1500 a heavier run (the enemy
+    # airframe on the player's inertia) coasts to a stop at 7384, its
+    # centre 360 px from the base's - just outside.
+    run_case base_missile "@l,wait20,right1520,wait300,shot" --check-mem 0x$LIVES=0x03 \
                                                           --check-mem 0x$HHP=0x14
 
     # The enemy column's launcher fires its one homing missile at an
@@ -913,18 +929,19 @@ else
 
     # The player's turret at 1536 fires on it as on the player's: the
     # wander takes it through the turret's 340 px on every lap, jinking
-    # (the four-height, 16-frame weave at full vertical speed), and comes
-    # out about seven points down each time - here 13 at frame 3000, and
-    # alive; the deck repairs it.
-    run_case foe_turret "@l,wait3000,shot" --check-mem 0x$FHP=0x0D --check-mem 0x$FL=0x04
+    # (the four-height, 16-frame weave toward full vertical speed, on the
+    # player's thrust), and comes out about ten points down each time -
+    # here 10 at frame 3000, and alive; the deck repairs it. (Seven, and
+    # 13, while a jink had four times the player's vertical thrust.)
+    run_case foe_turret "@l,wait3000,shot" --check-mem 0x$FHP=0x0A --check-mem 0x$FL=0x04
 
     # The player's gun. The airframe waits at x~764, where the wander's
     # west turn (900) brings the enemy airframe into the gun's 320 px,
-    # and fires for 150 frames: five rounds land, a point each, and the
+    # and fires for 150 frames: four rounds land, a point each, and the
     # enemy fires back on the way past - it shoots whatever is level, in
     # reach and faced, whether or not it hunts.
-    run_case foe_gun "@l,wait20,right130,wait2400,b150,shot" --check-mem 0x$FHP=0x0F \
-        --check-mem 0x$FL=0x04 --check-mem 0x$HHP=0x13
+    run_case foe_gun "@l,wait20,right130,wait2400,b150,shot" --check-mem 0x$FHP=0x10 \
+        --check-mem 0x$FL=0x04 --check-mem 0x$HHP=0x11
 
     # The hunt (hot harness row). Flown out to ~3100 and left hovering:
     # the enemy airframe, hunting, arrives at a standoff, level, and fires

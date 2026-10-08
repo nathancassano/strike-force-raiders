@@ -379,10 +379,14 @@ from a hover falls straight down the turret's own stream of rounds; a turret onl
 plus vx × the fall, `mul16` on the height) is over the target, one bomb per target, three per
 tank, any number per turret, 40 frames apart; else **wander** toward the player's end on the
 weave (`foe_weave`, four heights every 64 frames), turning at `FOE_WEST` (900, short of the
-base's missiles) and 128 px from the far edge. After every decision `foe_under_balloons` pins
+base's missiles) and 128 px from the far edge. `FOE_WEST` bounds every mode, not just the
+wander: `foe_think` clamps the chosen spot to it (a hunt that follows the player home stops
+at the edge), and the bomb pickers skip a unit west of it or a building whose pass would end
+west of it. After every decision `foe_under_balloons` pins
 the height to hover within 224 px of a balloon, and every frame `foe_evade` overrides the
-height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames at
-full vertical speed with four times the thrust), one from the air a step over or under, and the
+height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames,
+asking full vertical speed - on the player's thrust and drag, like every other move: the two
+airframes carry the same inertia on both axes), one from the air a step over or under, and the
 player's airframe about to overlap gets a climb or dive out of its plane (`foe_avoid_due`: within a
 standoff, or closing - both airframes' speed, the pilot's own not counted in a hunt - fast enough to
 cover the gap in 16 frames, a shift of the speed). It is deliberately imperfect: it looks every
