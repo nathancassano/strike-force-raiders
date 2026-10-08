@@ -123,7 +123,10 @@ rotor_raiders/
 │   └── lib/                  # Standard libraries
 │       ├── 65816.r65         # CPU register definitions
 │       ├── sneslib.r65       # SNES hardware registers and helpers
-│       └── math.r65          # Math functions (mul8, div8, etc.)
+│       ├── math.r65          # Math functions (mul8, div8, etc.)
+│       ├── string.r65        # format!, number-to-text
+│       ├── console.r65       # Console: text into a tilemap buffer (screen.r65's pages)
+│       └── default_font.r65  # The console's font, ASCII 32-126
 ├── assets/
 │   ├── src/                  # Source art (indexed BMP; %.tilemap.bmp also emits a tilemap)
 │   ├── gfx/                  # Generated .chr / .pal / .tilemap - build output, not in git
@@ -323,8 +326,11 @@ helicopter, which against a two-digit purse saturates the carry on any win at al
 that page goes straight to the next mission's briefing, or to the end page once the tenth is
 taken. Typing redraws only the five rows the
 field occupies, DMA'd from the page shadow in vblank (`screen_flush`); everything else about a
-page is composed once. The glyphs are the HUD's - capitals, digits and
-spaces, nothing else, which is why the mission names spell their hyphens as spaces. **The front
+page is composed once. The text goes through the stdlib console (`lib/console.r65`, buffer mode
+into the page shadow, its area the inside of the frame) in the stdlib's default font, DMA'd at
+boot to BG1 tile 96 (past the art and the radar) on BG1 sub-palette 2 - by DMA, not
+`Console::upload_font`, whose register-at-a-time loop costs a frame of boot and shifts every
+suite movie. The border and code cursor are still the HUD's box pieces. **The front
 end is the campaign's**: a harness mission boots straight into its battle and its Start
 restarts it, so no suite movie has to press past a page it did not ask for.
 

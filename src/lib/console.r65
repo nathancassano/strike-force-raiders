@@ -1,0 +1,631 @@
+// ============================================================================
+// R65 Standard Library - Console (Text Output via Background Tiles)
+//
+// Provides a reusable Console struct for formatted text output on SNES.
+// Three output modes:
+//   - Buffer mode: writes tile indices to a RAM nametable buffer (DMA'd by caller)
+//   - VRAM mode: writes tile indices directly to VRAM via VMADD/VMDATA
+//   - OAM mode: writes characters as OAM sprites to a caller-provided buffer
+//     (caller must DMA the buffer to OAM during VBlank)
+//
+// Dependencies (include before this file):
+//   - stdlib/string.r65  (strlen, format!)
+//   - stdlib/sneslib.r65  (VRAM registers, DMA macros)
+//
+// Usage:
+//   include!("lib/console.r65")
+// ============================================================================
+
+include!("sneslib.r65")
+include!("math.r65")
+include!("string.r65")
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum ConsoleAlign { Left, Center, Right }
+enum ConsoleMode { Buffer, Vram, Oam }
+
+// ============================================================================
+// Console Struct (16 bytes, packed)
+// ============================================================================
+
+struct Console {
+    buffer: far *u8,       // 3 bytes - pointer to caller's buffer (nametable or OAM)
+    cursor_x: u8,          // current column (relative to area)
+    cursor_y: u8,          // current row (relative to area)
+    area_x: u8,            // left column of text area (0-31)
+    area_y: u8,            // top row of text area (0-31)
+    area_w: u8,            // width in tiles (1-32)
+    area_h: u8,            // height in tiles (1-32)
+    tile_attr: u16,        // attribute bits OR'd into each entry (palette, priority, flip)
+    tile_base: u16,        // base tile index for ASCII mapping (char 32 -> tile_base + 0)
+    align: u8,             // ConsoleAlign::Left / CENTER / RIGHT
+    mode: u8,              // ConsoleMode::Buffer, Vram, or Oam
+    vram_base: u16         // VRAM base word address (VRAM mode) / sprite byte offset (OAM mode)
+}
+
+// ============================================================================
+// Format Buffer (global, used by method macros)
+// ============================================================================
+
+#[ram]
+static mut __console_fmt_buf: [u8; 128];
+
+// ============================================================================
+// Console Implementation
+// ============================================================================
+
+impl Console {
+
+    // ========================================================================
+    // Initialization
+    // ========================================================================
+
+    // Initialize console with tile attributes.
+    // Defaults: cursor (0,0), area (0,0,32,28), tile_base 0, align left, VRAM mode.
+    fn init(far *self, tile_attr: u16) {
+        self.tile_base = 0;
+        self.tile_attr = tile_attr;
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.area_x = 0;
+        self.area_y = 0;
+        self.area_w = 32;
+        self.area_h = 28;
+        self.align = ConsoleAlign::Left;
+        self.mode = ConsoleMode::Vram;
+        self.vram_base = 0;
+    }
+
+    // ========================================================================
+    // Configuration
+    // ========================================================================
+
+    // Set text area bounds and reset cursor to (0,0).
+    fn set_area(far *self, x: u8, y: u8, w: u8, h: u8) {
+        self.area_x = x;
+        self.area_y = y;
+        self.area_w = w;
+        self.area_h = h;
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+    }
+
+    // Set cursor position (relative to text area).
+    fn set_cursor(far *self, x: u8, y: u8) {
+        self.cursor_x = x;
+        self.cursor_y = y;
+    }
+
+    // Set text alignment mode.
+    fn set_align(far *self, align: u8) {
+        self.align = align;
+    }
+
+    // Change font tile base index.
+    fn set_tile_base(far *self, base: u16) {
+        self.tile_base = base;
+    }
+
+    // Change tile attribute bits.
+    fn set_attr(far *self, attr: u16) {
+        self.tile_attr = attr;
+    }
+
+    // Set nametable buffer pointer and switch to buffer mode.
+    // Buffer is a u16 nametable array; pass as far *u8 (e.g. &MY_NAMETABLE as far *u8).
+    fn set_buffer(far *self, buf: far *u8) {
+        self.buffer = buf;
+        self.mode = ConsoleMode::Buffer;
+    }
+
+    // Set VRAM base word address and switch to VRAM mode.
+    fn set_vram(far *self, addr: u16) {
+        self.vram_base = addr;
+        self.mode = ConsoleMode::Vram;
+    }
+
+    // Switch to OAM buffer mode. buf points to caller's OAM buffer (544 bytes).
+    // Caller must DMA the buffer to OAM during VBlank.
+    // area_x/area_y are tile positions; pixel coords computed as *8.
+    // area_w * area_h must not exceed 128 sprites.
+    fn set_oam(far *self, buf: far *u8) {
+        self.buffer = buf;
+        self.vram_base = 0;
+        self.mode = ConsoleMode::Oam;
+    }
+
+    // ========================================================================
+    // Output
+    // ========================================================================
+
+    // Write a single character at the cursor position and advance cursor.
+    fn putc(far *self, ch: u8) {
+        // Handle newline
+        if ch == 0x0A {
+            self.cursor_x = 0;
+            let mut cy: u8 = self.cursor_y + 1;
+            if cy >= self.area_h {
+                cy = 0;
+            }
+            self.cursor_y = cy;
+            return;
+        }
+
+        let m: u8 = self.mode;
+
+        match m {
+            ConsoleMode::Oam => {
+                let buf: far *u8 = self.buffer;
+                let sprite_idx: u16 = mul16(self.cursor_y, self.area_w as u16) + self.cursor_x as u16;
+                Y = self.vram_base + sprite_idx * 4;
+                buf[Y] = (self.area_x + self.cursor_x) << 3;
+                Y++;
+                buf[Y] = (self.area_y + self.cursor_y) << 3;
+                Y++;
+                buf[Y] = (ch - 32 + self.tile_base as u8) as u8;
+                Y++;
+                buf[Y] = self.tile_attr as u8;
+                0
+            },
+            ConsoleMode::Vram => {
+                let mut row: u16 = (self.area_y + self.cursor_y) as u16;
+                let mut col: u16 = (self.area_x + self.cursor_x) as u16;
+                let offset: u16 = (row << 5) + col;
+                let tile: u16 = ((ch as u16) - 32 + self.tile_base) | self.tile_attr;
+                VMADD = self.vram_base + offset;
+                VMDATA = tile;
+                0
+            },
+            _ => {
+                let buf: far *u8 = self.buffer;
+                let mut row: u16 = (self.area_y + self.cursor_y) as u16;
+                let mut col: u16 = (self.area_x + self.cursor_x) as u16;
+                let tile: u16 = ((ch as u16) - 32 + self.tile_base) | self.tile_attr;
+                Y = ((row << 5) + col) << 1;
+                buf[Y] = tile as u8;
+                Y++;
+                buf[Y] = (tile >> 8) as u8;
+                0
+            }
+        };
+
+        // Advance cursor
+        let mut cx: u8 = self.cursor_x + 1;
+        if cx >= self.area_w {
+            cx = 0;
+            let mut cy: u8 = self.cursor_y + 1;
+            if cy >= self.area_h {
+                cy = 0;
+            }
+            self.cursor_y = cy;
+        }
+        self.cursor_x = cx;
+    }
+
+    // Move cursor to start of next row.
+    fn newline(far *self) {
+        self.cursor_x = 0;
+        let mut cy: u8 = self.cursor_y + 1;
+        if cy >= self.area_h {
+            cy = 0;
+        }
+        self.cursor_y = cy;
+    }
+
+    // Streaming write: walk null-terminated string, convert each ASCII char
+    // to tile entry, write to buffer or VRAM. Supports \n (0x0A) as newline.
+    fn print(far *self, str: far *u8) {
+        let s: far *u8 = str;
+        let attr: u16 = self.tile_attr;
+        let base: u16 = self.tile_base;
+        let aw: u8 = self.area_w;
+        let ax: u8 = self.area_x;
+        let ay: u8 = self.area_y;
+        let m: u8 = self.mode;
+        let buf: far *u8 = self.buffer;
+        let vb: u16 = self.vram_base;
+        let mut cx: u8 = self.cursor_x;
+        let mut cy: u8 = self.cursor_y;
+        let mut i: u16 = 0;
+
+        loop {
+            let c: u8 = s[i];
+            if c == 0 { break; }
+
+            if c == 0x0A {
+                // Newline
+                cx = 0;
+                cy++;
+                if cy >= self.area_h {
+                    cy = 0;
+                }
+            } else {
+                match m {
+                    ConsoleMode::Oam => {
+                        let sprite_idx: u16 = mul16(cy, aw as u16) + cx as u16;
+                        Y = vb + sprite_idx * 4;
+                        buf[Y] = (ax + cx) << 3;
+                        Y++;
+                        buf[Y] = (ay + cy) << 3;
+                        Y++;
+                        buf[Y] = (c - 32 + base as u8) as u8;
+                        Y++;
+                        buf[Y] = attr as u8;
+                        0
+                    },
+                    ConsoleMode::Vram => {
+                        let mut row: u16 = (ay + cy) as u16;
+                        let mut col: u16 = (ax + cx) as u16;
+                        let offset: u16 = (row << 5) + col;
+                        let tile: u16 = ((c as u16) - 32 + base) | attr;
+                        VMADD = vb + offset;
+                        VMDATA = tile;
+                        0
+                    },
+                    _ => {
+                        let mut row: u16 = (ay + cy) as u16;
+                        let mut col: u16 = (ax + cx) as u16;
+                        let tile: u16 = ((c as u16) - 32 + base) | attr;
+                        Y = ((row << 5) + col) << 1;
+                        buf[Y] = tile as u8;
+                        Y++;
+                        buf[Y] = (tile >> 8) as u8;
+                        0
+                    }
+                };
+
+                // Advance cursor
+                cx++;
+                if cx >= aw {
+                    cx = 0;
+                    cy++;
+                    if cy >= self.area_h {
+                        cy = 0;
+                    }
+                }
+            }
+
+            i++;
+        }
+
+        // Write back cursor state
+        self.cursor_x = cx;
+        self.cursor_y = cy;
+    }
+
+    // Set cursor to (x, y) then print string.
+    fn print_at(far *self, x: u8, y: u8, str: far *u8) {
+        self.cursor_x = x;
+        self.cursor_y = y;
+        self.print(str);
+    }
+
+    // Alignment-aware print: compute starting X from alignment mode,
+    // clear the current row, write string at computed offset, advance to next row.
+    fn println(far *self, str: far *u8) {
+        let s: far *u8 = str;
+        let attr: u16 = self.tile_attr;
+        let base: u16 = self.tile_base;
+        let aw: u8 = self.area_w;
+        let ax: u8 = self.area_x;
+        let ay: u8 = self.area_y;
+        let mut cy: u8 = self.cursor_y;
+        let alignment: u8 = self.align;
+        let m: u8 = self.mode;
+        let buf: far *u8 = self.buffer;
+
+        // Compute string length (capped at area width)
+        let mut len: u8 = strlen(s) as u8;
+        if len > aw {
+            len = aw;
+        }
+
+        // Compute start_x from alignment
+        let start_x: u8 = match alignment {
+            ConsoleAlign::Center => (aw - len) >> 1,
+            ConsoleAlign::Right => aw - len,
+            _ => 0
+        };
+
+        let vb: u16 = self.vram_base;
+
+        match m {
+            ConsoleMode::Oam => {
+                // OAM: clear row by hiding all sprites (Y=240)
+                let row_sprite_base: u16 = mul16(cy, aw as u16);
+                let mut col: u8 = 0;
+                loop {
+                    if col >= aw { break; }
+                    Y = vb + (row_sprite_base + col as u16) * 4;
+                    buf[Y] = 0;
+                    Y++;
+                    buf[Y] = 240;
+                    Y++;
+                    buf[Y] = 0;
+                    Y++;
+                    buf[Y] = 0;
+                    col++;
+                }
+
+                // Write string as OAM sprites
+                let mut si: u16 = 0;
+                let mut wx: u8 = start_x;
+                loop {
+                    if si >= len as u16 { break; }
+                    let c: u8 = s[si];
+                    if c == 0 { break; }
+
+                    Y = vb + (row_sprite_base + wx as u16) * 4;
+                    buf[Y] = (ax + wx) << 3;
+                    Y++;
+                    buf[Y] = (ay + cy) << 3;
+                    Y++;
+                    buf[Y] = (c - 32 + base as u8) as u8;
+                    Y++;
+                    buf[Y] = attr as u8;
+
+                    wx++;
+                    si++;
+                }
+                0
+            },
+            _ => {
+                // BG: clear row with space tiles
+                let row_base: u16 = ((ay + cy) as u16) << 5;
+                let space_tile: u16 = base | attr;
+                let mut col: u8 = 0;
+                loop {
+                    if col >= aw { break; }
+                    let off: u16 = row_base + (ax + col) as u16;
+                    match m {
+                        ConsoleMode::Vram => { VMADD = vb + off; VMDATA = space_tile; 0 },
+                        _ => {
+                            Y = off << 1;
+                            buf[Y] = space_tile as u8;
+                            Y++;
+                            buf[Y] = (space_tile >> 8) as u8;
+                            0
+                        }
+                    };
+                    col++;
+                }
+
+                // Write string at computed offset
+                let mut si: u16 = 0;
+                let mut wx: u8 = start_x;
+                loop {
+                    if si >= len as u16 { break; }
+                    let c: u8 = s[si];
+                    if c == 0 { break; }
+
+                    let off: u16 = row_base + (ax + wx) as u16;
+                    let tile: u16 = ((c as u16) - 32 + base) | attr;
+                    match m {
+                        ConsoleMode::Vram => { VMADD = vb + off; VMDATA = tile; 0 },
+                        _ => {
+                            Y = off << 1;
+                            buf[Y] = tile as u8;
+                            Y++;
+                            buf[Y] = (tile >> 8) as u8;
+                            0
+                        }
+                    };
+
+                    wx++;
+                    si++;
+                }
+                0
+            }
+        };
+
+        // Advance to next row
+        self.cursor_x = 0;
+        let mut ny: u8 = cy + 1;
+        if ny >= self.area_h {
+            ny = 0;
+        }
+        self.cursor_y = ny;
+    }
+
+    // ========================================================================
+    // Method Macros - Formatted Output
+    // ========================================================================
+
+    // Format + streaming print.
+    // Usage: my_console.print!("Score: {u16}", score);
+    macro_rules! print($fmt:literal, $($args:expr),*) {
+        format!(__console_fmt_buf, $fmt, $($args),*);
+        self.print(&__console_fmt_buf as far *u8);
+    }
+
+    // Format + aligned print + advance to next row.
+    // Usage: my_console.println!("Level: {u8}", level);
+    macro_rules! println($fmt:literal, $($args:expr),*) {
+        format!(__console_fmt_buf, $fmt, $($args),*);
+        self.println(&__console_fmt_buf as far *u8);
+    }
+
+    // Format + print at position.
+    // Usage: my_console.print_at!(5, 3, "HP: {u8}", hp);
+    macro_rules! print_at($x:expr, $y:expr, $fmt:literal, $($args:expr),*) {
+        format!(__console_fmt_buf, $fmt, $($args),*);
+        self.print_at($x, $y, &__console_fmt_buf as far *u8);
+    }
+
+    // ========================================================================
+    // Clearing
+    // ========================================================================
+
+    // Fill entire text area with space tiles, reset cursor to (0,0).
+    fn clear(far *self) {
+        let aw: u8 = self.area_w;
+        let ah: u8 = self.area_h;
+        let m: u8 = self.mode;
+
+        match m {
+            ConsoleMode::Oam => {
+                let buf: far *u8 = self.buffer;
+                let vb: u16 = self.vram_base;
+                let mut row: u8 = 0;
+                loop {
+                    if row >= ah { break; }
+                    let row_sprite_base: u16 = mul16(row, aw as u16);
+                    let mut col: u8 = 0;
+                    loop {
+                        if col >= aw { break; }
+                        Y = vb + (row_sprite_base + col as u16) * 4;
+                        buf[Y] = 0;
+                        Y++;
+                        buf[Y] = 240;
+                        Y++;
+                        buf[Y] = 0;
+                        Y++;
+                        buf[Y] = 0;
+                        col++;
+                    }
+                    row++;
+                }
+                0
+            },
+            _ => {
+                let space_tile: u16 = self.tile_base | self.tile_attr;
+                let ax: u8 = self.area_x;
+                let ay: u8 = self.area_y;
+                let buf: far *u8 = self.buffer;
+                let vb: u16 = self.vram_base;
+
+                let mut row: u8 = 0;
+                loop {
+                    if row >= ah { break; }
+                    let row_base: u16 = ((ay + row) as u16) << 5;
+                    let mut col: u8 = 0;
+                    loop {
+                        if col >= aw { break; }
+                        let off: u16 = row_base + (ax + col) as u16;
+                        match m {
+                            ConsoleMode::Vram => { VMADD = vb + off; VMDATA = space_tile; 0 },
+                            _ => {
+                                Y = off << 1;
+                                buf[Y] = space_tile as u8;
+                                Y++;
+                                buf[Y] = (space_tile >> 8) as u8;
+                                0
+                            }
+                        };
+                        col++;
+                    }
+                    row++;
+                }
+                0
+            }
+        };
+
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+    }
+
+    // Fill one row within the text area with space tiles.
+    fn clear_row(far *self, row: u8) {
+        let aw: u8 = self.area_w;
+        let m: u8 = self.mode;
+
+        match m {
+            ConsoleMode::Oam => {
+                let buf: far *u8 = self.buffer;
+                let vb: u16 = self.vram_base;
+                let rsb: u16 = mul16(row, aw as u16);
+                let mut col: u8 = 0;
+                loop {
+                    if col >= aw { break; }
+                    Y = vb + (rsb + col as u16) * 4;
+                    buf[Y] = 0;
+                    Y++;
+                    buf[Y] = 240;
+                    Y++;
+                    buf[Y] = 0;
+                    Y++;
+                    buf[Y] = 0;
+                    col++;
+                }
+                0
+            },
+            _ => {
+                let space_tile: u16 = self.tile_base | self.tile_attr;
+                let ax: u8 = self.area_x;
+                let buf: far *u8 = self.buffer;
+                let vb: u16 = self.vram_base;
+
+                let row_base: u16 = ((self.area_y + row) as u16) << 5;
+                let mut col: u8 = 0;
+                loop {
+                    if col >= aw { break; }
+                    let off: u16 = row_base + (ax + col) as u16;
+                    match m {
+                        ConsoleMode::Vram => { VMADD = vb + off; VMDATA = space_tile; 0 },
+                        _ => {
+                            Y = off << 1;
+                            buf[Y] = space_tile as u8;
+                            Y++;
+                            buf[Y] = (space_tile >> 8) as u8;
+                            0
+                        }
+                    };
+                    col++;
+                }
+                0
+            }
+        };
+    }
+
+    // ========================================================================
+    // Font Setup
+    // ========================================================================
+
+    // Upload 2bpp font data to VRAM, with optional padding for 4bpp/8bpp tile formats.
+    fn upload_font(far *self, vram_addr: u16, tile_base: u16, data: far *u8, num_tiles: u16, size_tile: TileSize) {
+        self.tile_base = tile_base;
+        VMAIN = VmainTrigger::High;
+
+        VMADD = match size_tile {
+            TileSize::Bpp4 => vram_addr + (tile_base << 4),
+            TileSize::Bpp8 => vram_addr + (tile_base << 5),
+            _ => vram_addr + (tile_base << 3)
+        };
+
+        let d: far *u8 = data;
+        let pad_words: u8 = ((size_tile as u8) - 16) >> 1;
+        let mut i: u16 = 0;
+        let mut t: u16 = 0;
+
+        loop {
+            if t >= num_tiles { break; }
+
+            // Write 8 words (16 bytes) of 2bpp source data (bp0/bp1)
+            let mut j: u8 = 0;
+            loop {
+                if j >= 8 { break; }
+                A = d[i];
+                VMDATAL = A;
+                i++;
+                A = d[i];
+                VMDATAH = A;
+                i++;
+                j++;
+            }
+
+            // Pad with zero words for higher bitplanes (bp2+)
+            let mut k: u8 = 0;
+            loop {
+                if k >= pad_words { break; }
+                VMDATAL = 0;
+                VMDATAH = 0;
+                k++;
+            }
+
+            t++;
+        }
+    }
+}

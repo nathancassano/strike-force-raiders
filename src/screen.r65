@@ -9,12 +9,13 @@
 // anything per frame. Coming back restores the map from ROM and re-inits
 // the strip, since a page has written over both.
 //
-// The glyphs are the HUD's - capitals on HUD_LETTER_ROW, digits on
-// HUD_GLYPH_ROW, the dialog's border on HUD_BOX_ROW - read back out of the
-// tilemap in ROM by position, the same contract tools/hud_glyphs.py keeps.
-// So a page may say anything in capitals, digits and spaces, and nothing
-// else: no lower case, no punctuation. The mission names spell their
-// hyphens as spaces for that reason.
+// The text goes through the stdlib console (lib/console.r65) in buffer
+// mode, writing into the page shadow, in the stdlib's default font
+// (lib/default_font.r65, ASCII 32-126) uploaded at boot past the radar's
+// tiles. Its text area is the inside of the frame, so a centred line
+// clears and centres between the border columns. The border and the code
+// cursor are still the order dialog's pieces, read back out of the BG1
+// map by position (HUD_BOX_ROW, tools/hud_glyphs.py).
 //
 // The front end is the *campaign's*. A harness mission (mission.r65) boots
 // straight into its battle and its Start still restarts it, so the suite
@@ -22,11 +23,24 @@
 
 #[bank(2)]
 
+include!("lib/console.r65")
+include!("lib/default_font.r65")
+
 const SCREEN_NONE:  u8 = 0;
 const SCREEN_TITLE: u8 = 1;
 const SCREEN_BRIEF: u8 = 2;
 const SCREEN_AFTER: u8 = 3;
 const SCREEN_END:   u8 = 4;               // the campaign, won
+
+// The font, in BG1's tileset after the art (BG1_CHR_SIZE / 16 tiles) and
+// the radar's 32, on a sub-palette of its own: CGRAM 8-11, white with a
+// grey edge. Colour 0 is transparent, so the page's navy is the backdrop.
+const SCREEN_FONT_TILE:  u16 = 96;
+const SCREEN_FONT_TILES: u16 = 95;
+const SCREEN_FONT_PAL:   u16 = 2;
+// The console's area: inside the frame's two border columns.
+const SCREEN_TEXT_COL:   u16 = 2;
+const SCREEN_TEXT_W:     u16 = 28;
 
 // The map is 32x32; 224 scanlines show 28 rows of it.
 const SCREEN_COLS: u16 = 32;
@@ -58,26 +72,8 @@ const SCREEN_READ_ROW:  u16 = 17;
 #[lowram] static mut screen_kind: u8;
 #[lowram] static mut screen_dirty: u8;    // the code block wants flushing
 
-// Every word a page can say, one run of capitals after another, indexed
-// rather than pointed at: a near pointer to a static in this bank would be
-// read against DBR 0 and find bank 0's ROM instead.
-static scr_text: [u8; 132] = "ROTOR RAIDERSHELICOPTER TUG OF WARPRESS STARTMISSIONTURRETSBUNKERSFUNDSLIVESVICTORYDEFEATCODENEW GAMEPURSESALVAGECARRIEDCAMPAIGN WON";
-const T_TITLE:  u16 = 0;    const T_TITLE_N:  u16 = 13;
-const T_SUB:    u16 = 13;   const T_SUB_N:    u16 = 21;
-const T_START:  u16 = 34;   const T_START_N:  u16 = 11;
-const T_MISS:   u16 = 45;   const T_MISS_N:   u16 = 7;
-const T_TURRET: u16 = 52;   const T_TURRET_N: u16 = 7;
-const T_BUNKER: u16 = 59;   const T_BUNKER_N: u16 = 7;
-const T_FUNDS:  u16 = 66;   const T_FUNDS_N:  u16 = 5;
-const T_LIVES:  u16 = 71;   const T_LIVES_N:  u16 = 5;
-const T_WON:    u16 = 76;   const T_WON_N:    u16 = 7;
-const T_LOST:   u16 = 83;   const T_LOST_N:   u16 = 6;
-const T_CODE:   u16 = 89;   const T_CODE_N:   u16 = 4;
-const T_NEW:    u16 = 93;   const T_NEW_N:    u16 = 8;
-const T_PURSE:  u16 = 101;  const T_PURSE_N:  u16 = 5;
-const T_SALV:   u16 = 106;  const T_SALV_N:   u16 = 7;
-const T_CARRY:  u16 = 113;  const T_CARRY_N:  u16 = 7;
-const T_CAMP:   u16 = 120;  const T_CAMP_N:   u16 = 12;
+#[ram] static mut screen_con: Console;
+#[ram] static mut screen_line: [u8; 17];  // a mission name, trimmed and terminated
 
 // ------------------------------------------------------ continue code ---
 // Progress between missions is a typed code, not a save file: four
@@ -217,48 +213,33 @@ fn screen_put(row: u16, col: u16, tile: u16) {
     screen_page[(row << 5) + col] = tile;
 }
 
-// screen_text - *len* characters of scr_text from *off*, at (row, col).
-fn screen_text(row: u16, col: u16, off: u16, len: u16) {
-    for k in 0..len {
-        screen_put(row, col + k, hud_letter(scr_text[off + k]));
-    }
+// screen_at - *s* with its first character at page (row, col).
+fn screen_at(row: u16, col: u16, s: far *u8) {
+    screen_con.print_at((col - SCREEN_TEXT_COL) as u8, row as u8, s);
 }
 
-// screen_centre - the same run, centred on the page.
-fn screen_centre(row: u16, off: u16, len: u16) {
-    screen_text(row, (SCREEN_COLS - len) >> 1, off, len);
+// screen_centre - *s* centred inside the frame, the rest of the row cleared.
+fn screen_centre(row: u16, s: far *u8) {
+    screen_con.set_cursor(0, row as u8);
+    screen_con.println(s);
 }
 
-// screen_value - *v* right-aligned so its last digit lands on SCREEN_VALUE,
-// with no leading zero.
+// screen_value - *v* right-aligned so its last digit lands on SCREEN_VALUE.
 fn screen_value(row: u16, v: u8) {
-    let tens: u8 = div8(v, 10);
-    screen_put(row, SCREEN_VALUE, hud_glyph(GLYPH_DIGIT + ((v - mul8(tens, 10)) as u16)));
-    if tens != 0 {
-        screen_put(row, SCREEN_VALUE - 1, hud_glyph(GLYPH_DIGIT + (tens as u16)));
-    }
+    let mut col: u16 = SCREEN_VALUE - SCREEN_TEXT_COL;
+    if v > 9 { col = col - 1; }
+    screen_con.print_at!(col as u8, row as u8, "{u8}", v);
 }
 
-// screen_mission - "MISSION n", the word and the number centred together
-// rather than the number against the stat column.
+// screen_mission - "MISSION n", centred as one line.
 fn screen_mission(row: u16, m: u8) {
-    let n: u8 = m + 1;
-    let mut w: u16 = T_MISS_N + 2;        // the word, a space, one digit
-    if n > 9 { w = w + 1; }
-    let col: u16 = (SCREEN_COLS - w) >> 1;
-    screen_text(row, col, T_MISS, T_MISS_N);
-    let tens: u8 = div8(n, 10);
-    let mut at: u16 = col + T_MISS_N + 1;
-    if tens != 0 {
-        screen_put(row, at, hud_glyph(GLYPH_DIGIT + (tens as u16)));
-        at = at + 1;
-    }
-    screen_put(row, at, hud_glyph(GLYPH_DIGIT + ((n - mul8(tens, 10)) as u16)));
+    screen_con.set_cursor(0, row as u8);
+    screen_con.println!("MISSION {u8}", m + 1);
 }
 
 // screen_stat - a label at SCREEN_LABEL and its value against the column.
-fn screen_stat(row: u16, off: u16, len: u16, v: u8) {
-    screen_text(row, SCREEN_LABEL, off, len);
+fn screen_stat(row: u16, label: far *u8, v: u8) {
+    screen_at(row, SCREEN_LABEL, label);
     screen_value(row, v);
 }
 
@@ -270,17 +251,18 @@ fn screen_name(row: u16, m: u8) {
         if mission_names[at + n - 1] != 0x20 { break; }
         n = n - 1;
     }
-    let col: u16 = (SCREEN_COLS - n) >> 1;
     for k in 0..n {
-        screen_put(row, col + k, hud_letter(mission_names[at + k]));
+        screen_line[k] = mission_names[at + k];
     }
+    screen_line[n] = 0;
+    screen_centre(row, &screen_line as far *u8);
 }
 
+// screen_clear - the whole page to the font's space, which is transparent.
 fn screen_clear() {
-    let blank: u16 = hud_clear_tile();
-    for c in 0..(SCREEN_ROWS << 5) {
-        screen_page[c] = blank;
-    }
+    screen_con.set_area(0, 0, SCREEN_COLS as u8, SCREEN_ROWS as u8);
+    screen_con.clear();
+    screen_con.set_area(SCREEN_TEXT_COL as u8, 0, SCREEN_TEXT_W as u8, SCREEN_ROWS as u8);
 }
 
 // screen_frame - the order dialog's border pieces around the whole page.
@@ -300,27 +282,29 @@ fn screen_frame() {
     }
 }
 
+// screen_code - the word CODE and the four letters, two columns apart.
+fn screen_code(row: u16) {
+    screen_at(row, SCREEN_LABEL_COL, "CODE\0");
+    for k in 0..CODE_LEN {
+        screen_con.set_cursor((SCREEN_CODE_COL + (k << 1) - SCREEN_TEXT_COL) as u8, row as u8);
+        screen_con.putc(0x41 + code_letters[k]);
+    }
+}
+
 // screen_code_block - the title's code field and what it reads as, into
 // the page. Only the inside of the frame is cleared: the border columns
 // live on these rows too, and this block is redrawn on every keypress.
 fn screen_code_block() {
-    let blank: u16 = hud_clear_tile();
     for r in 0..SCREEN_CODE_ROWS {
-        for c in 2..(SCREEN_COLS - 2) {
-            screen_put(SCREEN_CODE_ROW + r, c, blank);
-        }
+        screen_con.clear_row((SCREEN_CODE_ROW + r) as u8);
     }
-    screen_text(SCREEN_CODE_ROW, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
-    for k in 0..CODE_LEN {
-        let col: u16 = SCREEN_CODE_COL + (k << 1);
-        screen_put(SCREEN_CODE_ROW, col, hud_letter(0x41 + code_letters[k]));
-    }
+    screen_code(SCREEN_CODE_ROW);
     screen_put(SCREEN_CODE_ROW + 1, SCREEN_CODE_COL + ((code_cursor as u16) << 1),
                hud_box(BOX_CURSOR));
     // What it means, live: the mission it opens, or a new campaign.
     let m: u8 = code_mission();
     if m == CODE_BAD {
-        screen_centre(SCREEN_READ_ROW, T_NEW, T_NEW_N);
+        screen_centre(SCREEN_READ_ROW, "NEW GAME\0");
     } else {
         screen_mission(SCREEN_READ_ROW, m);
         screen_name(SCREEN_READ_ROW + 1, m);
@@ -330,10 +314,10 @@ fn screen_code_block() {
 // --------------------------------------------------------------- pages ---
 
 fn screen_title() {
-    screen_centre(6, T_TITLE, T_TITLE_N);
-    screen_centre(9, T_SUB,   T_SUB_N);
+    screen_centre(6, "ROTOR RAIDERS\0");
+    screen_centre(9, "HELICOPTER TUG OF WAR\0");
     screen_code_block();
-    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+    screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
 // The briefing: which mission, its name, and what it is made of - the
@@ -343,11 +327,11 @@ fn screen_brief() {
     screen_mission(4, mission);
     screen_name(6, mission);
     let i: u16 = mission as u16;
-    screen_stat(11, T_TURRET, T_TURRET_N, mission_stats[i].turrets);
-    screen_stat(13, T_BUNKER, T_BUNKER_N, mission_stats[i].bunkers);
-    screen_stat(15, T_FUNDS,  T_FUNDS_N,  start_funds);
-    screen_stat(17, T_LIVES,  T_LIVES_N,  start_lives);
-    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+    screen_stat(11, "TURRETS\0", mission_stats[i].turrets);
+    screen_stat(13, "BUNKERS\0", mission_stats[i].bunkers);
+    screen_stat(15, "FUNDS\0",   start_funds);
+    screen_stat(17, "LIVES\0",   start_lives);
+    screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
 // The after-action page: how the match ended and what is left in the
@@ -355,9 +339,9 @@ fn screen_brief() {
 // mission's funds; until then this reports, it does not carry anything.
 fn screen_after() {
     if game_state == GAME_WON {
-        screen_centre(6, T_WON, T_WON_N);
+        screen_centre(6, "VICTORY\0");
     } else {
-        screen_centre(6, T_LOST, T_LOST_N);
+        screen_centre(6, "DEFEAT\0");
     }
     screen_name(9, mission);
     // The reckoning: what was in the purse, what the field was worth, and
@@ -365,26 +349,23 @@ fn screen_after() {
     // added together; a lost one carries its own row's funds, and the
     // salvage line is there to say what was on the field when it went.
     campaign_settle();
-    screen_stat(11, T_PURSE, T_PURSE_N, funds);
-    screen_stat(13, T_SALV,  T_SALV_N,  after_salvage);
-    screen_stat(15, T_CARRY, T_CARRY_N, after_carry);
+    screen_stat(11, "PURSE\0",   funds);
+    screen_stat(13, "SALVAGE\0", after_salvage);
+    screen_stat(15, "CARRIED\0", after_carry);
     // The code for the next run, left typed into the title's field, so
     // continuing later is one press.
     code_set(after_next, after_carry);
-    screen_text(18, SCREEN_LABEL_COL, T_CODE, T_CODE_N);
-    for k in 0..CODE_LEN {
-        screen_put(18, SCREEN_CODE_COL + (k << 1), hud_letter(0x41 + code_letters[k]));
-    }
-    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+    screen_code(18);
+    screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
 // The campaign, won: the tenth mission taken. Nothing carries on from
 // here - Start goes back to the title, where a code still opens any
 // mission that was reached.
 fn screen_end() {
-    screen_centre(8,  T_WON,  T_WON_N);
-    screen_centre(11, T_CAMP, T_CAMP_N);
-    screen_centre(SCREEN_PROMPT, T_START, T_START_N);
+    screen_centre(8,  "VICTORY\0");
+    screen_centre(11, "CAMPAIGN WON\0");
+    screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
 // ------------------------------------------------------------ the page ---
@@ -428,12 +409,30 @@ far fn screen_hide() {
     radar_init();
 }
 
+// screen_font - the console and its font. Force blank: boot_load only.
+far fn screen_font() {
+    set_cgram_addr!(SCREEN_FONT_PAL << 2);
+    write_color!(Color::rgb!(0, 0, 0));          // transparent
+    write_color!(Color::rgb!(4, 6, 14));         // unused by the font
+    write_color!(Color::rgb!(18, 20, 24));       // the glyphs' edge
+    write_color!(Color::rgb!(31, 31, 31));       // and their body
+    screen_con.init(SCREEN_FONT_PAL << 10);
+    // By DMA rather than Console::upload_font, which writes the 1520
+    // bytes a register store at a time: that is a frame of boot, and the
+    // suite's movies are timed from a boot of a fixed length.
+    dma_copy_vram(0, &CONSOLE_FONT as far *u8, VRAM_BG1C + (SCREEN_FONT_TILE << 3),
+                  SCREEN_FONT_TILES << 4);
+    screen_con.set_tile_base(SCREEN_FONT_TILE);
+    screen_con.set_align(ConsoleAlign::Center as u8);
+}
+
 // screen_init - the code field at A A A A with the cursor on the first
 // letter. SNES RAM is whatever it was at power-on, and an unset letter
 // index reads a glyph from past the row; boot_load calls this before the
 // title goes up, and nothing else does - a code typed or handed back by
 // the after-action page has to survive a reset.
 far fn screen_init() {
+    screen_con.set_buffer(&screen_page as far *u8);
     for k in 0..CODE_LEN {
         code_letters[k] = 0;
     }
