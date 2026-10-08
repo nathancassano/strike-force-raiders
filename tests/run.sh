@@ -508,9 +508,10 @@ else
     # frame is a dozen frames. The pilot and the original's purchasing:
     # 0.824 - the first mission's column is three squads of men, fifteen
     # riflemen sweeping, against the eight tanks - and the smart missiles
-    # 0.821.
-    run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E51 \
-                                                      --check-mem16 0x$FLOOP=0x0BC1
+    # 0.821. The rifle's timer as an Infantry method and its shot as pool
+    # code, once a payload's self stopped being a pool index: 0.809.
+    run_case unit_budget "@l,$EIGHT_TANKS,wait3600,shot" --check-mem16 0x$FNMI=0x0E50 \
+                                                      --check-mem16 0x$FLOOP=0x0B93
 
     # The headline constraint: at a bunched column the PPU must still be able
     # to draw everything standing on those scanlines. Eight tanks in three

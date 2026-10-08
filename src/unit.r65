@@ -535,29 +535,44 @@ fn unit_target(self_i: u16, range: u16) -> u16 {
 // rifle_dmg, which is what keeps infantry from scratching a tank; an
 // enemy turret is the fallback target, for the roster's half point.
 impl Infantry {
-    fn fire(self) {
+    // The rifle's own tick: drop last frame's firing pose and count the
+    // reload down. Returns 1 once the rifle is ready.
+    fn process(self) -> u8 {
         self.pose = 0;
         if self.reload > 0 {
             self.reload = self.reload - 1;
-        } else {
-            let j: u16 = unit_target(self, INF_RANGE);
-            if j < UNIT_MAX {
-                self.reload = INF_RELOAD;
-                self.pose = 1;
-                unit_hit(j, unit_stats[units[j].kind as u16].rifle_dmg);
-            } else {
-                // No unit: an enemy turret ahead takes the shot instead.
-                let t: u16 = struct_rifle_target(units[self].x_px, units[self].owner, INF_RANGE);
-                if t < STRUCT_MAX {
-                    self.reload = INF_RELOAD;
-                    self.pose = 1;
-                    struct_rifle_hit(t);
+            return 0;
+        }
+        return 1;
+    }
+}
+
+// The target sweep needs the man's position and side, so the shot itself is
+// pool code, like unit_fire; Infantry::process only runs the rifle's timer.
+fn unit_rifle(i: u16) {
+    match units[i].kind {
+        UnitType::Infantry(f) => {
+            if f.process() != 0 {
+                let j: u16 = unit_target(i, INF_RANGE);
+                if j < UNIT_MAX {
+                    f.reload = INF_RELOAD;
+                    f.pose = 1;
+                    unit_hit(j, unit_stats[units[j].kind as u16].rifle_dmg);
                 } else {
-                    self.reload = INF_SCAN;
+                    // No unit: an enemy turret ahead takes the shot instead.
+                    let t: u16 = struct_rifle_target(units[i].x_px, units[i].owner, INF_RANGE);
+                    if t < STRUCT_MAX {
+                        f.reload = INF_RELOAD;
+                        f.pose = 1;
+                        struct_rifle_hit(t);
+                    } else {
+                        f.reload = INF_SCAN;
+                    }
                 }
             }
         }
-    }
+        _ => {}
+    };
 }
 
 // unit_fire - the main gun. Only a tank carries one, and the reload timer it
@@ -623,31 +638,35 @@ fn unit_fire(i: u16) {
     };
 }
 
-// The launcher's one shot. `self` is the pool index, so the shared planes
-// are `units[self].*` and its own field `self.armed`. It watches for the
+// The launcher's one shot. It needs the shared planes (`units[i].*`) as well
+// as its own payload field (`l.armed`), so it is pool code, like unit_fire,
+// not a method on Launcher. It watches for the
 // other side's airframe - and only one truck of a side fires at a time:
 // while its missile is in the air the rest hold, so a column of them is
 // a chain of shots to dodge rather than a volley.
 #[lowram] static mut launcher_shot: [u16; 2];   // the missile in flight, per side, or MUNI_MAX
 
-impl Launcher {
-    fn launch(self) {
-        if self.armed == 0 { return; }
-        let owner: u16 = units[self].owner as u16;
-        let s: u16 = launcher_shot[owner];
-        if s < MUNI_MAX {
-            if muni_kind[s] == MUNI_MISSILE && muni_owner[s] == units[self].owner { return; }
-            launcher_shot[owner] = MUNI_MAX;
+fn unit_launch(i: u16) {
+    match units[i].kind {
+        UnitType::Launcher(l) => {
+            if l.armed == 0 { return; }
+            let owner: u16 = units[i].owner as u16;
+            let s: u16 = launcher_shot[owner];
+            if s < MUNI_MAX {
+                if muni_kind[s] == MUNI_MISSILE && muni_owner[s] == units[i].owner { return; }
+                launcher_shot[owner] = MUNI_MAX;
+            }
+            let lx: u16 = units[i].x_px + (UNIT_W >> 1);
+            if air_target(units[i].owner, lx, LAUNCHER_RANGE) != AIR_NONE {
+                l.armed = 0;
+                muni_spawn(MUNI_MISSILE, lx, (UNIT_BASE_Y - 8) << 8, Q10(0),
+                           Q10(0) - MISSILE_SPEED, MISSILE_LIFE, units[i].owner);
+                launcher_shot[owner] = muni_last;
+                unit_free(i);
+            }
         }
-        let lx: u16 = units[self].x_px + (UNIT_W >> 1);
-        if air_target(units[self].owner, lx, LAUNCHER_RANGE) != AIR_NONE {
-            self.armed = 0;
-            muni_spawn(MUNI_MISSILE, lx, (UNIT_BASE_Y - 8) << 8, Q10(0),
-                       Q10(0) - MISSILE_SPEED, MISSILE_LIFE, units[self].owner);
-            launcher_shot[owner] = muni_last;
-            unit_free(self);
-        }
-    }
+        _ => {}
+    };
 }
 
 // ---------------------------------------------------------------- spawn ---
@@ -682,8 +701,8 @@ far fn unit_update() {
                 // that would make them.
                 match units[i].kind {
                     UnitType::Tank(_)     => { unit_fire(i); }
-                    UnitType::Launcher(l) => { l.launch(); }
-                    UnitType::Infantry(f) => { f.fire(); }
+                    UnitType::Launcher(_) => { unit_launch(i); }
+                    UnitType::Infantry(_) => { unit_rifle(i); }
                     _ => {}
                 };
                 if units[i].block == 0 {
