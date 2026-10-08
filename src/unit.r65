@@ -63,6 +63,11 @@ const UNIT_TILE_LAUNCHER: u8 = 64;
 const UNIT_TILE_INFANTRY: u8 = 68;
 const UNIT_TILE_INFANTRY_FIRE: u8 = 70;   // rifle levelled, one frame per shot
 const UNIT_TILE_ENGINEER: u8 = 68;        // infantry art until phase 12
+// A marching man alternates his standing frame with this one, a step every
+// UNIT_WALK_PX px of ground: picked from x_px, so it costs no state and a
+// halted man stands. Infantry and engineers share it while they share art.
+const UNIT_TILE_MAN_WALK: u8 = 74;
+const UNIT_WALK_PX: u16 = 4;              // 8 frames a step at the march pace
 const UNIT_ATTR: u16 = 0x3000;            // priority 3, OBJ palette 0
 // How far mirrored art lands right of its box, from the sheet: a vehicle
 // fills columns 0-23 of its 32-px pair, so mirrored it fills 8-31; a man
@@ -729,6 +734,10 @@ fn unit_draw_one(i: u16, sx: u16) {
     let y: u8 = UNIT_BASE_Y as u8;
     let mut tile: u8 = unit_stats[units[i].kind as u16].tile;
     let cells: u8 = unit_stats[units[i].kind as u16].cells;
+    // A man on the march steps; the firing pose wins over both frames.
+    if cells == 1 && units[i].block == 0 {
+        if (units[i].x_px & UNIT_WALK_PX) != 0 { tile = UNIT_TILE_MAN_WALK; }
+    }
     match units[i].kind {
         UnitType::Infantry(f) => { if f.pose != 0 { tile = UNIT_TILE_INFANTRY_FIRE; } }
         _ => {}

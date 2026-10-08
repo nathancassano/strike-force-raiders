@@ -30,6 +30,9 @@ drift apart. This adds rows 6-13:
                col 8: the parachute canopy (tile 72, para.r65 PARA_TILE):
                drawn over the standing man's cell, lines meeting at his
                shoulders in the cell below
+               col 10: the man mid-stride (tile 74, unit.r65
+               UNIT_TILE_MAN_WALK) - the walk's second frame, the
+               standing man being the first
 
 Palette indices: 1 black, 2 dark green, 3 green, 4 light blue, 5 light
 grey, 6 orange, 7 darker green, 8 mid green, 9 charcoal, 10 blue-grey,
@@ -255,6 +258,29 @@ PARACHUTE = [
 ]
 
 
+# The man of tile 68 mid-stride, legs passing: the second frame of the
+# walk, the standing frame the first. Body unchanged in columns 2-7 so the
+# facing-left mirror (UNIT_MIRROR_MAN) holds for both frames.
+INFANTRY_WALK = [
+    "................",
+    "................",
+    "...kkk..........",
+    "...GGG..........",
+    "...GGG..........",
+    "..kkkkk.........",
+    "..ddddkk........",
+    "..ddddkk........",
+    "..ddddd.........",
+    "..ddddd.........",
+    "..ddddd.........",
+    "...ddd..........",
+    "...ddd..........",
+    "...ddd..........",
+    "...kkkk.........",
+    "................",
+]
+
+
 # The camera window on the radar: 8 px wide, its top and bottom edges and
 # a tick down each side. A sprite, so it moves every frame without a
 # redraw of the radar row (light grey, index 5, in OBJ palette 0).
@@ -289,6 +315,7 @@ def main():
     stamp(px, 48, 80, base())
     stamp(px, 48, 32, INFANTRY_FIRE)            # tile 70
     stamp(px, 64, 32, PARACHUTE)                # tile 72
+    stamp(px, 80, 32, INFANTRY_WALK)            # tile 74
     stamp(px, 120, 8, RADAR_BRACKET)            # tile 31
     stamp(px, 96, 8, MISSILE_E)                 # tiles 28, 29, 30
     stamp(px, 104, 8, MISSILE_NE)

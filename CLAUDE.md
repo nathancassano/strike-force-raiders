@@ -183,6 +183,8 @@ whatever it holds: the hardware reads a 16x16 sprite as tiles T, T+1, T+16, T+17
 A 24-px vehicle is one 16x16 cell plus its second cell's left half drawn as **two 8x8s** - three
 tiles on a scanline, not four, which is what keeps eight bunched tanks and a bunker (28) under
 the PPU's 34 (`unit_draw_one`; the sheet's fourth tile column of every vehicle is blank).
+A marching man (infantry or engineer) alternates his standing frame with a stride frame
+(`UNIT_TILE_MAN_WALK`, tile 74) every 4 px, picked from `x_px & 4`: no state, and a halted man stands.
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
