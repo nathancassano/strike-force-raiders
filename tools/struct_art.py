@@ -231,8 +231,10 @@ INFANTRY_FIRE = [
 
 
 # The canopy, one cell, sitting directly above the man's cell (tile 68):
-# a domed chute with the shroud lines converging on the man's shoulders
-# at columns 3-5 of the cell below.
+# a domed chute with the shroud lines converging at columns 7-8, row 14.
+# The man's head is columns 3-5 from row 2, so para.r65 draws this cell
+# 3 px toward him and 12 px up (PARA_CHUTE_DX/DY) rather than straight
+# above - keep those in step if either drawing moves.
 PARACHUTE = [
     "......wwww......",
     "....wwwwwwww....",

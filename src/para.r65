@@ -28,6 +28,13 @@ const PARA_FAIL: u16 = 26;                // of 256: one chute in ten, near enou
 // A man under a canopy is two 16x16 cells: the canopy over the standing
 // infantryman's cell. The failed chute is the man's cell alone.
 const PARA_TILE:      u8  = 72;           // tools/struct_art.py
+// The canopy's cell is offset from the man's, from the sheet: its shroud
+// lines meet at columns 7-8 and row 14, and the man's head is columns
+// 3-5 from row 2. So the canopy sits 3 px toward the man - left, or right
+// mirrored - and 12 px up rather than a whole cell, the lines ending at
+// the top of his head (he is drawn first, so over them).
+const PARA_CHUTE_DX:  u16 = 3;
+const PARA_CHUTE_DY:  u8  = 12;
 const PARA_ATTR:      u16 = 0x3000;
 const PARA_GROUND_Y:  u16 = (GROUND_Y - UNIT_H) << 8;   // feet on the line
 
@@ -138,9 +145,11 @@ far fn para_draw() {
             if sx < 256 || sx >= 0xFFF0 {
                 let mut attr: u16 = PARA_ATTR;
                 let mut bx: u16 = sx & 0x01FF;
+                let mut cx: u16 = (sx - PARA_CHUTE_DX) & 0x01FF;
                 if para_owner[i] == SIDE_ENEMY {
                     attr = PARA_ATTR | 0x4000 | OBJ_PAL_ENEMY;
                     bx = (sx - UNIT_MIRROR_MAN) & 0x01FF;
+                    cx = (sx - UNIT_MIRROR_MAN + PARA_CHUTE_DX) & 0x01FF;
                 }
                 let y: u8 = (para_y[i] >> 8) as u8;
                 let m: u16 = oam_take();
@@ -151,7 +160,7 @@ far fn para_draw() {
                 if st == PARA_CHUTE {
                     let c: u16 = oam_take();
                     if c < OAM_SLOTS {
-                        oam.set_full!(c as u8, bx, y - 16, (PARA_TILE as u16) | attr);
+                        oam.set_full!(c as u8, cx, y - PARA_CHUTE_DY, (PARA_TILE as u16) | attr);
                         oam.set_size!(c as u8, 1);
                     }
                 }
