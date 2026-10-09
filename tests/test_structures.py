@@ -88,14 +88,14 @@ def test_balloon_respawn(state, tmp_path):
     # entry 9) takes it and is spent doing so. The CPU's first man is out at
     # frame 64 and covers 2560 px at half a pixel a frame: by 5300 the bunker
     # is the enemy's and slot 0 is free.
-    case(lambda s: boot(s, "l").wait(5300), {"v.structs__owner.u8[9]": 0x01, "v.units__kind__tag.u8[0]": 0}, id="bunker_capture"),
+    case(lambda s: boot(s, "harness").wait(5300), {"v.structs__owner.u8[9]": 0x01, "v.units__kind__tag.u8[0]": 0}, id="bunker_capture"),
     # Tanks shell the other side's turrets and bunkers, holding in place until
     # the building falls. Two bought tanks crush the column's men at the front
     # around frame 7400 (tank_crush), take its first tank between them, and
     # roll on to the bunker at 5120 - the enemy's since ~5250 - hold short of
     # it and bring its 69 hp down at 8 a shell, one every 90 frames: by 10600
     # it is rubble and nobody's.
-    case(lambda s: boot(s, "l").press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(10600),
+    case(lambda s: boot(s, "harness").press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(10600),
          {"v.structs__hp.u8[9]": 0x00, "v.structs__owner.u8[9]": 0x02}, id="tank_bunker"),
     # Infantry gunfire: no round, the sweep that finds a target lands the hit.
     # Five men are ordered (the CPU's first man takes slot 0 at frame 64, so
@@ -106,7 +106,7 @@ def test_balloon_respawn(state, tmp_path):
     # player's 6 - are down to their last point, with 7 and 8 untouched behind
     # them. The meeting drifts with every heavier build; re-measure when it
     # moves.
-    case(lambda s: boot(s, "l").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(8200), {
+    case(lambda s: boot(s, "harness").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(8200), {
         "v.units__kind__tag.u8[2]": 0, "v.units__kind__tag.u8[3]": 0, "v.units__kind__tag.u8[4]": 0,
         "v.units__hp.u8[5]": 0x01, "v.units__hp.u8[6]": 0x01, "v.units__hp.u8[7]": 0x05, "v.units__hp.u8[8]": 0x05,
     }, id="rifle_fire"),
@@ -116,7 +116,7 @@ def test_balloon_respawn(state, tmp_path):
     # later - slots 1-5 free, the tank untouched - while the next squad's
     # first man (slot 6) is 200 px ahead of it. Its gun reload cycles 16..0
     # with nothing in range - a phase; re-baseline it, but do not delete it.
-    case(lambda s: boot(s, "l").press("l", "a", frames=3).wait(7492), {
+    case(lambda s: boot(s, "harness").press("l", "a", frames=3).wait(7492), {
         "v.units__kind__tag.u8[1]": 0, "v.units__kind__tag.u8[2]": 0, "v.units__kind__tag.u8[3]": 0,
         "v.units__kind__tag.u8[4]": 0, "v.units__kind__tag.u8[5]": 0, "v.units__hp.u8[0]": 0x19,
         "v.units__kind__tag.u8[6]": INFANTRY, "v.units__x_px.u16[6]": 0x1137,
@@ -126,20 +126,20 @@ def test_balloon_respawn(state, tmp_path):
     # inside two hundred frames and comes back at the start with a life gone.
     # The push is held to 1520 vblanks: at 1500 the run coasts to a stop just
     # outside.
-    case(lambda s: boot(s, "l").wait(20).right(1520).wait(300), {"v.heli_lives": 0x03, "v.heli_hp": 0x14}, id="base_missile"),
+    case(lambda s: boot(s, "harness").wait(20).right(1520).wait(300), {"v.heli_lives": 0x03, "v.heli_hp": 0x14}, id="base_missile"),
     # The enemy column's launcher fires its one homing missile at an airframe
     # inside LAUNCHER_RANGE (224 px) and is spent doing so: the slot is free,
     # the missile lands for 10 of the 20 hp, and no life is lost. The third
-    # harness row (@l+r) buys MIVV, so the truck is the column's lead and slot
+    # harness row ("harness_col") buys MIVV, so the truck is the column's lead and slot
     # 0, and its pilot hunts nothing, so the airframe can cross the field.
-    case(lambda s: boot(s, "l", "r").wait(20).up(40).right(1400).wait(120),
+    case(lambda s: boot(s, "harness_col").wait(20).up(40).right(1400).wait(120),
          {"v.units__kind__tag.u8[0]": 0, "v.heli_hp": 0x0A, "v.heli_lives": 0x04}, id="launcher_fire"),
     # Only one missile truck of a side fires at a time. Two bought launchers
     # (slots 0 and 2) march east 32 px apart and the enemy airframe's wander
     # passes over both at x~1850 around loop frame 2280: the lead fires - its
     # slot free, its missile up - and the second, inside the 224 px too,
     # holds, still armed, until that missile is spent.
-    case(lambda s: boot(s, "l").press("l", "left", frames=3).wait(3).press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(2262), {
+    case(lambda s: boot(s, "harness").press("l", "left", frames=3).wait(3).press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(2262), {
         "v.units__kind__tag.u8[0]": 0, "v.units__kind__tag.u8[2]": LAUNCHER, "v.units__kind__Launcher__armed.u8[2]": 0x01,
         "s.raw('muni_kind').u8[5]": MUNI_MISSILE,
     }, id="launcher_one"),
@@ -148,7 +148,7 @@ def test_balloon_respawn(state, tmp_path):
     # bunker at 5120 - and the other four, with the first man of the next
     # squad, go inside one after another from frame ~7300: five men, full,
     # and it is the enemy's.
-    case(lambda s: boot(s, "l").wait(8200), {"v.structs__men.u8[7]": 0x05, "v.structs__owner.u8[7]": 0x01}, id="super_manned"),
+    case(lambda s: boot(s, "harness").wait(8200), {"v.structs__men.u8[7]": 0x05, "v.structs__owner.u8[7]": 0x01}, id="super_manned"),
 ])
 def test_field(snes, script, checks):
     script(snes)

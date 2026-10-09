@@ -28,11 +28,9 @@ const MISSION_HARNESS_HOT: u8 = 11;   // the hunting, bombing pilot, forced colu
 const MISSION_HARNESS_COL: u8 = 12;   // logistics pilot, forced column
 const MISSION_ROWS:    u8 = 13;
 
-// Where a fresh boot starts, until the front end picks. In the meantime
-// the harness reaches its rows by holding a shoulder button through the
-// first frames - L for the quiet one, R for the hot one, both for the
-// quiet one with the forced column - which is what the suite's `@l`,
-// `@r` and `@l+r` movies do. The front end retires all three.
+// Where a fresh boot starts, until the front end picks. The tests reach
+// the harness rows by swapping boot_mission (main.r65) for boot_harness,
+// boot_harness_hot or boot_harness_col.
 const MISSION_START: u8 = 0;
 // What the forced harness rows buy. Forcing is the only way the suite
 // sees an enemy vehicle at a known place: left to itself the opponent

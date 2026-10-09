@@ -1,7 +1,7 @@
 """Phase 6: ground units - the pool, the march, traffic, the frame budget.
 
 The player's base sends only what is ordered (phase 7); the enemy's sends the
-CPU's convoys (phase 10). On the quiet row (`@l`) the first buy, at frame 64,
+CPU's convoys (phase 10). On the quiet row (`"harness"`) the first buy, at frame 64,
 is I - five men - so the first unit out is an infantryman marching west from
 x=7680; the pool is a tagged enum, so slot 0's kind is its tag. Every unit
 walks half a pixel a frame - a pixel on each odd frame - so at loop frame
@@ -21,14 +21,14 @@ TANK, VAN, LAUNCHER, INFANTRY, ENGINEER = 1, 2, 3, 4, 5
 
 
 @pytest.mark.parametrize("script, checks", [
-    case(lambda s: boot(s, "l").wait(200), {"v.units__kind__tag.u8[0]": INFANTRY, "v.units__owner.u8[0]": 0x01}, id="unit_spawn"),
-    case(lambda s: boot(s, "l").wait(600), {"v.units__x_px.u16[0]": 0x1CED}, id="unit_march"),
+    case(lambda s: boot(s, "harness").wait(200), {"v.units__kind__tag.u8[0]": INFANTRY, "v.units__owner.u8[0]": 0x01}, id="unit_spawn"),
+    case(lambda s: boot(s, "harness").wait(600), {"v.units__x_px.u16[0]": 0x1CED}, id="unit_march"),
     # A spawn order becomes a variant, and the hit points come from that
-    # variant's row of unit_stats. The hot row (@r) buys IMEV and nothing
+    # variant's row of unit_stats. The hot row ("harness_hot") buys IMEV and nothing
     # else - five men, a missile truck, two engineers and a van - so by frame
     # 2400 the column is one of every kind but the tank; the launcher's
     # payload is `armed`, 1 until it fires. (The tank is tank_crush's.)
-    case(lambda s: boot(s, "r").wait(2401), {
+    case(lambda s: boot(s, "harness_hot").wait(2401), {
         "v.units__kind__tag.u8[0]": INFANTRY, "v.units__hp.u8[0]": 0x05,
         "v.units__kind__tag.u8[5]": LAUNCHER, "v.units__hp.u8[5]": 0x08, "v.units__kind__Launcher__armed.u8[5]": 0x01,
         "v.units__kind__tag.u8[6]": ENGINEER, "v.units__hp.u8[6]": 0x05,
@@ -43,7 +43,7 @@ TANK, VAN, LAUNCHER, INFANTRY, ENGINEER = 1, 2, 3, 4, 5
     # The column is halted from wait10000 to past wait10600, so the wait sits
     # mid-window, where a faster or slower loop does not move the snapshot
     # before the column has arrived.
-    case(lambda s: boot(s, "l").press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(10200), {
+    case(lambda s: boot(s, "harness").press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(3).press("l", "a", frames=3).wait(10200), {
         "v.units__block.u8[0]": 0x01, "v.units__x_px.u16[0]": 0x138B,
         "v.units__block.u8[2]": 0x01, "v.units__x_px.u16[2]": 0x136C,
         "v.units__block.u8[4]": 0x01, "v.units__x_px.u16[4]": 0x134D,

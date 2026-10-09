@@ -1,12 +1,12 @@
 """Helpers the rotor_raiders ROM tests share.
 
 `boot` is the power-on: thirty frames for snes_init and boot_load to
-settle, with a button held through them to pick the mission (boot_load
-reads the pad by hand in the first frame). `shot` is the moment every case
+settle, with the mission picked by swapping boot_load's call to
+boot_mission for one of the ROM's boot_* picks (main.r65). `shot` is the moment every case
 reads its values at: Select pressed, which calls the ROM's snapshot_point
 from the main loop. `expect` checks a table of expressions against it and
 reports every mismatch at once. The colour checks and the OAM and parallax
-tool runs are the old run.sh's.
+tool runs are the old shell suite's.
 """
 
 import subprocess
@@ -21,13 +21,17 @@ TOOLS = Path(__file__).resolve().parent.parent / "tools"
 BOOT_FRAMES = 30
 
 
-def boot(s, *hold):
-    """Power-on: BOOT_FRAMES frames, holding *hold* through them (or nothing).
+def boot(s, pick=None):
+    """Power-on: run to frame BOOT_FRAMES, booting the mission *pick* names.
 
-    The hold picks the mission - "l", "r", "l" + "r" for the harness rows,
-    "x" for the campaign's first with the front end skipped (conftest.py).
+    *pick* is "harness", "harness_hot", "harness_col" or "direct"
+    (conftest.py): stopped at boot_mission's entry, the session jumps to
+    boot_<pick>, which returns that mission in its place. None boots the
+    campaign proper.
     """
-    return s.press(*hold, frames=BOOT_FRAMES) if hold else s.wait(BOOT_FRAMES)
+    if pick:
+        s.until("boot_mission", max_frames=BOOT_FRAMES).jump(f"boot_{pick}")
+    return s.wait(BOOT_FRAMES - s.frame)
 
 
 def shot(s, *holding):

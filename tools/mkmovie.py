@@ -14,10 +14,6 @@ Actions
   upN downN leftN rightN   hold a direction for N frames
   aN bN xN yN lN rN        hold a face/shoulder button for N frames
   up+leftN                 hold several buttons together for N frames
-  @l @r @x @l+r            hold at power-on: the button is down for the whole
-                           boot prefix and costs no frames of its own, which
-                           is how the ROM's boot-time mission select is
-                           reached without moving any timing after it
 
 Any action may combine buttons with '+', e.g. 'up+a30' or 'left+b12'.
 """
@@ -60,15 +56,6 @@ def split_action(act):
 
 def build(actions):
     frames = [IDLE] * BOOT_FRAMES
-    actions = list(actions)
-    # A power-on hold. boot_load reads the pad by hand to pick its mission -
-    # the harness's mission select - and that happens inside the first frame,
-    # before the boot prefix has run. So '@l' holds L across the whole prefix
-    # instead of adding frames after it, and every timing in the run is the
-    # same as one without it.
-    while actions and actions[0].startswith('@'):
-        buttons, _ = split_action(actions.pop(0)[1:])
-        frames = [hold(buttons)] * len(frames)
     for act in actions:
         if act.startswith('wait'):
             frames += [IDLE] * int(act[4:] or 1)

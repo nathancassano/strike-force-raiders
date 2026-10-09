@@ -49,10 +49,10 @@ other projects' copies have drifted by 50-170 lines.
 
 ```bash
 make          # Build ROM
-make verify   # Build and run the scripted-input regression suite
+make verify   # Build and run the ROM test suite (pytest tests -n auto)
 make lint     # Run the R65 linter (rules in r65-lint.toml)
 make assets   # Just the art: assets/src/*.bmp -> SNES CHR (an ordinary build does this)
-make play OUT=build/x.png ACTIONS=start,wait60,shot   # one ad-hoc scripted run
+make play OUT=build/x.png ACTIONS=@harness,wait60,shot   # one ad-hoc scripted run
 make run      # Build and launch in emulator
 make clean    # Clean build artifacts
 make syntax   # Compile only, no ROM
@@ -63,33 +63,32 @@ make syntax   # Compile only, no ROM
 Do not ask a human to look at the screen - drive the ROM yourself.
 
 **The regression suite is pytest** on `mesen_gdb.rom_driver` (`/home/nathan/R65/Mesen-GDB/python/README.md`):
-`pytest tests -n auto` (about 70-80 s on 8 cores; `pytest tests -k airlift` filters). It is every
-`run.sh` case ported with run.sh's expected values, one file per phase (`test_flight.py`,
+`pytest tests -n auto` (about 70-80 s on 8 cores; `pytest tests -k airlift` filters). It began as
+the old shell suite's cases, ported with their expected values, one file per phase (`test_flight.py`,
 `test_pad.py`, `test_units.py`, ... `test_campaign.py`); every completed phase leaves a case
 behind and the whole suite re-runs after each new one. A case drives the pad with chained calls
-that run as they are made - `boot(s, "l").wait(20).right(30)` - then `shot(s)` (Select to
-`snapshot_point`, the instant run.sh read at) and checks a table of expressions against memory by
+that run as they are made - `boot(s, "harness").wait(20).right(30)` - then `shot(s)` (Select to
+`snapshot_point`) and checks a table of expressions against memory by
 name, exactly as the `.sym`/`.dbg` spell it, with an array's width stated
-(`harness.expect(snes, {"v.units__kind__tag.u8[3]": 4, "v.heli_x_px": 0x40})`). `boot`'s hold picks the harness mission;
+(`harness.expect(snes, {"v.units__kind__tag.u8[3]": 4, "v.heli_x_px": 0x40})`). `boot`'s pick chooses the mission
+without input: the ROM asks `boot_mission()` (main.r65) what to boot, and a test stops at its
+entry and `jump`s to `boot_harness`, `boot_harness_hot`, `boot_harness_col` or `boot_direct` -
+`#[used]` functions nothing in the ROM calls, which return their mission in its place.
 `conftest.py`'s header says what each opponent is. A setup several cases share is a named state
 in `conftest.py` (`@rom_state`: `boarded`, `eight_tanks`, `five_passes`, `balloon_hit`,
 `at_turret`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and opened with
 `state("boarded")`.
-`tests/run.sh` is the old shell suite, superseded; it still runs.
+`./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
+`mesen_gdb.rom_driver` with the suite's own `boot` and `shot`, and screenshots at the
+ROM's `snapshot_point()` hook (fired by Select).
 
-`./play.sh OUT.png ACTIONS [mesen args...]` builds a Mesen input movie from an action
-script, runs the ROM headless, breaks at the ROM's `snapshot_point()` hook (fired by
-Select), and screenshots.
-
-    ./play.sh build/fly.png wait60,right90,shot --check-mem16 0x20=0x0140
+    ./play.sh build/fly.png @harness,wait60,right90,shot --dump wram build/fly.wram
 
 Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN`/`yN`/`lN`/`rN`.
-Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. A leading `@l`, `@r`, `@l+r` or
-`@x` is a **power-on hold**: it holds that button through the boot prefix, costing no frames,
-and `boot_load` reads the pad by hand (`pad_read_manual`, before the auto-read is on). L, R and
-L+R pick one of the three harness missions; X takes the campaign's first mission with the front
-end skipped, and no hold at all gets the campaign proper, title page and all.
-`tests/conftest.py`'s header says what each opponent is.
+Combine with `+`, e.g. `up+a30`. A leading `@harness`, `@harness_hot`, `@harness_col` or
+`@direct` is `boot`'s pick; without one the run boots the campaign proper, title page and all.
+`tools/mkmovie.py` still builds Mesen movies (`tools/timeline.sh` uses one); a movie cannot
+`jump`, so it always boots the campaign proper.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -144,9 +143,9 @@ rotor_raiders/
 │   ├── gfx/                  # Generated .chr / .pal / .tilemap - build output, not in git
 │   ├── sound/                # snesgss exports (spc700.bin, music_*.bin)
 │   └── levels/               # Battlefield placement lists
-├── tools/                    # mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
+├── tools/                    # play.py, mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
-├── tests/                    # pytest ROM suite (conftest.py, harness.py, test_*.py); run.sh is the old one
+├── tests/                    # pytest ROM suite (conftest.py, harness.py, test_*.py)
 ├── play.sh                   # One-shot scripted run + screenshot
 ├── build/                    # Compiled output (.asm, .smc, .sym, .dbg)
 └── Makefile                  # Build system for WLA-DX
@@ -315,7 +314,7 @@ fixed at the world's ends, the super bunker dead centre, turrets and bunkers alt
 through the contested middle either side of it) rather than transcribing the original's
 fifteen levels; `LAYOUT_MIDDLE_MAX` keeps the derived buildings inside the 16-slot pool.
 Rows 10-12 are the **harness missions**: the hand-made pre-campaign field with frozen tuning,
-reachable only by holding a shoulder button at power-on, and the whole suite runs on them -
+reachable only through `boot_mission`'s harness picks, and the whole suite runs on them -
 see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
 

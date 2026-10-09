@@ -26,14 +26,14 @@ def oam(i):
 
 
 @pytest.mark.parametrize("script, checks", [
-    case(lambda s: boot(s, "l").wait(16), {
+    case(lambda s: boot(s, "harness").wait(16), {
         rb(0): 0xFF, rb(1): 0x00, rb(2): 0xCF, rb(3): 0x30, rb(4): 0xCF, rb(5): 0x30,
         rb(6): 0xEF, rb(7): 0x10, rb(10): 0xEF, rb(11): 0x10, rb(14): 0xFF, rb(15): 0x00,
         oam(8): 0x00, oam(9): 0x08, oam(10): 0x1F,
     }, id="radar_boot"),
     # Flown east 240 frames: the airframe's block has left tile 0, so the
     # bank's tick stands alone, and the bracket sprite is at camera_x/32.
-    case(lambda s: boot(s, "l").wait(20).right(240).wait(20), {
+    case(lambda s: boot(s, "harness").wait(20).right(240).wait(20), {
         rb(2): 0xFF, rb(3): 0x00, rb(6): 0xEF, rb(7): 0x10, oam(8): 0x25,
     }, id="radar_flown"),
 ])
@@ -46,7 +46,7 @@ def test_radar(snes, script, checks):
 def test_strip_drawn(snes, tmp_path):
     # The strip itself: the two white gauges are what put this much white
     # across the screen.
-    boot(snes, "l").wait(16)
+    boot(snes, "harness").wait(16)
     shot(snes)
     assert screen_colour(snes, tmp_path, (28, 30, 31), snes_colour=True) >= 0.9
 
@@ -56,9 +56,9 @@ def test_strip_drawn(snes, tmp_path):
 # was; letting go of L hides the box and keeps the selection. The first
 # snapshot is taken with L still down (Select combined with L).
 @pytest.mark.parametrize("script, holding, shown", [
-    case(lambda s: boot(s, "l").wait(30).l(20).press("l", "right", frames=3), ("l",), 0x01,
+    case(lambda s: boot(s, "harness").wait(30).l(20).press("l", "right", frames=3), ("l",), 0x01,
          id="overlay_show"),
-    case(lambda s: boot(s, "l").wait(30).l(20).press("l", "right", frames=3).l(10).wait(5), (), 0x00,
+    case(lambda s: boot(s, "harness").wait(30).l(20).press("l", "right", frames=3).l(10).wait(5), (), 0x00,
          id="overlay_hide"),
 ])
 def test_overlay(snes, script, holding, shown):

@@ -8,11 +8,6 @@
 
 #[bank(0)]
 
-// The serial joypad ports. The stdlib exposes the auto-read results
-// ($4218..) but not these, and boot needs them - see pad_read_manual.
-#[hw(0x4016)]
-static mut JOYSER0: u8;                   // write: latch; read: controller 1, bit 0
-
 #[zeropage(0x10)]
 static mut PAD_STATE: u16;   // current held buttons (active-high mask)
 
@@ -41,26 +36,6 @@ far fn pad_poll() -> u16 {
 // pad_poll_trigger - rising-edge mask for this tick.
 far fn pad_poll_trigger() -> u16 {
     return PAD_TRIG;
-}
-
-// pad_read_manual - controller 1's held mask, read by hand rather than by
-// the hardware's auto-read. Boot needs it: the auto-read wants a frame and
-// an NMI, and the mission the harness selects has to be chosen before
-// anything initialises, or every timing downstream of it moves.
-//
-// The standard 65816 sequence: strobe $4016 to latch, then clock sixteen
-// bits out of its bit 0, most significant first - B Y Select Start Up Down
-// Left Right A X L R and four unused. The result is the same mask
-// pad_read_ports builds, so JOY_* apply.
-far fn pad_read_manual() -> u16 {
-    let mut v: u16 = 0;
-    JOYSER0 = 1;                          // latch
-    JOYSER0 = 0;
-    for i in 0..16 {
-        let bit: u8 = JOYSER0 & 0x01;
-        v = (v << 1) | (bit as u16);
-    }
-    return v;
 }
 
 // pad_init - zero the pad state. Zero-page statics are declared bare (an

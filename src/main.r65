@@ -93,15 +93,9 @@ fn boot_load() {
     unit_init();
     para_init();
     // The mission comes first: struct_init lays out what it placed, and
-    // every init below reads what it set. Until the front end exists the
-    // harness picks it here, from a shoulder button held at power-on -
-    // read by hand, since the auto-read wants a frame and an NMI, and a
-    // choice made after the inits would move every timing after it.
-    let mut m: u8 = MISSION_START;
-    let pad: u16 = pad_read_manual();
-    if (pad & JOY_L) != 0 { m = MISSION_HARNESS; }
-    if (pad & JOY_R) != 0 { m = MISSION_HARNESS_HOT; }
-    if (pad & JOY_L) != 0 && (pad & JOY_R) != 0 { m = MISSION_HARNESS_COL; }
+    // every init below reads what it set.
+    let pick: u8 = boot_mission();
+    let m: u8 = pick & ~BOOT_DIRECT;
     mission_set(m);
     struct_init();
     econ_init();
@@ -115,12 +109,12 @@ fn boot_load() {
 
     screen_init();
     // The campaign opens on its title page; a harness mission has no
-    // front end and boots straight into its battle, so a suite movie
-    // never has to press its way past one. X held at power-on is the
-    // third way in: the campaign's first mission with no front end -
-    // the world the suite's oldest cases were written against, before
-    // there was anything to press past.
-    if m < MISSION_HARNESS && (pad & JOY_X) == 0 { screen_show(SCREEN_TITLE); }
+    // front end and boots straight into its battle, so a test never has
+    // to press its way past one. BOOT_DIRECT is the third way in: the
+    // campaign's first mission with no front end - the world the suite's
+    // oldest cases were written against, before there was anything to
+    // press past.
+    if m < MISSION_HARNESS && (pick & BOOT_DIRECT) == 0 { screen_show(SCREEN_TITLE); }
 
     // The probe counts from here: the inits above run for a couple of
     // frames' worth, and the NMI is not on yet to count them, but the
@@ -132,6 +126,22 @@ fn boot_load() {
 
     INIDISP = 0x0F;
 }
+
+// boot_mission - the mission a power-on boots: the campaign's first,
+// behind its title page. BOOT_DIRECT in the result skips the front end.
+//
+// The tests boot another by swapping this call: they stop at its entry and
+// `jump` to one of the boot_* picks below, which returns in its place.
+// Nothing in the ROM calls those, so #[used] keeps them.
+const BOOT_DIRECT: u8 = 0x80;
+
+#[inline(never)]
+fn boot_mission() -> u8 { return MISSION_START; }
+
+#[used] fn boot_harness() -> u8 { return MISSION_HARNESS; }           // the quiet pilot
+#[used] fn boot_harness_hot() -> u8 { return MISSION_HARNESS_HOT; }   // the hunting one
+#[used] fn boot_harness_col() -> u8 { return MISSION_HARNESS_COL; }   // quiet, with that column's vehicles
+#[used] fn boot_direct() -> u8 { return MISSION_START | BOOT_DIRECT; } // the campaign's first, no front end
 
 // NMI handler - called every VBlank. PPU/DMA traffic goes here.
 #[interrupt(nmi)]

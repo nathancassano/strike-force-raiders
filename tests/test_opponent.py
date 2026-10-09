@@ -44,7 +44,7 @@ def test_cpu_purse(snes):
     # man is waiting on the gate. The sequence from a cold boot is fixed by
     # the seed and the airframe's flight, so any change to the tables, the
     # pause or the pilot moves every column-dependent case.
-    boot(snes, "l").wait(300)
+    boot(snes, "harness").wait(300)
     shot(snes)
     expect(snes, {"v.cpu_funds": 0x1D, "s.raw('cpu_q').u8[0]": 0x03,
                   "v.cpu_head": 0x01, "v.cpu_tail": 0x01, "v.cpu_men": 0x01})
@@ -54,44 +54,44 @@ def test_cpu_purse(snes):
 #
 # The player's physics and loadout on its own state, and a pilot adapted from
 # Armor Alley's: refit, dodge, hunt, bomb, wander, in that order. On the quiet
-# row it only wanders and refits; `@r` takes the hot one, where it hunts the
+# row it only wanders and refits; `"harness_hot"` takes the hot one, where it hunts the
 # player's airframe and bombs. foe_state: 0 wander, 1 pad, 2 dodge, 3 hunt.
 
 @pytest.mark.parametrize("script, checks", [
     # Wander: from the far edge it flies west toward the player's end on the
     # weave (four heights, one every 64 frames); at frame 1215 it is at 4768,
     # full.
-    case(lambda s: boot(s, "l").wait(1200), {"v.foe_x_px": 0x12A0, "v.foe_hp": 0x14, "v.foe_state": 0x00,
+    case(lambda s: boot(s, "harness").wait(1200), {"v.foe_x_px": 0x12A0, "v.foe_hp": 0x14, "v.foe_state": 0x00,
                               "v.foe_lives": 0x04}, id="foe_patrol"),
     # The pad. Fuel drains a unit every 64 frames; low enough for the trip
     # home it turns for its own deck (x 7072), comes down, lands at ~5780 and
     # refuels and repairs before leaving full at ~6220.
-    case(lambda s: boot(s, "l").wait(6000), {"v.foe_x_px": 0x1BA3, "v.foe_y": 0x9800, "v.foe_landed": 0x01,
+    case(lambda s: boot(s, "harness").wait(6000), {"v.foe_x_px": 0x1BA3, "v.foe_y": 0x9800, "v.foe_landed": 0x01,
                               "v.foe_state": 0x01}, id="foe_pad"),
     # The player's turret at 1536 fires on it as on the player's: the wander
     # takes it through the turret's 340 px on every lap, jinking, and it
     # comes out about ten points down each time - here 10 at frame 3000, and
     # alive; the deck repairs it.
-    case(lambda s: boot(s, "l").wait(3000), {"v.foe_hp": 0x0A, "v.foe_lives": 0x04}, id="foe_turret"),
+    case(lambda s: boot(s, "harness").wait(3000), {"v.foe_hp": 0x0A, "v.foe_lives": 0x04}, id="foe_turret"),
     # The player's gun. The airframe waits at x~764, where the wander's west
     # turn (900) brings the enemy into the gun's 320 px, and fires for 150
     # frames: four rounds land, a point each, and the enemy fires back on the
     # way past - it shoots whatever is level, in reach and faced.
-    case(lambda s: boot(s, "l").wait(20).right(130).wait(2400).b(150), {"v.foe_hp": 0x10, "v.foe_lives": 0x04,
+    case(lambda s: boot(s, "harness").wait(20).right(130).wait(2400).b(150), {"v.foe_hp": 0x10, "v.foe_lives": 0x04,
                                                    "v.heli_hp": 0x11}, id="foe_gun"),
     # The hunt (hot row). Flown out to ~3100 and left hovering: the enemy,
     # hunting, arrives at a standoff, level, and fires until the player's
     # airframe is lost, then goes on to its next target with all four lives.
-    case(lambda s: boot(s, "r").wait(20).right(600).wait(900), {"v.heli_lives": 0x03, "v.foe_lives": 0x04}, id="foe_hunt"),
+    case(lambda s: boot(s, "harness_hot").wait(20).right(600).wait(900), {"v.heli_lives": 0x03, "v.foe_lives": 0x04}, id="foe_hunt"),
     # Avoidance on both airframes' closing speed: the player hovers in the
     # wander's path at x 989 and the pilot steps out of its plane on every
     # pass. Counting only the player's speed, it flew into the hover and both
     # were lost by frame 1500.
-    case(lambda s: boot(s, "l").right(175).wait(1500), {"v.heli_lives": 0x04, "v.foe_lives": 0x04}, id="foe_avoid"),
+    case(lambda s: boot(s, "harness").right(175).wait(1500), {"v.heli_lives": 0x04, "v.foe_lives": 0x04}, id="foe_avoid"),
     # The bombs (hot row). A bought tank marching east is found by the pilot
     # on its way in and bombed from a hover over it: by frame 3000 the slot is
     # free.
-    case(lambda s: boot(s, "r").press("l", "a", frames=3).wait(3000), {"v.units__kind__tag.u8[0]": 0, "v.heli_lives": 0x04}, id="foe_bomb"),
+    case(lambda s: boot(s, "harness_hot").press("l", "a", frames=3).wait(3000), {"v.units__kind__tag.u8[0]": 0, "v.heli_lives": 0x04}, id="foe_bomb"),
 ])
 def test_foe(snes, script, checks):
     script(snes)

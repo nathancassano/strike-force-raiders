@@ -27,7 +27,7 @@ def test_board(state):
 def test_field(snes):
     # In the field: landed on open ground at x 714 facing east, the men walk
     # up under it from the base and board there too; no deck needed.
-    boot(snes, "l").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(20).right(120).wait(60).down(30).wait(40).wait(1600)
+    boot(snes, "harness").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(20).right(120).wait(60).down(30).wait(40).wait(1600)
     shot(snes)
     expect(snes, {"v.heli_men": 0x05, "v.heli_landed": 0x01, "v.heli_on_pad": 0x00})
 

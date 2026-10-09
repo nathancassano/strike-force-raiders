@@ -8,8 +8,8 @@ Report the dominant colours of a screenshot, or assert one is present.
   pngstat.py shot.png --expect 4,6,14 --snes    same, but the colour is given
                                          as 5-bit BGR555 components
 
-Colours are 8-bit RGB hex or 'r,g,b'. Used by tests/run.sh to check that a
-frame actually rendered rather than trusting a non-zero exit code.
+Colours are 8-bit RGB hex or 'r,g,b'. Use it to check that a frame
+actually rendered rather than trusting a non-zero exit code.
 """
 import struct
 import sys

@@ -28,11 +28,11 @@ def test_boot(snes, tmp_path):
 # settles at 1276 - 128 - 8 = 1140 = $0474.
 
 @pytest.mark.parametrize("script, camera_x", [
-    case(lambda s: boot(s, "x"), 0x0000, id="cam_rest"),
-    case(lambda s: boot(s, "x").wait(20).right(30), 0x005A, id="cam_r30"),
-    case(lambda s: boot(s, "x").wait(20).right(120), 0x021C, id="cam_r120"),
-    case(lambda s: boot(s, "x").wait(20).right(240), 0x0474, id="cam_r240"),
-    case(lambda s: boot(s, "x").wait(20).right(240).left(90), 0x032D, id="cam_back"),
+    case(lambda s: boot(s, "direct"), 0x0000, id="cam_rest"),
+    case(lambda s: boot(s, "direct").wait(20).right(30), 0x005A, id="cam_r30"),
+    case(lambda s: boot(s, "direct").wait(20).right(120), 0x021C, id="cam_r120"),
+    case(lambda s: boot(s, "direct").wait(20).right(240), 0x0474, id="cam_r240"),
+    case(lambda s: boot(s, "direct").wait(20).right(240).left(90), 0x032D, id="cam_back"),
 ])
 def test_camera(snes, script, camera_x):
     script(snes)
@@ -47,7 +47,7 @@ def test_parallax(rom, tmp_path):
     # seventh and covers the eighth. A short move: the near band runs at
     # 1.875x and the tool correlates each row wrapped at the screen width.
     shots = []
-    for script in (lambda s: boot(s, "x"), lambda s: boot(s, "x").wait(20).right(40)):
+    for script in (lambda s: boot(s, "direct"), lambda s: boot(s, "direct").wait(20).right(40)):
         with rom.session() as s:
             script(s)
             shot(s)
@@ -64,17 +64,17 @@ def test_parallax(rom, tmp_path):
 
 @pytest.mark.parametrize("script, checks", [
     # Rest: heli_init's spawn, untouched by a frame of no input.
-    case(lambda s: boot(s, "x"), {"v.heli_x_px": 0x0040, "v.heli_y": 0x6000}, id="heli_rest"),
-    case(lambda s: boot(s, "l").wait(20).right(30), {"v.heli_x_px": 0x00AB}, id="heli_right"),
+    case(lambda s: boot(s, "direct"), {"v.heli_x_px": 0x0040, "v.heli_y": 0x6000}, id="heli_rest"),
+    case(lambda s: boot(s, "harness").wait(20).right(30), {"v.heli_x_px": 0x00AB}, id="heli_right"),
     # Leftward travel exercises the borrow path in heli_move_x: `>>` is a
     # logical shift even on signed types, so a round trip that lands
     # mid-world proves the explicit sign branch, where a clamp at 0 would not.
-    case(lambda s: boot(s, "x").wait(20).right(240).left(60), {"v.heli_x_px": 0x0452}, id="heli_back"),
+    case(lambda s: boot(s, "direct").wait(20).right(240).left(60), {"v.heli_x_px": 0x0452}, id="heli_back"),
     # All four clamps: the world edge, and the flyable box between the HUD
     # strip and the ground at y=168.
-    case(lambda s: boot(s, "x").wait(20).left(60), {"v.heli_x_px": 0x0000}, id="heli_wall"),
-    case(lambda s: boot(s, "x").wait(20).up(60), {"v.heli_y": 0x1000}, id="heli_ceil"),
-    case(lambda s: boot(s, "l").wait(20).down(30).wait(40), {"v.heli_y": 0x9800}, id="heli_floor"),
+    case(lambda s: boot(s, "direct").wait(20).left(60), {"v.heli_x_px": 0x0000}, id="heli_wall"),
+    case(lambda s: boot(s, "direct").wait(20).up(60), {"v.heli_y": 0x1000}, id="heli_ceil"),
+    case(lambda s: boot(s, "harness").wait(20).down(30).wait(40), {"v.heli_y": 0x9800}, id="heli_floor"),
 ])
 def test_heli(snes, script, checks):
     script(snes)
@@ -99,12 +99,12 @@ TILE, ATTR = "s.raw('oam').u8[2]", "s.raw('oam').u8[3]"
 
 
 @pytest.mark.parametrize("script, checks", [
-    case(lambda s: boot(s, "l"), {TILE: 0x04, ATTR: 0x37}, id="heli_tilt_level"),
-    case(lambda s: boot(s, "l").wait(20).right(60), {TILE: 0x00, ATTR: 0x37}, id="heli_tilt_right"),
-    case(lambda s: boot(s, "x").wait(20).right(120).left(60), {TILE: 0x02, ATTR: 0x77}, id="heli_tilt_left"),
-    case(lambda s: boot(s, "x").wait(20).right(120).left(10), {TILE: 0x22, ATTR: 0x77}, id="heli_turn_mid"),
-    case(lambda s: boot(s, "l").wait(20).right(120).left(6).wait(20), {TILE: 0x20, ATTR: 0x37}, id="heli_turn_stall"),
-    case(lambda s: boot(s, "x").wait(20).right(120).left(6).right(6).wait(2), {ATTR: 0x37}, id="heli_turn_back"),
+    case(lambda s: boot(s, "harness"), {TILE: 0x04, ATTR: 0x37}, id="heli_tilt_level"),
+    case(lambda s: boot(s, "harness").wait(20).right(60), {TILE: 0x00, ATTR: 0x37}, id="heli_tilt_right"),
+    case(lambda s: boot(s, "direct").wait(20).right(120).left(60), {TILE: 0x02, ATTR: 0x77}, id="heli_tilt_left"),
+    case(lambda s: boot(s, "direct").wait(20).right(120).left(10), {TILE: 0x22, ATTR: 0x77}, id="heli_turn_mid"),
+    case(lambda s: boot(s, "harness").wait(20).right(120).left(6).wait(20), {TILE: 0x20, ATTR: 0x37}, id="heli_turn_stall"),
+    case(lambda s: boot(s, "direct").wait(20).right(120).left(6).right(6).wait(2), {ATTR: 0x37}, id="heli_turn_back"),
 ])
 def test_heli_sprite(snes, script, checks):
     script(snes)
@@ -116,7 +116,7 @@ def test_heli_drawn(snes, tmp_path):
     # The airframe is actually drawn, not just positioned. Canopy and rotor
     # are the two OBJ colours that appear nowhere else on screen, so finding
     # them proves the OBJ CHR reached VRAM and the palette reached CGRAM.
-    boot(snes, "l").wait(20).right(60)
+    boot(snes, "harness").wait(20).right(60)
     shot(snes)
     assert screen_colour(snes, tmp_path, (14, 22, 28), snes_colour=True) >= 0.02   # canopy
     assert screen_colour(snes, tmp_path, (21, 22, 24), snes_colour=True) >= 0.05   # rotor disc
@@ -130,32 +130,32 @@ def test_heli_drawn(snes, tmp_path):
 
 @pytest.mark.parametrize("script, checks", [
     # The plan's loadout: 64 rounds, 10 bombs.
-    case(lambda s: boot(s, "x"), {"v.heli_gun": 0x40, "v.heli_bombs": 0x0A}, id="ammo_rest"),
+    case(lambda s: boot(s, "direct"), {"v.heli_gun": 0x40, "v.heli_bombs": 0x0A}, id="ammo_rest"),
     # HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds.
-    case(lambda s: boot(s, "l").wait(10).b(30), {"v.heli_gun": 0x3B}, id="ammo_burst"),
+    case(lambda s: boot(s, "harness").wait(10).b(30), {"v.heli_gun": 0x3B}, id="ammo_burst"),
     # Bombs are edge-triggered: holding A must not empty the rack.
-    case(lambda s: boot(s, "x").wait(10).a(1), {"v.heli_bombs": 0x09}, id="ammo_bomb"),
-    case(lambda s: boot(s, "l").wait(10).a(1).wait(5).a(1), {"v.heli_bombs": 0x08}, id="ammo_bomb2"),
+    case(lambda s: boot(s, "direct").wait(10).a(1), {"v.heli_bombs": 0x09}, id="ammo_bomb"),
+    case(lambda s: boot(s, "harness").wait(10).a(1).wait(5).a(1), {"v.heli_bombs": 0x08}, id="ammo_bomb2"),
     # Firing past empty must stop at zero, not wrap to 255.
-    case(lambda s: boot(s, "l").wait(10).b(400), {"v.heli_gun": 0x00}, id="ammo_empty"),
+    case(lambda s: boot(s, "harness").wait(10).b(400), {"v.heli_gun": 0x00}, id="ammo_empty"),
     # The gun points where the nose points, and the nose follows the last
     # commanded direction rather than the coasting velocity.
-    case(lambda s: boot(s, "x").wait(10).left(20), {"v.heli_face_left": 0x01}, id="ammo_face"),
+    case(lambda s: boot(s, "direct").wait(10).left(20), {"v.heli_face_left": 0x01}, id="ammo_face"),
     # Pool lifecycle. A bomb falls to the ground in ~25 frames and retires on
     # contact; a round retires on BULLET_LIFE, which is what stops sustained
     # fire from starving the pool.
-    case(lambda s: boot(s, "x").wait(10).a(1), {"s.raw('muni_kind').u8[0]": 0x02}, id="muni_bomb_live"),
-    case(lambda s: boot(s, "x").wait(10).a(1).wait(10), {"s.raw('muni_kind').u8[0]": 0x02}, id="muni_bomb_fall"),
-    case(lambda s: boot(s, "l").wait(10).a(1).wait(40), {"s.raw('muni_kind').u8[0]": 0x00}, id="muni_bomb_ground"),
-    case(lambda s: boot(s, "x").wait(10).b(1), {"s.raw('muni_kind').u8[0]": 0x01}, id="muni_gun_live"),
-    case(lambda s: boot(s, "x").wait(10).b(1).wait(45), {"s.raw('muni_kind').u8[0]": 0x00}, id="muni_gun_range"),
+    case(lambda s: boot(s, "direct").wait(10).a(1), {"s.raw('muni_kind').u8[0]": 0x02}, id="muni_bomb_live"),
+    case(lambda s: boot(s, "direct").wait(10).a(1).wait(10), {"s.raw('muni_kind').u8[0]": 0x02}, id="muni_bomb_fall"),
+    case(lambda s: boot(s, "harness").wait(10).a(1).wait(40), {"s.raw('muni_kind').u8[0]": 0x00}, id="muni_bomb_ground"),
+    case(lambda s: boot(s, "direct").wait(10).b(1), {"s.raw('muni_kind').u8[0]": 0x01}, id="muni_gun_live"),
+    case(lambda s: boot(s, "direct").wait(10).b(1).wait(45), {"s.raw('muni_kind').u8[0]": 0x00}, id="muni_gun_range"),
     # A round leaves at muzzle height: the airframe's 8.8 y plus 7 px. This
     # once came out as 0x0200 - a compiler bug restored the argument through
     # an 8-bit TYA - and every round spawned on the HUD row.
-    case(lambda s: boot(s, "x").wait(10).b(1), {"s.raw('muni_y').u16[0]": 0x6700}, id="muni_gun_muzzle"),
+    case(lambda s: boot(s, "direct").wait(10).b(1), {"s.raw('muni_y').u16[0]": 0x6700}, id="muni_gun_muzzle"),
     # Y fires nothing: the smart missile is out of the game. muni_up is a
     # [u8; 2]; side 0's count is the player's munitions in flight.
-    case(lambda s: boot(s, "l").wait(20).y(1).wait(20), {"s.raw('muni_up').u8[0]": 0x00}, id="y_inert"),
+    case(lambda s: boot(s, "harness").wait(20).y(1).wait(20), {"s.raw('muni_up').u8[0]": 0x00}, id="y_inert"),
 ])
 def test_weapons(snes, script, checks):
     script(snes)

@@ -170,10 +170,9 @@ lint:
 	@mkdir -p $(BUILD_DIR)
 	$(R65C) $(MAIN_SRC) -o $(BUILD_DIR)/lint.asm --cfg snes --lint -I src
 
-# Scripted-input regression suite. Each movie drives the ROM to a
-# snapshot_point breakpoint and screenshots; see tests/run.sh.
+# The ROM test suite (tests/, pytest on mesen_gdb.rom_driver).
 verify: $(ROM_FILE)
-	@./tests/run.sh
+	python3 -m pytest tests -n auto -q
 
 # Single ad-hoc run: make play OUT=build/shot.png ACTIONS=start,wait60,shot
 OUT     ?= $(BUILD_DIR)/play.png
