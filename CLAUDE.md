@@ -62,6 +62,21 @@ make syntax   # Compile only, no ROM
 
 Do not ask a human to look at the screen - drive the ROM yourself.
 
+**The regression suite is pytest** on `mesen_gdb.rom_driver` (`/home/nathan/R65/Mesen-GDB/python/README.md`):
+`pytest tests -n auto` (about 70-80 s on 8 cores; `pytest tests -k airlift` filters). It is every
+`run.sh` case ported with run.sh's expected values, one file per phase (`test_flight.py`,
+`test_pad.py`, `test_units.py`, ... `test_campaign.py`); every completed phase leaves a case
+behind and the whole suite re-runs after each new one. A case drives the pad with chained calls
+that run as they are made - `boot(s, "l").wait(20).right(30)` - then `shot(s)` (Select to
+`snapshot_point`, the instant run.sh read at) and checks a table of expressions against memory by
+name, exactly as the `.sym`/`.dbg` spell it, with an array's width stated
+(`harness.expect(snes, {"v.units__kind__tag.u8[3]": 4, "v.heli_x_px": 0x40})`). `boot`'s hold picks the harness mission;
+`conftest.py`'s header says what each opponent is. A setup several cases share is a named state
+in `conftest.py` (`@rom_state`: `boarded`, `eight_tanks`, `five_passes`, `balloon_hit`,
+`at_turret`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and opened with
+`state("boarded")`.
+`tests/run.sh` is the old shell suite, superseded; it still runs.
+
 `./play.sh OUT.png ACTIONS [mesen args...]` builds a Mesen input movie from an action
 script, runs the ROM headless, breaks at the ROM's `snapshot_point()` hook (fired by
 Select), and screenshots.
@@ -74,7 +89,7 @@ Combine with `+`, e.g. `up+a30`. Built by `tools/mkmovie.py`. A leading `@l`, `@
 and `boot_load` reads the pad by hand (`pad_read_manual`, before the auto-read is on). L, R and
 L+R pick one of the three harness missions; X takes the campaign's first mission with the front
 end skipped, and no hold at all gets the campaign proper, title page and all.
-`tests/run.sh`'s header says what each opponent is.
+`tests/conftest.py`'s header says what each opponent is.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -87,9 +102,6 @@ you intend to measure needs a feature with a unique phase. The ground gets that 
 pseudo-random pebble field painted by `tools/ground_texture.py` (the same field on both
 256 px halves, so the tool's wrap at the screen width stays exact) rather than from marker
 bars, which read as vertical artifacts. The sky's bars are gone too; the hills still carry their posts.
-
-`tests/run.sh` is the regression suite; every completed phase leaves a case behind and the
-whole suite re-runs after each new phase. `./tests/run.sh NAME` filters.
 
 A state a movie cannot reach - a won match, a planted unit - is driven through the interactive
 debugger instead: pipe `break $<snapshot_point>`, `continue`, `set <addr> <val>`, `continue`,
@@ -134,7 +146,7 @@ rotor_raiders/
 │   └── levels/               # Battlefield placement lists
 ├── tools/                    # mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
-├── tests/run.sh              # Scripted-input regression suite
+├── tests/                    # pytest ROM suite (conftest.py, harness.py, test_*.py); run.sh is the old one
 ├── play.sh                   # One-shot scripted run + screenshot
 ├── build/                    # Compiled output (.asm, .smc, .sym, .dbg)
 └── Makefile                  # Build system for WLA-DX
@@ -304,7 +316,7 @@ through the contested middle either side of it) rather than transcribing the ori
 fifteen levels; `LAYOUT_MIDDLE_MAX` keeps the derived buildings inside the 16-slot pool.
 Rows 10-12 are the **harness missions**: the hand-made pre-campaign field with frozen tuning,
 reachable only by holding a shoulder button at power-on, and the whole suite runs on them -
-see `tests/run.sh`'s header. Treat their rows, their convoys and their layout as part of the
+see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
 
 **The front end** (`src/screen.r65`, phase 11, bank 2) is three pages - title, briefing,
