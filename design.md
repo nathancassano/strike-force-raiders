@@ -142,8 +142,8 @@ man's pace that put five in a heap.)*
 - **No gravity while powered.** Gravity applies only at zero fuel. **No ejection** - the pilot
   goes with the airframe.
 - **Zero fuel is a crash landing**: the dead-stick descent ends on ground contact with the
-  airframe lost, a life gone. So is **touching down faster than 2.5 px/frame** (`HELI_CRASH_VY`),
-  deck or not - a full-stick descent has to be eased off a dozen frames out.
+  airframe lost, a life gone. So is **touching down flat out on both axes** - the top descent
+  rate and the top horizontal speed (`heli_crashes`) - deck or not; anything slower lands.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
 - Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
   slice (d)) and then removed from the game, for both airframes.

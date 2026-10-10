@@ -69,7 +69,7 @@ def test_bail(state):
 def test_crash(state):
     """A crash at the ground line from the same load drops nobody."""
     snes = state(boarded)
-    snes.up(40).wait(60).down(80).wait(5)
+    snes.up(60).downright(100).wait(5)
     v = read_snapshot(snes)
     assert v.para_live == 0
     assert v.heli_men == 0

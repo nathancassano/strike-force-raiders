@@ -45,7 +45,7 @@ const FOE_NEAR:    u16 = 8;
 const FOE_NEAR_Y:  u16 = 2;
 const FOE_WALK:    Q10 = 64;              // 1 px/frame: slow enough to call stopped over the deck
 const FOE_LAND_DEEP: u16 = 12;            // a landing aims this far under the deck, so the coast
-                                          // still touches down - at ~1.75 px/frame, under HELI_CRASH_VY
+                                          // still touches down - at ~1.75 px/frame, nowhere near a crash
 
 // FOE_STOP[v >> 3] - pixels an airframe coasts at speed v (Q10, either
 // axis) with the stick let go: drag takes 8 a frame on both. Bucket i is
@@ -967,10 +967,10 @@ far fn foe_update() {
     foe_move_x(foe_vx);
     foe_move_y(foe_vy);
 
-    // Touchdown: the player's rules. Too fast is a crash; its own deck
+    // Touchdown: the player's rules. Flat out is a crash; its own deck
     // takes a landing (it never puts down anywhere else on purpose).
     if foe_y == HELI_Y_MAX {
-        if vy_in > HELI_CRASH_VY {
+        if heli_crashes(foe_vx, vy_in) != 0 {       // vx after the move, as heli_update
             foe_lost();
             return;
         }

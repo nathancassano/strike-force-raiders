@@ -115,12 +115,17 @@ const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 // Dead-stick descent once the tank is dry.
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 
-// Touching the ground faster than this is a crash, deck or not. A bit
-// over half the top descent rate: a full-stick descent has to be eased
-// off a dozen frames out (vertical drag is 8/64 a frame), which is what
-// makes a landing a landing rather than a stop. From hover height, 30
-// frames of Down and a release lands; 32 does not.
-const HELI_CRASH_VY: Q10 = 160;           // 2.5 px/frame
+// Touching the ground is a crash, deck or not, only flat out on both
+// axes: at the top descent rate (HELI_VY_MAX) and the top horizontal
+// speed (HELI_VX_MAX) either way. Anything slower is a landing. The
+// descent rate takes ~43 frames and ~88 px of dive to build, so a crash
+// has to start from above y 80 - from hover height it cannot reach it.
+// heli_crashes is the test; foe.r65 uses it too.
+far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
+    if vy < HELI_VY_MAX { return 0; }
+    if vx >= HELI_VX_MAX || vx <= Q10(0) - HELI_VX_MAX { return 1; }
+    return 0;
+}
 
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut heli_x_px:  u16;     // world pixel, 0..WORLD_W-HELI_W
@@ -555,10 +560,13 @@ far fn heli_update(held: u16) {
         // floor from catching an airframe that is merely skimming it. Open
         // ground takes a powered landing anywhere - that is how men are
         // picked up in the field - and a deck takes any landing; a dead
-        // stick that meets open ground is a crash landing.
+        // stick that meets open ground is a crash landing. The crash test
+        // takes vx after the move (a copy before it cost the stress run 7
+        // ticks): at a world edge the move has stopped it, so a dive into
+        // the edge lands.
         if heli_y == HELI_Y_MAX {
-            if vy_in > HELI_CRASH_VY {
-                heli_lost();              // too fast: a crash, deck or not
+            if heli_crashes(heli_vx, vy_in) != 0 {
+                heli_lost();              // flat out: a crash, deck or not
                 return;
             }
             if descending != 0 {

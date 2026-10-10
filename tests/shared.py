@@ -103,7 +103,7 @@ def campaign_lost(s):
     """A campaign boot through title and briefing, four crash landings, Start."""
     boot(s).start().wait(10).start().wait(20)
     for frames in (200, 200, 200, 240):
-        s.down(40).wait(frames)
+        s.up(60).downright(90).wait(frames)
     s.start().wait(20)
 
 

@@ -368,8 +368,10 @@ airframe then rises out of the ground at the start, a pixel a frame from the gro
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
 are off until it is up. A dead stick touching open ground is a crash landing and a loss too;
-only a deck saves it - and any touchdown over `HELI_CRASH_VY` (2.5 px/frame) is a crash, deck or
-not: 30 frames of Down from hover and a coast lands, 32 does not. `game_state` gates the whole simulation; the draw
+only a deck saves it - and a touchdown flat out on both axes, at `HELI_VY_MAX` down and
+`HELI_VX_MAX` either way, is a crash, deck or not (`heli_crashes`, the enemy airframe's rule too).
+Anything slower lands: the descent rate takes ~88 px of dive to build, so from hover height every
+descent lands, and a crash has to start from above y 80 with Down and a direction held. `game_state` gates the whole simulation; the draw
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
 from a letter row (`HUD_LETTER_ROW`, stamped by `tools/hud_glyphs.py` below the visible
 screen like the glyph strip), and Start calls `game_reset`, which re-runs every `*_init`.

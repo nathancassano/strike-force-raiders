@@ -3,10 +3,10 @@
 The player's deck spans world x 1024..1071, so the airframe's centre has to
 be inside it - x 1008..1055 - when it touches the floor. Since the airlift a
 powered descent lands anywhere on the ground; only a deck rearms
-(heli_on_pad). Touching down faster than HELI_CRASH_VY (2.5 px/frame) is a
-crash, so every landing here eases off: 30 frames of Down from hover height
-and a coast arrives under it; 32 does not, and a full-stick descent hits at
-4. right180 and a 60-frame coast puts the airframe at x 1014.
+(heli_on_pad). Touching down is a crash only flat out on both axes - the top
+descent rate and the top horizontal speed (heli_crashes) - which a dive from
+hover height cannot build, so any descent from there lands. right180 and a
+60-frame coast puts the airframe at x 1014.
 """
 
 from shared import boot, read_snapshot
@@ -54,9 +54,30 @@ def test_taking_off_from_the_deck(snes):
     assert v.heli_landed == 0
 
 
-def test_a_full_stick_landing_crashes(snes):
-    """Too fast: a full-stick descent onto the deck is a crash - a life gone."""
+def test_a_full_stick_descent_onto_the_deck_lands(snes):
+    """Straight down at full stick from hover height lands on the deck."""
     boot(snes, "MISSION_CAKE_WALK").wait(20).right(180).wait(60).down(80)
+    v = read_snapshot(snes)
+    assert v.heli_lives == 4
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 1
+
+
+def test_a_straight_dive_from_altitude_lands(snes):
+    """Full Down from near the ceiling reaches the top descent rate, but with
+    no horizontal speed it is still a landing.
+    """
+    boot(snes, "MISSION_CAKE_WALK").wait(20).up(60).down(90)
+    v = read_snapshot(snes)
+    assert v.heli_lives == 4
+    assert v.heli_landed == 1
+
+
+def test_a_flat_out_dive_crashes(snes):
+    """Down and Right from near the ceiling meets the ground at the top
+    speed on both axes: a crash - a life gone.
+    """
+    boot(snes, "MISSION_CAKE_WALK").wait(20).up(60).downright(90)
     v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_landed == 0
