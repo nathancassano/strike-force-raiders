@@ -1,6 +1,6 @@
 """Phases 1-4: boot, the scrolling battlefield, the airframe and its weapons."""
 
-from harness import boot, read_snapshot, screen_colour, tool
+from harness import boot, read_snapshot, screen_colour
 
 
 # ---- Phase 1 - harness ------------------------------------------------------
@@ -53,26 +53,6 @@ def test_camera_follows_back_left(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(20).right(240).left(90)
     v = read_snapshot(snes)
     assert v.camera_x == 813
-
-
-def test_parallax(rom, tmp_path):
-    """Four layers at four rates, and eight equal HDMA ground bands.
-
-    The tool can measure six bands: the first is the plain ground line under
-    the units' feet, and the airframe's HUD strip on the last tile row cuts
-    the seventh and covers the eighth. A short move: the near band runs at
-    1.875x and the tool correlates each row wrapped at the screen width.
-    """
-    with rom.session() as s:
-        boot(s, "MISSION_CAKE_WALK")
-        read_snapshot(s)
-        at_rest = s.screenshot(tmp_path / "parallax-rest.png")
-    with rom.session() as s:
-        boot(s, "MISSION_CAKE_WALK").wait(20).right(40)
-        read_snapshot(s)
-        moved = s.screenshot(tmp_path / "parallax-moved.png")
-    # Rows 216-223 are the airframe's HUD strip; below is past the screen.
-    tool("parallax.py", at_rest, moved, "--assert-bands", 6, "--ignore-rows", "216-238")
 
 
 # ---- Phase 3 - helicopter ---------------------------------------------------

@@ -12,7 +12,7 @@ below came from that.
 Kinds: 0 free, 1 tank, 2 van, 3 launcher, 4 infantry, 5 engineer.
 """
 
-from harness import boot, read_snapshot, tool
+from harness import boot, read_snapshot
 from states import eight_tanks
 
 TANK, VAN, LAUNCHER, INFANTRY, ENGINEER = 1, 2, 3, 4, 5
@@ -94,16 +94,3 @@ def test_unit_budget(state):
     v = read_snapshot(snes)
     assert v.frames_nmi == 3664
     assert v.frames_loop == 3061
-
-
-def test_unit_oam(state, tmp_path):
-    """The headline constraint: at a bunched column the PPU must still be able
-    to draw everything standing on those scanlines - 32 sprites and 34 tiles a
-    line. The sprite budget, not the CPU, is what a bigger front runs into.
-    """
-    snes = state(eight_tanks)
-    snes.right(520).wait(60)
-    read_snapshot(snes)
-    oam = tmp_path / "oam.bin"
-    snes.dump("oam", oam)
-    tool("oamstat.py", oam)

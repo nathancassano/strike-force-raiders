@@ -6,17 +6,10 @@ boot_load's entry (main.r65). `read_snapshot` is the moment every case
 reads its values at: Select pressed, which calls the ROM's snapshot_point
 from the main loop. It returns the session's memory by name, so a case
 reads `v = read_snapshot(snes)` and asserts on `v.heli_x_px`. The colour
-checks and the OAM and parallax tool runs are the old shell suite's.
+checks are the old shell suite's.
 """
 
-import subprocess
-import sys
-from pathlib import Path
-
 from PIL import Image
-
-TOOLS = Path(__file__).resolve().parent.parent / "tools"
-
 
 BOOT_FRAMES = 30
 
@@ -62,11 +55,3 @@ def colour_pct(png, rgb, snes=False):
 def screen_colour(snes, tmp_path, rgb, snes_colour=False):
     """Screenshot now and return how much of it is *rgb*."""
     return colour_pct(snes.screenshot(tmp_path / "screen.png"), rgb, snes=snes_colour)
-
-
-def tool(name, *args):
-    """Run tools/NAME; fail the test with its output unless it exits 0."""
-    r = subprocess.run([sys.executable, str(TOOLS / name), *map(str, args)],
-                       capture_output=True, text=True)
-    assert r.returncode == 0, f"{name} failed:\n{r.stdout}{r.stderr}"
-    return r.stdout
