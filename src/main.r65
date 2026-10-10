@@ -116,7 +116,7 @@ fn boot_load() {
     __rand_seed = 0xDEAD;   // must be non-zero; re-seeded from frame count later
 
     screen_init();
-    // The campaign opens on its title page; a harness mission has no
+    // The campaign opens on its title page; a test mission has no
     // front end and boots straight into its battle, so a test never has
     // to press its way past one. BOOT_DIRECT is the third way in: the
     // campaign's first mission with no front end - the world the suite's

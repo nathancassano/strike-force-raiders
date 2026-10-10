@@ -9,7 +9,7 @@
 //
 // When it ends the simulation freezes where it stands, the result goes up
 // mid-screen, and Start goes on: to the after-action page on a campaign
-// mission, or straight into a fresh match on a harness one, which is what
+// mission, or straight into a fresh match on a test one, which is what
 // the suite drives.
 
 #[bank(0)]
@@ -44,7 +44,7 @@ far fn game_over(result: u8) {
 }
 
 // game_continue - Start, with the match over. The campaign reports it on
-// the after-action page; a harness mission has no front end and simply
+// the after-action page; a test mission has no front end and simply
 // starts again.
 far fn game_continue() {
     if mission >= MISSION_COUNT {

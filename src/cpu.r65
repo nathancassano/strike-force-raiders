@@ -54,10 +54,10 @@ static cpu_stats: [CpuStat; 11] = [
     CpuStat { convoy_level: 8,  order_delay: 825,  fund_min: 25, fund_max: 50, clip_speed: 288, regen_time: 30,  flags: 0xFF },
     CpuStat { convoy_level: 9,  order_delay: 733,  fund_min: 20, fund_max: 50, clip_speed: 304, regen_time: 0,   flags: 0xFF },
     CpuStat { convoy_level: 10, order_delay: 660,  fund_min: 20, fund_max: 50, clip_speed: 320, regen_time: 0,   flags: 0xFF },
-    // The harness's logistics row, not the original's: the first row's
+    // The test rows' logistics row, not the original's: the first row's
     // tuning with trucks and engineers allowed and nothing hunted, so a
     // case can fly the length of the field to meet a column that has a
-    // vehicle in it. Frozen; see mission.r65's harness rows.
+    // vehicle in it. Frozen; see mission.r65's test rows.
     CpuStat { convoy_level: 5,  order_delay: 1320, fund_min: 60, fund_max: 99, clip_speed: 176, regen_time: 240, flags: 0x03 },
 ];
 
@@ -136,7 +136,7 @@ static convoys: [Convoy; 25] = [
 
 // ---------------------------------------------------------------- state ---
 #[lowram] static mut cpu_level:  u8;      // row of cpu_stats
-// Which convoy to buy, plus one; 0 leaves the pick free. The harness
+// Which convoy to buy, plus one; 0 leaves the pick free. The test
 // missions set it (mission.r65): the suite is calibrated to a column of a
 // known shape, and a free pick rides on how many times the pilot has
 // reached for cpu_rand() before the first purchase - so any change in

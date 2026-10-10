@@ -134,7 +134,7 @@ rotor_raiders/
 │   ├── struct.r65            # Buildings: level table, turrets, bunkers, balloons, super bunker, bases, banks
 │   ├── order.r65             # Funds, the L/R order ring, the order queue
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
-│   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the harness rows
+│   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the test rows
 │   ├── screen.r65            # The front end: title, briefing and after-action pages on BG1
 │   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
 │   ├── hud.r65               # BG1 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
@@ -323,9 +323,9 @@ and calls `mission_layout`, which *derives* the field from those counts (the ban
 fixed at the world's ends, the super bunker dead centre, turrets and bunkers alternating
 through the contested middle either side of it) rather than transcribing the original's
 fifteen levels; `LAYOUT_MIDDLE_MAX` keeps the derived buildings inside the 16-slot pool.
-Rows 10-12 are the **harness missions**: the hand-made pre-campaign field with frozen tuning,
-reachable only by a test writing `boot_pick`, and the whole suite runs on them -
-see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
+Rows 10-12 are the **test missions** (`MISSION_TEST_QUIET`, `_HUNTER`, `_CONVOY`): the
+hand-made pre-campaign field with frozen tuning, reachable only by a test writing `boot_pick`,
+and the whole suite runs on them - see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
 
 **The front end** (`src/screen.r65`, phase 11, bank 2) is three pages - title, briefing,
@@ -355,7 +355,7 @@ into the page shadow, its area the inside of the frame) in the stdlib's default 
 boot to BG1 tile 96 (past the art and the radar) on BG1 sub-palette 2 - by DMA, not
 `Console::upload_font`, whose register-at-a-time loop costs a frame of boot and shifts every
 suite movie. The border and code cursor are still the HUD's box pieces. **The front
-end is the campaign's**: a harness mission boots straight into its battle and its Start
+end is the campaign's**: a test mission boots straight into its battle and its Start
 restarts it, so no suite movie has to press past a page it did not ask for.
 
 **The CPU opponent** (`src/cpu.r65`, phase 10, in bank 2 with `hud.r65` and `order.r65` -
@@ -374,7 +374,7 @@ gate rules as the player's orders. Its purchase sequence from a cold boot is fix
 `cpu_seed` and the airframe's flight - but *only* by those: the pilot draws the same
 `cpu_rand`, so how often it has tossed a coin before the first purchase decides what the purse
 can reach, and any change to `foe.r65` re-deals the whole army. That is what `cpu_forced` is
-for: a harness mission names the convoy to buy (the tier gate does not apply to a forced pick,
+for: a test mission names the convoy to buy (the tier gate does not apply to a forced pick,
 the purse still does), so the dozen cases calibrated to a column stay put.
 
 **The enemy airframe** (`src/foe.r65`) is a second helicopter on its own `foe_*` statics with

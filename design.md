@@ -759,7 +759,7 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
       flame thrower, scatter bomb, stealth, suicide, kill_end, kill_missile, dumb missiles,
       jamming) is out: weapons the roster does not have, or already covered (van jamming).
       Phase 11's `mission_stats` names the row per mission (`cpu_row`), plus a
-      harness row of its own that allows trucks and engineers but hunts nothing.
+      test row of its own that allows trucks and engineers but hunts nothing.
     - **The purse.** The enemy earns as the player does, from its airframe's distance into the
       player's half against the same threshold: `(WORLD_W - x) >> 4` a frame. Until slice (b)
       the airframe is a stand-in parked mid-field, so the CPU earns a fund every ~2.6 s.
@@ -883,7 +883,7 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     clamps the derived ones to what is left of the 16-slot pool: the last two missions' 13
     middle buildings plus the 5 fixed ones overflowed it, and `mission_place` had dropped the
     enemy base and bank in silence. All ten layouts were dumped and read back.
-    *The harness is now three missions, not a hack* (rows 10-12, unreachable by playing).
+    *The test rows are now three missions, not a hack* (rows 10-12, unreachable by playing).
     They carry the pre-campaign hand-made field and its tuning, frozen, so that a ground case
     does not move when the curve is tuned. Reaching them cost the in-loop `R`-at-boot hook,
     which called `game_reset` three frames in and moved every timing after it: `boot_load`
@@ -893,8 +893,8 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     *Found on the way:* the opponent's convoy pick rides on the pilot's coin tosses - both
     draw `cpu_rand`, so how many times the pilot has reached for it before the first purchase
     decides what the purse can reach, and the whole army is re-dealt by any change to
-    `foe.r65`. Hence `cpu_forced`: a harness row names the convoy to buy (the tier gate does
-    not apply to a forced pick; the purse still does), and the third harness row pairs that
+    `foe.r65`. Hence `cpu_forced`: a test row names the convoy to buy (the tier gate does
+    not apply to a forced pick; the purse still does), and the third test row pairs that
     with a logistics `cpu_stats` row - trucks and engineers allowed, nothing hunted - so a
     case can fly the length of the field to meet a vehicle. Seven cases were re-derived
     against the frozen rows (`unit_kinds`, `tank_crush`, `launcher_fire`, `missile_unit`,
@@ -910,7 +910,7 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     tick and the draw. The briefing reads `mission_stats` rather than repeating it - the
     mission's number and name, its turrets and bunkers, the purse and the lives it starts you
     with - and the names widened to sixteen capitals each so they can be spelled out.
-    *The front end is the campaign's*: a harness mission boots straight into its battle, and
+    *The front end is the campaign's*: a test mission boots straight into its battle, and
     `@x` is a fourth power-on hold for the campaign's first mission with the front end skipped,
     which is the world the suite's oldest (unprefixed) cases were written against. New cases:
     `screen_title`, `screen_brief`, `screen_battle`, `screen_after` (four crash landings spend

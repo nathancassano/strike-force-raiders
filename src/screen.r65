@@ -17,7 +17,7 @@
 // cursor are still the order dialog's pieces, read back out of the BG1
 // map by position (HUD_BOX_ROW, tools/hud_glyphs.py).
 //
-// The front end is the *campaign's*. A harness mission (mission.r65) boots
+// The front end is the *campaign's*. A test mission (mission.r65) boots
 // straight into its battle and its Start still restarts it, so the suite
 // never sees a page it did not ask for.
 

@@ -16,7 +16,7 @@
 
 #[bank(2)]
 
-// The ten of the campaign, and two past them: the harness's fixed field,
+// The ten of the campaign, and three past them: the tests' fixed field,
 // against three opponents. None is reachable by playing - mission_set
 // clamps a campaign index to the tenth - and they exist so the suite's
 // cases have ground that does not move when the campaign's curve is
@@ -44,7 +44,7 @@ const MISSION_ROWS:    u8 = 13;
 // any mission by writing its constant to boot_pick (main.r65) at
 // boot_load's entry.
 const MISSION_START: u8 = MISSION_CAKE_WALK;
-// What the forced harness rows buy. Forcing is the only way the suite
+// What the forced test rows buy. Forcing is the only way the suite
 // sees an enemy vehicle at a known place: left to itself the opponent
 // buys what its purse and its tier allow, at random, and the draw moves
 // with every change to the pilot.
@@ -55,8 +55,8 @@ const MISSION_START: u8 = MISSION_CAKE_WALK;
 // missile truck, five men and two vans: the truck leads, which is what a
 // case that has to reach a vehicle wants, since the column marches west
 // and anything fired at it from the west meets the lead first.
-const CONVOY_HARNESS:     u8 = 11;
-const CONVOY_HARNESS_COL: u8 = 12;
+const CONVOY_TEST_HUNTER: u8 = 11;
+const CONVOY_TEST_CONVOY: u8 = 12;
 
 // The names, sixteen characters each, padded to that width - the
 // original's, in order, in capitals for the pages' console font. The
@@ -105,11 +105,11 @@ static mission_stats: [MissionStat; 13] = [
     MissionStat { cpu_row: 7, turret_rate: 9,  turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 5, owned: 2 },
     MissionStat { cpu_row: 8, turret_rate: 8,  turret_range: 380, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 3 },
     MissionStat { cpu_row: 9, turret_rate: 6,  turret_range: 400, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 4 },
-    // The harness rows: the tuning the suite's cases were written
+    // The test rows: the tuning the suite's cases were written
     // against, and a layout laid by hand rather than by the curve (see
-    // mission_layout_harness). The counts here are ignored - the hand
-    // layout decides - and the two differ only in the opponent they face.
-    // Frozen: changing either re-pins two dozen cases.
+    // mission_layout_test). The counts here are ignored - the hand
+    // layout decides - and the three differ only in the opponent they face.
+    // Frozen: changing any of them re-pins two dozen cases.
     MissionStat { cpu_row: 0, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
     MissionStat { cpu_row: 7, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
     MissionStat { cpu_row: 10, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
@@ -139,16 +139,16 @@ far fn mission_set(n: u8) {
     econ_thresh  = mission_stats[i].econ_thresh;
     start_funds  = mission_stats[i].start_funds;
     start_lives  = mission_stats[i].start_lives;
-    // Two of the harness rows buy IMEV and nothing else - the column the
+    // Two of the test rows buy IMEV and nothing else - the column the
     // suite's launcher and smart-missile cases need (see cpu_forced). The
-    // first harness row leaves the pick free: the older half of the
+    // first test row leaves the pick free: the older half of the
     // suite is written against the column its purse happens to buy.
     // (The third row pairs the forced column with cpu.r65's logistics
     // row, which hunts nothing - the only way an airframe can cross the
     // field to meet a vehicle.)
     cpu_forced = 0;
-    if m == MISSION_TEST_HUNTER { cpu_forced = CONVOY_HARNESS + 1; }
-    if m == MISSION_TEST_CONVOY { cpu_forced = CONVOY_HARNESS_COL + 1; }
+    if m == MISSION_TEST_HUNTER { cpu_forced = CONVOY_TEST_HUNTER + 1; }
+    if m == MISSION_TEST_CONVOY { cpu_forced = CONVOY_TEST_CONVOY + 1; }
     mission_layout();
 }
 
@@ -189,7 +189,7 @@ const LAYOUT_MIDDLE_MAX: u16 = STRUCT_MAX - 5;
 
 fn mission_layout() {
     if mission >= MISSION_COUNT {
-        mission_layout_harness();
+        mission_layout_test();
         return;
     }
     let i: u16 = mission as u16;
@@ -254,10 +254,10 @@ fn mission_kind(placed_t: u16, placed_b: u16, turrets: u16) -> u8 {
     return StructKind::Turret as u8;
 }
 
-// mission_layout_harness - the suite's field, by hand: what the level
+// mission_layout_test - the suite's field, by hand: what the level
 // looked like before the campaign derived it, so the cases that are about
 // tanks and men rather than missions keep their ground. Frozen.
-fn mission_layout_harness() {
+fn mission_layout_test() {
     level_count = 0;
     mission_place(StructKind::Bank   as u8, 96,   SIDE_PLAYER);
     mission_place(StructKind::Base   as u8, 400,  SIDE_PLAYER);
