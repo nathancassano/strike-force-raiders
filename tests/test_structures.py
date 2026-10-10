@@ -63,7 +63,7 @@ def test_infantry_capture_a_neutral_bunker(snes):
     The CPU's first man is out at frame 64 and covers 2560 px at half a pixel
     a frame: by 5300 the bunker is the enemy's and slot 0 is free.
     """
-    boot(snes, "harness").wait(5300)
+    boot(snes, "MISSION_TEST_QUIET").wait(5300)
     v = read_snapshot(snes)
     assert v.structs__owner.u8[9] == ENEMY
     assert v.units__kind__tag.u8[0] == FREE
@@ -78,7 +78,7 @@ def test_tanks_shell_a_bunker_to_rubble(snes):
     enemy's since ~5250 - hold short of it and bring its 69 hp down at 8 a
     shell, one every 90 frames: by 10600 it is rubble and nobody's.
     """
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10600)
     v = read_snapshot(snes)
@@ -93,7 +93,7 @@ def test_the_enemy_bases_missiles_down_an_airframe(snes):
     The push is held to 1520 vblanks: at 1500 the run coasts to a stop just
     outside.
     """
-    boot(snes, "harness").wait(20).right(1520).wait(300)
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(1520).wait(300)
     v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_hp == 20
@@ -104,11 +104,11 @@ def test_a_launcher_fires_its_one_missile(snes):
     inside LAUNCHER_RANGE (224 px) and is spent doing so: the slot is free, the
     missile lands for 10 of the 20 hp, and no life is lost.
 
-    The third harness row ("harness_col") buys MIVV, so the truck is the
+    The convoy row (MISSION_TEST_CONVOY) buys MIVV, so the truck is the
     column's lead and slot 0, and its pilot hunts nothing, so the airframe can
     cross the field.
     """
-    boot(snes, "harness_col").wait(20).up(40).right(1400).wait(120)
+    boot(snes, "MISSION_TEST_CONVOY").wait(20).up(40).right(1400).wait(120)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
     assert v.heli_hp == 10
@@ -123,7 +123,7 @@ def test_the_enemy_mans_the_super_bunker(snes):
     inside one after another from frame ~7300: five men, full, and it is the
     enemy's.
     """
-    boot(snes, "harness").wait(8200)
+    boot(snes, "MISSION_TEST_QUIET").wait(8200)
     v = read_snapshot(snes)
     assert v.structs__men.u8[7] == 5
     assert v.structs__owner.u8[7] == ENEMY

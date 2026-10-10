@@ -33,7 +33,7 @@ def test_field(snes):
     """In the field: landed on open ground at x 714 facing east, the men walk
     up under it from the base and board there too; no deck needed.
     """
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(20)
     snes.right(120).wait(60).down(30).wait(40).wait(1600)

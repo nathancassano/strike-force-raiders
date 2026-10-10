@@ -23,15 +23,27 @@
 // tuned. Their rows, their convoys and their layout are frozen; treat
 // them as part of the tests.
 const MISSION_COUNT:   u8 = 10;
-const MISSION_HARNESS: u8 = 10;   // quiet pilot, its own column: cpu_stats row 0
-const MISSION_HARNESS_HOT: u8 = 11;   // the hunting, bombing pilot, forced column
-const MISSION_HARNESS_COL: u8 = 12;   // logistics pilot, forced column
+// The campaign's, by the names its briefing gives them (mission_names).
+const MISSION_CAKE_WALK:      u8 = 0;
+const MISSION_ONE_GUN:        u8 = 1;
+const MISSION_SUCKER_PUNCH:   u8 = 2;
+const MISSION_AIRBORNE:       u8 = 3;
+const MISSION_TWO_GUN:        u8 = 4;
+const MISSION_SUPER_BUNKER:   u8 = 5;
+const MISSION_SCRAPYARD:      u8 = 6;
+const MISSION_BLIND_SPOT:     u8 = 7;
+const MISSION_WASTELAND:      u8 = 8;
+const MISSION_MIDNIGHT_OASIS: u8 = 9;
+// The tests' rows, past the campaign, by their opponent.
+const MISSION_TEST_QUIET:     u8 = 10;   // quiet pilot, its own column: cpu_stats row 0
+const MISSION_TEST_HUNTER:    u8 = 11;   // the hunting, bombing pilot, forced column
+const MISSION_TEST_CONVOY:    u8 = 12;   // logistics pilot, forced column
 const MISSION_ROWS:    u8 = 13;
 
-// Where a fresh boot starts, until the front end picks. The tests reach
-// the harness rows by writing one to boot_pick (main.r65) at boot_load's
-// entry.
-const MISSION_START: u8 = 0;
+// Where a fresh boot starts, until the front end picks. The tests boot
+// any mission by writing its constant to boot_pick (main.r65) at
+// boot_load's entry.
+const MISSION_START: u8 = MISSION_CAKE_WALK;
 // What the forced harness rows buy. Forcing is the only way the suite
 // sees an enemy vehicle at a known place: left to itself the opponent
 // buys what its purse and its tier allow, at random, and the draw moves
@@ -135,8 +147,8 @@ far fn mission_set(n: u8) {
     // row, which hunts nothing - the only way an airframe can cross the
     // field to meet a vehicle.)
     cpu_forced = 0;
-    if m == MISSION_HARNESS_HOT { cpu_forced = CONVOY_HARNESS + 1; }
-    if m == MISSION_HARNESS_COL { cpu_forced = CONVOY_HARNESS_COL + 1; }
+    if m == MISSION_TEST_HUNTER { cpu_forced = CONVOY_HARNESS + 1; }
+    if m == MISSION_TEST_CONVOY { cpu_forced = CONVOY_HARNESS_COL + 1; }
     mission_layout();
 }
 
@@ -176,7 +188,7 @@ const LAYOUT_GAP: u16 = 512;              // clear air either side of the super 
 const LAYOUT_MIDDLE_MAX: u16 = STRUCT_MAX - 5;
 
 fn mission_layout() {
-    if mission >= MISSION_HARNESS {
+    if mission >= MISSION_COUNT {
         mission_layout_harness();
         return;
     }

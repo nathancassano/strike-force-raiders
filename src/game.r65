@@ -47,7 +47,7 @@ far fn game_over(result: u8) {
 // the after-action page; a harness mission has no front end and simply
 // starts again.
 far fn game_continue() {
-    if mission >= MISSION_HARNESS {
+    if mission >= MISSION_COUNT {
         game_reset();
         return;
     }

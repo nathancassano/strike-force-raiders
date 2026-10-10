@@ -1,9 +1,9 @@
 """Phase 6: ground units - the pool, the march, traffic, the frame budget.
 
 The player's base sends only what is ordered (phase 7); the enemy's sends the
-CPU's convoys (phase 10). On the quiet row (`"harness"`) the first buy, at frame 64,
-is I - five men - so the first unit out is an infantryman marching west from
-x=7680; the pool is a tagged enum, so slot 0's kind is its tag. Every unit
+CPU's convoys (phase 10). On the quiet row (MISSION_TEST_QUIET) the first
+buy, at frame 64, is I - five men - so the first unit out is an infantryman
+marching west from x=7680; the pool is a tagged enum, so slot 0's kind is its tag. Every unit
 walks half a pixel a frame - a pixel on each odd frame - so at loop frame
 615 (a wait of 600 plus the movie's lead-in) he is at 7405. `tools/poolstat.py
 --brief` on a WRAM dump shows the column's shape at any frame; every figure
@@ -20,14 +20,14 @@ PLAYER, ENEMY = 0, 1
 
 
 def test_the_enemys_first_unit_is_an_infantryman(snes):
-    boot(snes, "harness").wait(200)
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == INFANTRY
     assert v.units__owner.u8[0] == ENEMY
 
 
 def test_infantry_march_half_a_pixel_a_frame(snes):
-    boot(snes, "harness").wait(600)
+    boot(snes, "MISSION_TEST_QUIET").wait(600)
     v = read_snapshot(snes)
     assert v.units__x_px.u16[0] == 7405
 
@@ -36,12 +36,12 @@ def test_each_kind_takes_its_hit_points_from_unit_stats(snes):
     """A spawn order becomes a variant, and the hit points come from that
     variant's row of unit_stats.
 
-    The hot row ("harness_hot") buys IMEV and nothing else - five men, a
-    missile truck, two engineers and a van - so by frame 2400 the column is
+    The hunter row (MISSION_TEST_HUNTER) buys IMEV and nothing else - five
+    men, a missile truck, two engineers and a van - so by frame 2400 the column is
     one of every kind but the tank; the launcher's payload is `armed`, 1 until
     it fires.
     """
-    boot(snes, "harness_hot").wait(2401)
+    boot(snes, "MISSION_TEST_HUNTER").wait(2401)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == INFANTRY
     assert v.units__hp.u8[0] == 5
@@ -66,7 +66,7 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     sits mid-window, where a faster or slower loop does not move the snapshot
     before the column has arrived.
     """
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10200)

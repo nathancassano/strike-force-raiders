@@ -19,7 +19,7 @@ def seven_vans(s):
 
 def test_the_opening_purse_and_selection(snes):
     """32 funds, the tank selected, four lives."""
-    boot(snes, "harness").wait(60)
+    boot(snes, "MISSION_TEST_QUIET").wait(60)
     v = read_snapshot(snes)
     assert v.funds == 32
     assert v.order_sel == 2
@@ -30,7 +30,7 @@ def test_one_press_buys_one_tank(snes):
     """It comes out of the player's base at x=512 marching east, and the cost
     comes off at once.
     """
-    boot(snes, "harness").press("l", "a", frames=3).wait(30)
+    boot(snes, "MISSION_TEST_QUIET").press("l", "a", frames=3).wait(30)
     v = read_snapshot(snes)
     assert v.funds == 28
     assert v.units__kind__tag.u8[0] == TANK
@@ -45,7 +45,7 @@ def test_infantry_leave_the_gate_one_at_a_time(snes):
     128 frames at a man's pace) clear of it: a minute in, one is on the field
     and four still wait in the emitter.
     """
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(60)
     v = read_snapshot(snes)
@@ -59,7 +59,7 @@ def test_the_seventh_van_is_refused(snes):
     in the queue: the seventh press is refused and costs nothing, so the
     purse is 32 - 6*2, and the first van is out.
     """
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "left", frames=3).wait(3)
     snes.press("l", "left", frames=3).wait(3)
     seven_vans(snes).wait(80)
@@ -71,7 +71,7 @@ def test_the_seventh_van_is_refused(snes):
 
 def test_buying_a_helicopter_adds_a_life(snes):
     """Right three times from the tank is the helicopter: an extra life for 20."""
-    boot(snes, "harness")
+    boot(snes, "MISSION_TEST_QUIET")
     for _ in range(3):
         snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10)

@@ -5,22 +5,30 @@ spread the cases over the cores. They began as the old shell suite's cases,
 ported with its expected values.
 
 A case drives the ROM with mesen_gdb.rom_driver's chainable input -
-`boot(s, "harness").wait(20).right(30)` - and reads memory by name at the
-snapshot (harness.py). `boot`'s pick chooses the mission at power-on, by
-writing the ROM's boot_pick at boot_load's entry:
+`boot(s, "MISSION_TEST_QUIET").wait(20).right(30)` - and reads memory by name
+at the snapshot (harness.py). `boot` takes the name of one of the ROM's
+mission constants and boots that mission at power-on, front end skipped,
+by writing it to the ROM's boot_pick at boot_load's entry:
 
-  "harness"      the quiet opponent - its pilot only wanders and refits,
-                 and it buys what its purse and its tier allow, which at
-                 that row is men. Nearly every case is written against this.
-  "harness_hot"  the hot one - it hunts, bombs and fires missiles, and buys
-                 IMEV: five men, a missile truck, two engineers, a van.
-  "harness_col"  the quiet pilot with that column's vehicles, buying MIVV,
-                 the truck leading - for a case that has to fly out and
-                 meet one.
-  "direct"       not a harness mission: the campaign's first, front end
-                 skipped, the world the oldest cases were written against.
+  MISSION_TEST_QUIET   the quiet opponent - its pilot only wanders and
+                       refits, and it buys what its purse and its tier
+                       allow, which at that row is men. Nearly every case
+                       is written against this.
+  MISSION_TEST_HUNTER  the hunter - it hunts, bombs and fires missiles,
+                       and buys IMEV: five men, a missile truck, two
+                       engineers, a van.
+  MISSION_TEST_CONVOY  the quiet pilot with that column's vehicles, buying
+                       MIVV, the truck leading - for a case that has to fly
+                       out and meet one.
+  MISSION_CAKE_WALK    not a test mission: the campaign's first, the
+                       world the oldest cases were written against. Every
+                       campaign mission is MISSION_ and its briefing name.
 
-No pick at all gets the campaign proper, title page and all.
+The three MISSION_TEST_ rows sit past the campaign's ten, out of the
+game's reach, with their tuning frozen so a case does not move when the
+campaign is tuned.
+
+No mission at all gets the campaign proper, title page and all.
 
 A setup several cases share is a state in states.py: a `@rom_state` builder,
 built once per ROM and cached as a save state in build/.rom_driver, and a

@@ -52,7 +52,7 @@ make          # Build ROM
 make verify   # Build and run the ROM test suite (pytest tests -n auto)
 make lint     # Run the R65 linter (rules in r65-lint.toml)
 make assets   # Just the art: assets/src/*.bmp -> SNES CHR (an ordinary build does this)
-make play OUT=build/x.png ACTIONS=@harness,wait60,shot   # one ad-hoc scripted run
+make play OUT=build/x.png ACTIONS=@MISSION_TEST_QUIET,wait60,shot   # one ad-hoc scripted run
 make run      # Build and launch in emulator
 make clean    # Clean build artifacts
 make syntax   # Compile only, no ROM
@@ -76,11 +76,13 @@ in words, its explanation as the docstring - no parametrize tables, no lambdas:
 
 Names are exactly as the `.sym`/`.dbg` spell them, with an array's width stated
 (`v.units__kind__tag.u8[3]`); values are decimal (8.8 heights as `96 * 256`), hex only for bit
-patterns. `boot`'s pick chooses the mission
-without input: `boot_load` boots the mission in `boot_pick` (main.r65), which the power-on sets
-to the campaign just before calling it; a test stops at `boot_load`'s entry and writes the
-mission it wants (`harness.boot`, from the ROM's `MISSION_*` constants, plus `BOOT_DIRECT` to
-skip the front end).
+patterns. `boot` takes a mission by its ROM constant's name - a test row,
+`boot(snes, "MISSION_TEST_QUIET")` (also `MISSION_TEST_HUNTER`, `MISSION_TEST_CONVOY`), or a
+campaign mission, `MISSION_` and its briefing name, `boot(snes, "MISSION_CAKE_WALK")`
+(`src/mission.r65`) - and boots it without input: `boot_load` boots the mission in `boot_pick`
+(main.r65), which the power-on sets to the campaign just before calling it; a test stops at
+`boot_load`'s entry and writes the constant's value there, plus `BOOT_DIRECT` to skip the front
+end.
 `conftest.py`'s header says what each opponent is. A setup several cases share is a state
 in `tests/states.py` (`@rom_state` builders: `boarded`, `eight_tanks`, `five_passes`,
 `balloon_hit`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and
@@ -90,11 +92,11 @@ opened by passing the builder: `from states import boarded`, then `state(boarded
 `mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
 ROM's `snapshot_point()` hook (fired by Select).
 
-    ./play.sh build/fly.png @harness,wait60,right90,shot --dump wram build/fly.wram
+    ./play.sh build/fly.png @MISSION_TEST_QUIET,wait60,right90,shot --dump wram build/fly.wram
 
 Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN`/`yN`/`lN`/`rN`.
-Combine with `+`, e.g. `up+a30`. A leading `@harness`, `@harness_hot`, `@harness_col` or
-`@direct` is `boot`'s pick; without one the run boots the campaign proper, title page and all.
+Combine with `+`, e.g. `up+a30`. A leading `@MISSION_TEST_QUIET`, or any mission constant, is
+the mission `boot` boots; without one the run boots the campaign proper, title page and all.
 `tools/mkmovie.py` still builds Mesen movies (`tools/timeline.sh` uses one); a movie cannot
 write `boot_pick`, so it always boots the campaign proper.
 

@@ -50,7 +50,7 @@ def test_cpu_purse(snes):
     so any change to the tables, the pause or the pilot moves every
     column-dependent case.
     """
-    boot(snes, "harness").wait(300)
+    boot(snes, "MISSION_TEST_QUIET").wait(300)
     v = read_snapshot(snes)
     assert v.cpu_funds == 29
     assert v.cpu_q.u8[0] == 3
@@ -63,15 +63,15 @@ def test_cpu_purse(snes):
 #
 # The player's physics and loadout on its own state, and a pilot adapted from
 # Armor Alley's: refit, dodge, hunt, bomb, wander, in that order. On the quiet
-# row ("harness") it only wanders and refits; the hot row ("harness_hot")
-# hunts the player's airframe and bombs.
+# row (MISSION_TEST_QUIET) it only wanders and refits; the hunter row
+# (MISSION_TEST_HUNTER) hunts the player's airframe and bombs.
 
 def test_the_hot_pilot_hunts_the_player(snes):
     """Flown out to ~3100 and left hovering: the enemy, hunting, arrives at a
     standoff, level, and fires until the player's airframe is lost, then goes
     on to its next target with all four lives.
     """
-    boot(snes, "harness_hot").wait(20).right(600).wait(900)
+    boot(snes, "MISSION_TEST_HUNTER").wait(20).right(600).wait(900)
     v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.foe_lives == 4
@@ -84,7 +84,7 @@ def test_the_pilot_steps_out_of_a_hover(snes):
     Counting only the player's speed, it flew into the hover and both were
     lost by frame 1500.
     """
-    boot(snes, "harness").right(175).wait(1500)
+    boot(snes, "MISSION_TEST_QUIET").right(175).wait(1500)
     v = read_snapshot(snes)
     assert v.heli_lives == 4
     assert v.foe_lives == 4
@@ -94,7 +94,7 @@ def test_the_hot_pilot_bombs_a_tank(snes):
     """A bought tank marching east is found by the pilot on its way in and
     bombed from a hover over it: by frame 3000 the slot is free.
     """
-    boot(snes, "harness_hot").press("l", "a", frames=3).wait(3000)
+    boot(snes, "MISSION_TEST_HUNTER").press("l", "a", frames=3).wait(3000)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
     assert v.heli_lives == 4

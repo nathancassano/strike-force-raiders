@@ -70,8 +70,8 @@ fn snapshot_point() {
 
 // The mission a power-on boots: the mission number, with BOOT_DIRECT set
 // to skip the front end. The power-on sets the campaign's first, behind its
-// title page; the tests boot another by stopping at boot_load's entry and
-// writing this before boot_load reads it.
+// title page; the tests boot any mission, front end skipped, by stopping at
+// boot_load's entry and writing this before boot_load reads it.
 const BOOT_DIRECT: u8 = 0x80;
 #[lowram] static mut boot_pick: u8;
 
@@ -122,7 +122,7 @@ fn boot_load() {
     // campaign's first mission with no front end - the world the suite's
     // oldest cases were written against, before there was anything to
     // press past.
-    if m < MISSION_HARNESS && (pick & BOOT_DIRECT) == 0 { screen_show(SCREEN_TITLE); }
+    if m < MISSION_COUNT && (pick & BOOT_DIRECT) == 0 { screen_show(SCREEN_TITLE); }
 
     // The probe counts from here: the inits above run for a couple of
     // frames' worth, and the NMI is not on yet to count them, but the

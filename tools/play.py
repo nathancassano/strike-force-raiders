@@ -6,13 +6,15 @@ ROM's snapshot_point hook (fired by Select) - the same boot and the same
 instant the pytest suite reads at (tests/harness.py).
 
     ./play.sh build/boot.png shot
-    ./play.sh build/fly.png @harness,wait60,right90,shot
-    ./play.sh build/x.png @harness,wait600,shot --dump wram build/x.wram
+    ./play.sh build/fly.png @MISSION_TEST_QUIET,wait60,right90,shot
+    ./play.sh build/x.png @MISSION_TEST_QUIET,wait600,shot --dump wram build/x.wram
 
 Actions
-  @PICK                    first, if at all: boot that mission - harness,
-                           harness_hot, harness_col or direct (conftest.py).
-                           Without one, the campaign proper, title and all.
+  @MISSION                 first, if at all: boot the mission that ROM
+                           constant names - MISSION_TEST_QUIET,
+                           MISSION_CAKE_WALK, ... (conftest.py), front end
+                           skipped. Without one, the campaign proper, title
+                           and all.
   waitN                    N idle frames
   shot                     tap Select and stop at snapshot_point; the run
                            ends there
@@ -53,8 +55,8 @@ def split_action(act):
 
 def play(s, actions):
     """Run *actions* on a fresh session; returns once the run is over."""
-    pick = actions.pop(0)[1:] if actions and actions[0].startswith("@") else None
-    boot(s, pick)
+    mission = actions.pop(0)[1:] if actions and actions[0].startswith("@") else None
+    boot(s, mission)
     for act in actions:
         if act.startswith("wait"):
             s.wait(int(act[4:] or 1))

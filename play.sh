@@ -5,6 +5,6 @@
 #   ./play.sh OUT.png [ACTION,...] [--dump REGION FILE]...
 #
 #   ./play.sh build/boot.png shot
-#   ./play.sh build/fly.png  @harness,wait60,right90,shot
+#   ./play.sh build/fly.png  @MISSION_TEST_QUIET,wait60,right90,shot
 set -euo pipefail
 exec python3 "$(cd "$(dirname "$0")" && pwd)/tools/play.py" "$@"

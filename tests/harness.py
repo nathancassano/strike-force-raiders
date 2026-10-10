@@ -21,31 +21,21 @@ TOOLS = Path(__file__).resolve().parent.parent / "tools"
 BOOT_FRAMES = 30
 
 
-# The ROM constant naming each pick's mission. "direct" also sets BOOT_DIRECT,
-# which skips the front end.
-MISSIONS = {
-    "harness":     "MISSION_HARNESS",
-    "harness_hot": "MISSION_HARNESS_HOT",
-    "harness_col": "MISSION_HARNESS_COL",
-    "direct":      "MISSION_START",
-}
+def boot(s, mission=None):
+    """Power-on: run to frame BOOT_FRAMES, booting *mission*.
 
-
-def boot(s, pick=None):
-    """Power-on: run to frame BOOT_FRAMES, booting the mission *pick* names.
-
-    *pick* is "harness", "harness_hot", "harness_col" or "direct"
-    (conftest.py). The power-on sets boot_pick to the campaign just before
-    calling boot_load, so stopped at boot_load's entry the session writes
-    the pick's mission there, and boot_load reads it. None boots the
-    campaign proper.
+    *mission* names one of the ROM's mission constants: a test row -
+    MISSION_TEST_QUIET, MISSION_TEST_HUNTER or MISSION_TEST_CONVOY
+    (conftest.py) - or a campaign mission by its name, MISSION_CAKE_WALK
+    to MISSION_MIDNIGHT_OASIS. The power-on sets boot_pick to the campaign
+    just before calling boot_load, so stopped at boot_load's entry the
+    session writes the mission there, with BOOT_DIRECT to skip the front
+    end, and boot_load reads it. None boots the campaign proper, title page
+    and all.
     """
-    if pick:
+    if mission:
         s.until("boot_load", max_frames=BOOT_FRAMES)
-        mission = getattr(s.var, MISSIONS[pick])
-        if pick == "direct":
-            mission |= s.var.BOOT_DIRECT
-        s.var.boot_pick = mission
+        s.var.boot_pick = getattr(s.var, mission) | s.var.BOOT_DIRECT
     return s.wait(BOOT_FRAMES - s.frame)
 
 
