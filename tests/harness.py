@@ -2,10 +2,10 @@
 
 `boot` is the power-on: thirty frames for snes_init and boot_load to
 settle, with the mission picked by writing the ROM's boot_pick at
-boot_load's entry (main.r65). `shot` is the
-moment every case reads its values at: Select pressed, which calls the ROM's
-snapshot_point from the main loop. It returns the session's memory by name,
-so a case reads `v = shot(snes)` and asserts on `v.heli_x_px`. The colour
+boot_load's entry (main.r65). `read_snapshot` is the moment every case
+reads its values at: Select pressed, which calls the ROM's snapshot_point
+from the main loop. It returns the session's memory by name, so a case
+reads `v = read_snapshot(snes)` and asserts on `v.heli_x_px`. The colour
 checks and the OAM and parallax tool runs are the old shell suite's.
 """
 
@@ -49,7 +49,7 @@ def boot(s, pick=None):
     return s.wait(BOOT_FRAMES - s.frame)
 
 
-def shot(s, *holding):
+def read_snapshot(s, *holding):
     """Press Select (with *holding*, if any), stop at snapshot_point, and
     return the memory there by name (`s.var`)."""
     s.until("snapshot_point", max_frames=s.tap_down + s.tap_up, holding=("select", *holding))

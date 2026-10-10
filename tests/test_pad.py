@@ -9,13 +9,13 @@ and a coast arrives under it; 32 does not, and a full-stick descent hits at
 4. right180 and a 60-frame coast puts the airframe at x 1014.
 """
 
-from harness import boot, shot
+from harness import boot, read_snapshot
 
 
 def test_landing_on_the_deck(snes):
     """Descending onto the deck lands on it."""
     boot(snes, "direct").wait(20).right(180).wait(60).down(30).wait(40)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_on_pad == 1
 
@@ -23,7 +23,7 @@ def test_landing_on_the_deck(snes):
 def test_landing_short_of_the_deck_is_open_ground(snes):
     """Stopping short (x 714) lands on open ground - down, but no deck."""
     boot(snes, "direct").wait(20).right(120).wait(60).down(30).wait(40)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_on_pad == 0
     assert v.heli_y == 152 * 256
@@ -32,7 +32,7 @@ def test_landing_short_of_the_deck_is_open_ground(snes):
 def test_landing_past_the_deck_is_open_ground(snes):
     """Overshooting (x 1314) lands on open ground - down, but no deck."""
     boot(snes, "direct").wait(20).right(240).wait(60).down(30).wait(40)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_on_pad == 0
 
@@ -42,7 +42,7 @@ def test_a_landed_airframe_does_not_slide(snes):
     on open ground, not on the deck.
     """
     boot(snes, "direct").wait(20).down(30).wait(40).right(190)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_on_pad == 0
     assert v.heli_x_px == 64
@@ -50,14 +50,14 @@ def test_a_landed_airframe_does_not_slide(snes):
 
 def test_taking_off_from_the_deck(snes):
     boot(snes, "direct").wait(20).right(180).wait(60).down(30).wait(40).up(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 0
 
 
 def test_a_full_stick_landing_crashes(snes):
     """Too fast: a full-stick descent onto the deck is a crash - a life gone."""
     boot(snes, "direct").wait(20).right(180).wait(60).down(80)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_landed == 0
 
@@ -67,7 +67,7 @@ def test_the_deck_rearms_and_refuels(snes):
     frames each and bombs at 10 while the airframe sits.
     """
     boot(snes, "harness").wait(20).b(60).a(1).right(180).wait(60).down(30).wait(40).wait(120)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_fuel == 100
     assert v.heli_gun == 61
@@ -76,7 +76,7 @@ def test_the_deck_rearms_and_refuels(snes):
 
 def test_fuel_burns_one_unit_per_64_frames(snes):
     boot(snes, "harness").wait(20).right(240)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_fuel == 96
 
 
@@ -88,7 +88,7 @@ def test_a_dry_tank_sinks_and_crashes(snes):
     the next airframe is up at hover height.
     """
     boot(snes, "harness").wait(7200)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_y == 96 * 256
     assert v.heli_landed == 0

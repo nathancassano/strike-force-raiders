@@ -32,7 +32,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "tests"))
 
-from harness import boot, shot                      # noqa: E402
+from harness import boot, read_snapshot            # noqa: E402
 from mesen_gdb.rom_driver import NotReached, Rom    # noqa: E402
 from mesen_gdb.rom_driver.backend import BUTTONS    # noqa: E402
 
@@ -59,7 +59,7 @@ def play(s, actions):
         if act.startswith("wait"):
             s.wait(int(act[4:] or 1))
         elif act == "shot":
-            shot(s)
+            read_snapshot(s)
             return
         else:
             buttons, frames = split_action(act)

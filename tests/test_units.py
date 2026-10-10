@@ -12,7 +12,7 @@ below came from that.
 Kinds: 0 free, 1 tank, 2 van, 3 launcher, 4 infantry, 5 engineer.
 """
 
-from harness import boot, shot, tool
+from harness import boot, read_snapshot, tool
 from states import eight_tanks
 
 TANK, VAN, LAUNCHER, INFANTRY, ENGINEER = 1, 2, 3, 4, 5
@@ -21,14 +21,14 @@ PLAYER, ENEMY = 0, 1
 
 def test_the_enemys_first_unit_is_an_infantryman(snes):
     boot(snes, "harness").wait(200)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == INFANTRY
     assert v.units__owner.u8[0] == ENEMY
 
 
 def test_infantry_march_half_a_pixel_a_frame(snes):
     boot(snes, "harness").wait(600)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__x_px.u16[0] == 7405
 
 
@@ -42,7 +42,7 @@ def test_each_kind_takes_its_hit_points_from_unit_stats(snes):
     it fires.
     """
     boot(snes, "harness_hot").wait(2401)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == INFANTRY
     assert v.units__hp.u8[0] == 5
     assert v.units__kind__tag.u8[5] == LAUNCHER
@@ -70,7 +70,7 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10200)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__block.u8[0] == 1
     assert v.units__x_px.u16[0] == 5003
     assert v.units__block.u8[2] == 1
@@ -91,7 +91,7 @@ def test_unit_budget(state):
     the ratio is now 0.835.
     """
     snes = state(eight_tanks)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.frames_nmi == 3664
     assert v.frames_loop == 3061
 
@@ -103,7 +103,7 @@ def test_unit_oam(state, tmp_path):
     """
     snes = state(eight_tanks)
     snes.right(520).wait(60)
-    shot(snes)
+    read_snapshot(snes)
     oam = tmp_path / "oam.bin"
     snes.dump("oam", oam)
     tool("oamstat.py", oam)

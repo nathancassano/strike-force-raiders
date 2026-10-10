@@ -1,6 +1,6 @@
 """Phases 1-4: boot, the scrolling battlefield, the airframe and its weapons."""
 
-from harness import boot, screen_colour, shot, tool
+from harness import boot, read_snapshot, screen_colour, tool
 
 
 # ---- Phase 1 - harness ------------------------------------------------------
@@ -12,7 +12,7 @@ def test_boot(snes, tmp_path):
     palette DMA or a layer left enabled over the whole screen.
     """
     boot(snes)
-    shot(snes)
+    read_snapshot(snes)
     assert screen_colour(snes, tmp_path, (33, 49, 115)) >= 40, "the sky dominates the frame"
 
 
@@ -27,31 +27,31 @@ def test_boot(snes, tmp_path):
 
 def test_camera_holds_still_at_rest(snes):
     boot(snes, "direct")
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.camera_x == 0
 
 
 def test_camera_follows_30_frames_right(snes):
     boot(snes, "direct").wait(20).right(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.camera_x == 90
 
 
 def test_camera_follows_120_frames_right(snes):
     boot(snes, "direct").wait(20).right(120)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.camera_x == 540
 
 
 def test_camera_settles_8_px_behind_after_240_frames_right(snes):
     boot(snes, "direct").wait(20).right(240)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.camera_x == 1140
 
 
 def test_camera_follows_back_left(snes):
     boot(snes, "direct").wait(20).right(240).left(90)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.camera_x == 813
 
 
@@ -65,11 +65,11 @@ def test_parallax(rom, tmp_path):
     """
     with rom.session() as s:
         boot(s, "direct")
-        shot(s)
+        read_snapshot(s)
         at_rest = s.screenshot(tmp_path / "parallax-rest.png")
     with rom.session() as s:
         boot(s, "direct").wait(20).right(40)
-        shot(s)
+        read_snapshot(s)
         moved = s.screenshot(tmp_path / "parallax-moved.png")
     # Rows 216-223 are the airframe's HUD strip; below is past the screen.
     tool("parallax.py", at_rest, moved, "--assert-bands", 6, "--ignore-rows", "216-238")
@@ -84,14 +84,14 @@ def test_parallax(rom, tmp_path):
 def test_airframe_spawns_at_rest(snes):
     """heli_init's spawn, untouched by a frame of no input."""
     boot(snes, "direct")
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 64
     assert v.heli_y == 96 * 256
 
 
 def test_airframe_flies_right(snes):
     boot(snes, "harness").wait(20).right(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 171
 
 
@@ -102,7 +102,7 @@ def test_airframe_flies_back_left(snes):
     mid-world proves the explicit sign branch, where a clamp at 0 would not.
     """
     boot(snes, "direct").wait(20).right(240).left(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 1106
 
 
@@ -111,19 +111,19 @@ def test_airframe_flies_back_left(snes):
 
 def test_airframe_stops_at_the_west_edge(snes):
     boot(snes, "direct").wait(20).left(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 0
 
 
 def test_airframe_stops_under_the_hud(snes):
     boot(snes, "direct").wait(20).up(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_y == 16 * 256
 
 
 def test_airframe_stops_on_the_ground(snes):
     boot(snes, "harness").wait(20).down(30).wait(40)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_y == 152 * 256
 
 
@@ -139,21 +139,21 @@ def test_airframe_stops_on_the_ground(snes):
 
 def test_airframe_sits_level_at_rest(snes):
     boot(snes, "harness")
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[2] == 0x04
     assert v.oam.u8[3] == 0x37
 
 
 def test_airframe_tilts_nose_down_flying_right(snes):
     boot(snes, "harness").wait(20).right(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[2] == 0x00
     assert v.oam.u8[3] == 0x37
 
 
 def test_airframe_is_mirrored_flying_left(snes):
     boot(snes, "direct").wait(20).right(120).left(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[2] == 0x02
     assert v.oam.u8[3] == 0x77
 
@@ -165,7 +165,7 @@ def test_turn_shows_the_three_quarter_view(snes):
     cell, $22.
     """
     boot(snes, "direct").wait(20).right(120).left(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[2] == 0x22
     assert v.oam.u8[3] == 0x77
 
@@ -175,14 +175,14 @@ def test_turn_stalls_when_released(snes):
     facing the old way ($20).
     """
     boot(snes, "harness").wait(20).right(120).left(6).wait(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[2] == 0x20
     assert v.oam.u8[3] == 0x37
 
 
 def test_turn_wound_back_never_changes_facing(snes):
     boot(snes, "direct").wait(20).right(120).left(6).right(6).wait(2)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.oam.u8[3] == 0x37
 
 
@@ -196,7 +196,7 @@ FREE, BULLET, BOMB = 0, 1, 2
 
 def test_loadout_is_64_rounds_and_10_bombs(snes):
     boot(snes, "direct")
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_gun == 64
     assert v.heli_bombs == 10
 
@@ -204,27 +204,27 @@ def test_loadout_is_64_rounds_and_10_bombs(snes):
 def test_30_frames_of_fire_is_5_rounds(snes):
     """HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds."""
     boot(snes, "harness").wait(10).b(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_gun == 59
 
 
 def test_holding_a_drops_one_bomb(snes):
     """Bombs are edge-triggered: holding A must not empty the rack."""
     boot(snes, "direct").wait(10).a(1)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_bombs == 9
 
 
 def test_two_presses_drop_two_bombs(snes):
     boot(snes, "harness").wait(10).a(1).wait(5).a(1)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_bombs == 8
 
 
 def test_firing_past_empty_stops_at_zero(snes):
     """Firing past empty must stop at zero, not wrap to 255."""
     boot(snes, "harness").wait(10).b(400)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_gun == 0
 
 
@@ -233,7 +233,7 @@ def test_the_nose_follows_the_stick(snes):
     commanded direction rather than the coasting velocity.
     """
     boot(snes, "direct").wait(10).left(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_face_left == 1
 
 
@@ -243,31 +243,31 @@ def test_the_nose_follows_the_stick(snes):
 
 def test_a_dropped_bomb_is_live(snes):
     boot(snes, "direct").wait(10).a(1)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == BOMB
 
 
 def test_a_bomb_is_live_while_falling(snes):
     boot(snes, "direct").wait(10).a(1).wait(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == BOMB
 
 
 def test_a_bomb_retires_on_the_ground(snes):
     boot(snes, "harness").wait(10).a(1).wait(40)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == FREE
 
 
 def test_a_fired_round_is_live(snes):
     boot(snes, "direct").wait(10).b(1)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == BULLET
 
 
 def test_a_round_retires_at_the_end_of_its_range(snes):
     boot(snes, "direct").wait(10).b(1).wait(45)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == FREE
 
 
@@ -278,7 +278,7 @@ def test_a_round_leaves_at_muzzle_height(snes):
     through an 8-bit TYA - and every round spawned on the HUD row.
     """
     boot(snes, "direct").wait(10).b(1)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.muni_y.u16[0] == 103 * 256
 
 
@@ -288,5 +288,5 @@ def test_y_fires_nothing(snes):
     muni_up is a [u8; 2]; side 0's count is the player's munitions in flight.
     """
     boot(snes, "harness").wait(20).y(1).wait(20)
-    shot(snes)
+    read_snapshot(snes)
     assert snes.raw("muni_up").u8[0] == 0

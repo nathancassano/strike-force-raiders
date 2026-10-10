@@ -5,7 +5,7 @@ Left/Right walk the order ring and A buys. Every check is on the ROM's own
 state: the purse, the selection, and what came out of the base.
 """
 
-from harness import boot, shot
+from harness import boot, read_snapshot
 
 TANK, VAN, INFANTRY = 1, 2, 4
 
@@ -20,7 +20,7 @@ def seven_vans(s):
 def test_the_opening_purse_and_selection(snes):
     """32 funds, the tank selected, four lives."""
     boot(snes, "harness").wait(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.funds == 32
     assert v.order_sel == 2
     assert v.heli_lives == 4
@@ -31,7 +31,7 @@ def test_one_press_buys_one_tank(snes):
     comes off at once.
     """
     boot(snes, "harness").press("l", "a", frames=3).wait(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.funds == 28
     assert v.units__kind__tag.u8[0] == TANK
     assert v.units__owner.u8[0] == 0
@@ -48,7 +48,7 @@ def test_infantry_leave_the_gate_one_at_a_time(snes):
     boot(snes, "harness")
     snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.funds == 27
     assert v.units__kind__tag.u8[0] == INFANTRY
     assert v.order_men == 4
@@ -63,7 +63,7 @@ def test_the_seventh_van_is_refused(snes):
     snes.press("l", "left", frames=3).wait(3)
     snes.press("l", "left", frames=3).wait(3)
     seven_vans(snes).wait(80)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.funds == 20
     assert v.order_sel == 0
     assert v.units__kind__tag.u8[0] == VAN
@@ -75,7 +75,7 @@ def test_buying_a_helicopter_adds_a_life(snes):
     for _ in range(3):
         snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.funds == 12
     assert v.heli_lives == 5
     assert v.order_sel == 5

@@ -3,7 +3,7 @@
 These boot with nothing held, which is the campaign's first mission.
 """
 
-from harness import boot, screen_colour, shot
+from harness import boot, read_snapshot, screen_colour
 from states import campaign_lost
 
 GAME_PLAYING, GAME_SCREEN = 0, 3
@@ -20,7 +20,7 @@ def test_mission_first(snes):
     first building east of what they ask about.
     """
     boot(snes).wait(300)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.mission == 0
     assert v.level_count == 8
     assert v.structs__x.u16[2] == 1536
@@ -35,14 +35,14 @@ def test_mission_first(snes):
 
 def test_a_campaign_opens_on_the_title(snes):
     boot(snes).wait(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_TITLE
 
 
 def test_start_goes_to_the_briefing(snes):
     boot(snes).start().wait(30)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_BRIEF
 
@@ -52,7 +52,7 @@ def test_start_again_goes_into_the_battle(snes):
     airframe flying (it has moved east of its start).
     """
     boot(snes).start().wait(10).start().wait(60).right(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_PLAYING
     assert v.screen_kind == SCREEN_NONE
     assert v.heli_x_px == 321
@@ -61,7 +61,7 @@ def test_start_again_goes_into_the_battle(snes):
 def test_title_text_drawn(snes, tmp_path):
     """The title's text is on screen: the console font's white body colour."""
     boot(snes).wait(30)
-    shot(snes)
+    read_snapshot(snes)
     assert screen_colour(snes, tmp_path, (255, 255, 255)) > 0.3, "the title text is drawn"
 
 
@@ -90,14 +90,14 @@ def code_text(v):
 
 def test_down_from_a_wraps_to_p(snes):
     boot(snes).wait(20).down().right().wait(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.code_letters.u8[0] == 15
     assert v.code_cursor == 1
 
 
 def test_a_continue_code_resumes_its_mission(snes):
     type_code(boot(snes).wait(20), "NKCH").start().wait(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.mission == 4
     assert v.start_funds == 32
     assert v.screen_kind == SCREEN_BRIEF
@@ -105,7 +105,7 @@ def test_a_continue_code_resumes_its_mission(snes):
 
 def test_a_bad_code_starts_a_new_campaign(snes):
     type_code(boot(snes).wait(20), "NKCG").start().wait(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.mission == 0
     assert v.screen_kind == SCREEN_BRIEF
 
@@ -120,7 +120,7 @@ def test_screen_after(state):
     still holds.
     """
     snes = state(campaign_lost)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_AFTER
     assert v.heli_lives == 0
@@ -139,7 +139,7 @@ def test_campaign_retry(state):
     """
     snes = state(campaign_lost)
     snes.start().wait(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.mission == 0
     assert v.screen_kind == SCREEN_BRIEF
     assert v.start_funds == 32

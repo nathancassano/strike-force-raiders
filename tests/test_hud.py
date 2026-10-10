@@ -10,7 +10,7 @@ sprite over the row, in the slot after the airframe's two: at boot x 0, y 8
 (the row's first scanline), the bracket tile.
 """
 
-from harness import boot, screen_colour, shot
+from harness import boot, read_snapshot, screen_colour
 
 
 def radar_row(v, row):
@@ -20,7 +20,7 @@ def radar_row(v, row):
 
 def test_the_radar_at_boot(snes):
     boot(snes, "harness").wait(16)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert radar_row(v, 0) == (0xFF, 0x00), "row 0 is plain navy"
     assert radar_row(v, 1) == (0xCF, 0x30), "the airframe's 2x2 at x 2-3, top row"
     assert radar_row(v, 2) == (0xCF, 0x30), "the airframe's 2x2 at x 2-3, bottom row"
@@ -37,7 +37,7 @@ def test_the_radar_after_flying_east(snes):
     bank's tick stands alone, and the bracket sprite is at camera_x/32.
     """
     boot(snes, "harness").wait(20).right(240).wait(20)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert radar_row(v, 1) == (0xFF, 0x00), "the airframe has left tile 0"
     assert radar_row(v, 3) == (0xEF, 0x10), "the bank's tick stands alone"
     assert v.oam.u8[8] == 37, "the camera bracket is at camera_x/32"
@@ -46,7 +46,7 @@ def test_the_radar_after_flying_east(snes):
 def test_strip_drawn(snes, tmp_path):
     """The two white gauges are what put this much white across the screen."""
     boot(snes, "harness").wait(16)
-    shot(snes)
+    read_snapshot(snes)
     assert screen_colour(snes, tmp_path, (28, 30, 31), snes_colour=True) >= 0.9, "the white gauges are drawn"
 
 
@@ -57,7 +57,7 @@ def test_strip_drawn(snes, tmp_path):
 def test_the_overlay_shows_while_l_is_held(snes):
     """The snapshot is taken with L still down (Select combined with L)."""
     boot(snes, "harness").wait(30).l(20).press("l", "right", frames=3)
-    v = shot(snes, "l")
+    v = read_snapshot(snes, "l")
     assert v.hud_ov_shown == 1
     assert v.order_sel == 3
     assert v.heli_x_px == 64
@@ -65,7 +65,7 @@ def test_the_overlay_shows_while_l_is_held(snes):
 
 def test_letting_go_of_l_hides_the_overlay(snes):
     boot(snes, "harness").wait(30).l(20).press("l", "right", frames=3).l(10).wait(5)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.hud_ov_shown == 0
     assert v.order_sel == 3
     assert v.heli_x_px == 64

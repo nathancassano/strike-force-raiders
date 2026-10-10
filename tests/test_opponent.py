@@ -1,6 +1,6 @@
 """Phases 9-10: win and loss, the CPU's purse, the enemy airframe and pilot."""
 
-from harness import boot, shot
+from harness import boot, read_snapshot
 from states import five_passes
 
 GAME_PLAYING, GAME_LOST = 0, 2
@@ -18,7 +18,7 @@ FREE = 0                                    # an empty unit slot's kind
 def test_game_lost(state):
     """The match ends in defeat and the last airframe is not replaced."""
     snes = state(five_passes)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_LOST
     assert v.heli_lives == 0
 
@@ -29,7 +29,7 @@ def test_game_reset(state):
     """
     snes = state(five_passes)
     snes.start().wait(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.game_state == GAME_PLAYING
     assert v.heli_lives == 4
     assert v.heli_x_px == 64
@@ -51,7 +51,7 @@ def test_cpu_purse(snes):
     column-dependent case.
     """
     boot(snes, "harness").wait(300)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.cpu_funds == 29
     assert v.cpu_q.u8[0] == 3
     assert v.cpu_head == 1
@@ -72,7 +72,7 @@ def test_the_hot_pilot_hunts_the_player(snes):
     on to its next target with all four lives.
     """
     boot(snes, "harness_hot").wait(20).right(600).wait(900)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.foe_lives == 4
 
@@ -85,7 +85,7 @@ def test_the_pilot_steps_out_of_a_hover(snes):
     lost by frame 1500.
     """
     boot(snes, "harness").right(175).wait(1500)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 4
     assert v.foe_lives == 4
 
@@ -95,6 +95,6 @@ def test_the_hot_pilot_bombs_a_tank(snes):
     bombed from a hover over it: by frame 3000 the slot is free.
     """
     boot(snes, "harness_hot").press("l", "a", frames=3).wait(3000)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
     assert v.heli_lives == 4

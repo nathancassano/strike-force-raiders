@@ -71,7 +71,7 @@ in words, its explanation as the docstring - no parametrize tables, no lambdas:
 
     def test_camera_follows_30_frames_right(snes):
         boot(snes, "direct").wait(20).right(30)      # chained input, run as it is called
-        v = shot(snes)                               # Select to snapshot_point; memory by name
+        v = read_snapshot(snes)                      # Select to snapshot_point; memory by name
         assert v.camera_x == 90
 
 Names are exactly as the `.sym`/`.dbg` spell them, with an array's width stated
@@ -87,7 +87,7 @@ in `tests/states.py` (`@rom_state` builders: `boarded`, `eight_tanks`, `five_pas
 opened by passing the builder: `from states import boarded`, then `state(boarded)`.
 
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
-`mesen_gdb.rom_driver` with the suite's own `boot` and `shot`, and screenshots at the
+`mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
 ROM's `snapshot_point()` hook (fired by Select).
 
     ./play.sh build/fly.png @harness,wait60,right90,shot --dump wram build/fly.wram

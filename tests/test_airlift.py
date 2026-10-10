@@ -12,7 +12,7 @@ Most cases start from the `boarded` state (states.py): the men bought, the
 airframe landed on the pad and all five aboard.
 """
 
-from harness import boot, shot
+from harness import boot, read_snapshot
 from states import boarded
 
 FREE, INFANTRY = 0, 4      # unit kinds
@@ -22,7 +22,7 @@ PLAYER = 0
 def test_board(state):
     """All five men aboard, and their pool slots free again."""
     snes = state(boarded)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_men == 5
     assert v.heli_landed == 1
     assert v.units__kind__tag.u8[0] == FREE
@@ -37,7 +37,7 @@ def test_field(snes):
     snes.press("l", "right", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(20)
     snes.right(120).wait(60).down(30).wait(40).wait(1600)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_men == 5
     assert v.heli_landed == 1
     assert v.heli_on_pad == 0
@@ -49,7 +49,7 @@ def test_lost(state):
     """
     snes = state(boarded)
     snes.upright(36).right(220)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_men == 0
     assert v.heli_lives == 3
 
@@ -61,7 +61,7 @@ def test_bail(state):
     """
     snes = state(boarded)
     snes.upright(36).right(220).wait(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.para_live == 1
     assert v.heli_men == 0
     assert v.heli_lives == 3
@@ -71,7 +71,7 @@ def test_crash(state):
     """A crash at the ground line from the same load drops nobody."""
     snes = state(boarded)
     snes.up(40).wait(60).down(80).wait(5)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.para_live == 0
     assert v.heli_men == 0
     assert v.heli_lives == 3
@@ -84,7 +84,7 @@ def test_drop(state):
     for i in range(5):
         snes.x(3).wait(40 if i < 4 else 0)
     snes.wait(140)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_men == 0
     assert v.units__kind__tag.u8[21] == INFANTRY
     assert v.units__kind__tag.u8[22] == INFANTRY

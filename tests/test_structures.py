@@ -6,7 +6,7 @@ units and, if the enemy's, at the helicopter; gunfire wears them down.
 entry 9.
 """
 
-from harness import boot, screen_colour, shot
+from harness import boot, read_snapshot, screen_colour
 from states import balloon_hit
 
 FREE = 0                       # an empty unit slot's kind
@@ -26,7 +26,7 @@ CANOPY = (14, 22, 28)          # the airframe's canopy, BGR555 components
 
 def test_balloon_kill(state):
     snes = state(balloon_hit)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_x_px == 64
     assert v.heli_dead == 120
@@ -36,7 +36,7 @@ def test_balloon_kill(state):
 def test_balloon_pan(state, tmp_path):
     snes = state(balloon_hit)
     snes.wait(60)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 64
     assert v.heli_dead == 60
     assert v.camera_x == 565
@@ -46,7 +46,7 @@ def test_balloon_pan(state, tmp_path):
 def test_balloon_rise(state):
     snes = state(balloon_hit)
     snes.wait(120).right(10)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_x_px == 64
     assert v.heli_dead == 0
     assert v.heli_rising == 1
@@ -64,7 +64,7 @@ def test_infantry_capture_a_neutral_bunker(snes):
     a frame: by 5300 the bunker is the enemy's and slot 0 is free.
     """
     boot(snes, "harness").wait(5300)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.structs__owner.u8[9] == ENEMY
     assert v.units__kind__tag.u8[0] == FREE
 
@@ -81,7 +81,7 @@ def test_tanks_shell_a_bunker_to_rubble(snes):
     boot(snes, "harness")
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10600)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.structs__hp.u8[9] == 0
     assert v.structs__owner.u8[9] == NOBODY
 
@@ -94,7 +94,7 @@ def test_the_enemy_bases_missiles_down_an_airframe(snes):
     outside.
     """
     boot(snes, "harness").wait(20).right(1520).wait(300)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.heli_lives == 3
     assert v.heli_hp == 20
 
@@ -109,7 +109,7 @@ def test_a_launcher_fires_its_one_missile(snes):
     cross the field.
     """
     boot(snes, "harness_col").wait(20).up(40).right(1400).wait(120)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
     assert v.heli_hp == 10
     assert v.heli_lives == 4
@@ -124,6 +124,6 @@ def test_the_enemy_mans_the_super_bunker(snes):
     enemy's.
     """
     boot(snes, "harness").wait(8200)
-    v = shot(snes)
+    v = read_snapshot(snes)
     assert v.structs__men.u8[7] == 5
     assert v.structs__owner.u8[7] == ENEMY
