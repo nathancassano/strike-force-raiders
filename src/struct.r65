@@ -475,12 +475,20 @@ fn struct_turret_claim(i: u16) {
     }
 }
 
+// struct_blow_up - building *i* going up as it falls: an airframe's
+// explosion, sound and all.
+fn struct_blow_up(i: u16) {
+    let cx: u16 = structs[i].x + (structs[i].w >> 1);
+    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, cx);
+    fx_burst(FX_BIG, cx, GROUND_Y - 16);
+}
+
 // struct_turret_hit - damage to turret *i*; at zero it falls to nobody.
 fn struct_turret_hit(i: u16, dmg: u8) {
     if structs[i].hp > dmg {
         structs[i].hp = structs[i].hp - dmg;
     } else {
-        if structs[i].hp != 0 { fx_burst(FX_BIG, structs[i].x + (structs[i].w >> 1), GROUND_Y - 16); }
+        if structs[i].hp != 0 { struct_blow_up(i); }
         structs[i].hp = 0;
         struct_set_owner(i, SIDE_NONE);
     }
@@ -637,7 +645,7 @@ fn struct_bunker_hit(i: u16, dmg: u8) {
     if structs[i].hp > dmg {
         structs[i].hp = structs[i].hp - dmg;
     } else {
-        if structs[i].hp != 0 { fx_burst(FX_BIG, structs[i].x + (structs[i].w >> 1), GROUND_Y - 16); }
+        if structs[i].hp != 0 { struct_blow_up(i); }
         structs[i].hp = 0;
         structs[i].bal = 0;
         struct_set_owner(i, SIDE_NONE);

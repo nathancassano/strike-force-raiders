@@ -600,8 +600,8 @@ What plays: the title page starts `MUS_OPERATION_HINDSTRIKE` (`screen_show`, thr
 something at world x - silent off screen, panned by screen position (`spc_stereo(1)` at boot) -
 one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the player's gun
 (`SFX_PLAYER_GUN1`), the enemy airframe's and the turrets' (`SFX_ENEMY_GUN`), tank shells
-(`SFX_ENEMY_CANNON`), a bomb going off (`SFX_EXPLODE_1`), a lost airframe of either side
-(`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
+(`SFX_ENEMY_CANNON`), a bomb going off or a vehicle destroyed (`SFX_EXPLODE_1`), a lost
+airframe of either side or a turret or bunker falling (`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
 or `SFX_ENEMY_MISSILE` by its side), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
 every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `heli_update`; 19 in the
 air, 11 idling on a deck - a fifth of where it started, which ran over everything - jittered by 1

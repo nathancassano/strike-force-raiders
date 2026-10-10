@@ -89,8 +89,8 @@ const SFX_CHN_GUN:     u8 = 0;   // the player's gun
 const SFX_CHN_FOE_GUN: u8 = 1;   // the enemy airframe's
 const SFX_CHN_TURRET:  u8 = 2;   // turrets, the super bunker, the bank
 const SFX_CHN_CANNON:  u8 = 3;   // tank shells
-const SFX_CHN_BLAST:   u8 = 4;   // bombs going off
-const SFX_CHN_LOST:    u8 = 5;   // an airframe lost
+const SFX_CHN_BLAST:   u8 = 4;   // bombs going off, vehicles destroyed
+const SFX_CHN_LOST:    u8 = 5;   // an airframe lost, a building fallen
 const SFX_CHN_MISSILE: u8 = 6;   // a base's or a missile truck's launch
 const SFX_CHN_ROTOR:   u8 = 7;   // the player's airframe, all the time it is up
 

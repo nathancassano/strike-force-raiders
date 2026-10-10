@@ -815,7 +815,9 @@ fn unit_hit(i: u16, dmg: u8) {
             // A vehicle goes up; a man just falls.
             let k: u8 = units[i].kind as u8;
             if k == UnitType::Tank as u8 || k == UnitType::Van as u8 || k == UnitType::Launcher as u8 {
-                fx_burst(FX_SMALL, units[i].x_px + (unit_stats[k as u16].width >> 1), GROUND_Y - 16);
+                let cx: u16 = units[i].x_px + (unit_stats[k as u16].width >> 1);
+                sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, cx);
+                fx_burst(FX_SMALL, cx, GROUND_Y - 16);
             }
             unit_free(i);
         }
