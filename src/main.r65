@@ -47,6 +47,7 @@ include!("game.r65")
 include!("screen.r65")
 include!("heli.r65")
 include!("foe.r65")
+include!("fx.r65")
 
 // Bank 0 - Main code
 #[bank(0)]
@@ -105,6 +106,7 @@ fn boot_load() {
     pad_init();
     heli_init();
     muni_init();
+    fx_init();
     unit_init();
     para_init();
     // The mission comes first: struct_init lays out what it placed, and
@@ -195,6 +197,7 @@ fn main() -> ! {
             if (held & JOY_L) != 0 { want = 1; }
             hud_overlay(want);
             muni_update();
+            if fx_live != 0 { fx_update(); }    // gated here: two idle far calls a frame cost the budget 10 ticks
             unit_update();
             para_update();
             struct_update();
@@ -226,6 +229,7 @@ fn main() -> ! {
             foe_draw();
             radar_draw();
             muni_draw();
+            if fx_live != 0 { fx_draw(); }
             para_draw();
             struct_draw();
             pad_draw();

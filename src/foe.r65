@@ -209,6 +209,7 @@ far fn foe_reset() {
 // the match, won.
 far fn foe_lost() {
     sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, foe_x_px + (HELI_W >> 1));
+    fx_burst(FX_BIG, foe_x_px + (HELI_W >> 1), foe_y >> 8);
     foe_lives = foe_lives - 1;
     if foe_lives == 0 {
         game_over(GAME_WON);

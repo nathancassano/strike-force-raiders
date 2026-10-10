@@ -116,11 +116,13 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 BMP2CHR_DEPTH = -b2
 BMP2CHR_POST  = true
 
-# The sprite sheets are 4bpp: the shared one, and the airframe's own. So
+# The sprite sheets are 4bpp: the shared one, the airframe's own, and the
+# explosions' (fx, after the airframe's in the second name block). So
 # are Mode 1's BG1 and BG2 - the ground, and the sky's two sheets (clouds
 # and mountains); the HUD on BG3 is 2bpp.
 assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/heli.chr assets/gfx/heli.pal: BMP2CHR_DEPTH = -b4
+assets/gfx/fx.chr assets/gfx/fx.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: BMP2CHR_DEPTH = -b4
 assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: BMP2CHR_DEPTH = -b4
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_DEPTH = -b4

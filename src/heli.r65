@@ -144,6 +144,7 @@ const HELI_CRASH_VY: Q10 = 160;           // 2.5 px/frame
 #[lowram] static mut heli_dead:   u8;     // frames until the next airframe; 0 = flying
 #[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
 #[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized at the loss
+#[lowram] static mut heli_wreck_x:  u16;  // where it was lost: the camera holds there
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
 // airframe is lost - a life goes (order.r65's heli_lives) and it returns
@@ -157,6 +158,9 @@ const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
 // distance over the delay, rounded up, so the far end of the world takes
 // the whole delay and anywhere nearer arrives with frames to spare.
 const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
+// The camera holds on the loss this long - the big explosion's eight
+// frames of six (fx.r65) - before it pans home in the rest of the delay.
+const HELI_LOSS_HOLD: u8 = 48;
 // Then it rises out of the ground at the start: from the ground line up
 // to hover height at a pixel a frame, drawn behind the ground band until
 // it has cleared it, and under nobody's control.
@@ -200,7 +204,9 @@ far fn heli_init() {
 // with a full load; the last one is the match. High enough up, one of the
 // men aboard bails out as a paratrooper; the rest go with it.
 far fn heli_lost() {
-    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_x_px + (HELI_W >> 1));
+    heli_wreck_x = heli_x_px + (HELI_W >> 1);
+    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_wreck_x);
+    fx_burst(FX_BIG, heli_wreck_x, heli_y >> 8);
     if heli_men > 0 && heli_y <= HELI_Y_BAIL {
         para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
     }
@@ -210,7 +216,7 @@ far fn heli_lost() {
     } else {
         heli_init();
         heli_dead = HELI_RESPAWN;
-        heli_cam_step = div16(camera_x, HELI_RESPAWN) + 1;
+        heli_cam_step = div16(camera_x, HELI_RESPAWN - HELI_LOSS_HOLD) + 1;
     }
 }
 
@@ -467,8 +473,14 @@ far fn heli_update(held: u16) {
             heli_rising = 1;
             heli_y = GROUND_Y << 8;
         }
-        focus_x = heli_x_px + (HELI_W >> 1);
-        camera_pan(heli_cam_step);
+        // Held on the wreck while it goes up (camera_update follows the
+        // focus too, so the focus stays there), then home in what is left.
+        if heli_dead >= HELI_RESPAWN - HELI_LOSS_HOLD {
+            focus_x = heli_wreck_x;
+        } else {
+            focus_x = heli_x_px + (HELI_W >> 1);
+            camera_pan(heli_cam_step);
+        }
         return;
     }
     // Up, rising or on a deck: the rotor (checked here, not in sfx_rotor,

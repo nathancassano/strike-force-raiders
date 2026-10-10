@@ -480,6 +480,7 @@ fn struct_turret_hit(i: u16, dmg: u8) {
     if structs[i].hp > dmg {
         structs[i].hp = structs[i].hp - dmg;
     } else {
+        if structs[i].hp != 0 { fx_burst(FX_BIG, structs[i].x + (structs[i].w >> 1), GROUND_Y - 16); }
         structs[i].hp = 0;
         struct_set_owner(i, SIDE_NONE);
     }
@@ -636,6 +637,7 @@ fn struct_bunker_hit(i: u16, dmg: u8) {
     if structs[i].hp > dmg {
         structs[i].hp = structs[i].hp - dmg;
     } else {
+        if structs[i].hp != 0 { fx_burst(FX_BIG, structs[i].x + (structs[i].w >> 1), GROUND_Y - 16); }
         structs[i].hp = 0;
         structs[i].bal = 0;
         struct_set_owner(i, SIDE_NONE);

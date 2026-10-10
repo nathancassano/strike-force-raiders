@@ -44,8 +44,9 @@ const CGRAM_MOUNTAINS: u16 = 64;    // palette 4
 // tilemaps at $6000-$7FFF. OBSEL's base field counts 8K-word units.
 const VRAM_OBJ:  u16 = 0x4000;
 // The second OBJ name block - tiles 256-511, which is where the
-// airframe's own sheet goes (heli.r65 HELI_PAGE). OBSEL's name-select
-// field of 0 puts it one 4K-word block past the base.
+// airframe's own sheet goes (heli.r65 HELI_PAGE), and the explosions'
+// straight after it (fx.r65, FX_TILE0 = the airframe sheet's tile count).
+// OBSEL's name-select field of 0 puts it one 4K-word block past the base.
 const VRAM_OBJ2: u16 = 0x5000;
 const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000
 
@@ -360,6 +361,7 @@ far fn video_upload() {
     dma_copy_cgram(0, &MOUNTAINS_PAL as far *u8, CGRAM_MOUNTAINS, MOUNTAINS_PAL_SIZE);
     dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
     dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
+    dma_copy_cgram(0, &FX_PAL as far *u8, CGRAM_OBJ_FX, FX_PAL_SIZE);
     struct_palettes();              // the recoloured variants of both
 
     dma_copy_vram(0, &GROUND_CHR as far *u8, VRAM_GROUNDC, GROUND_CHR_SIZE);
@@ -376,6 +378,7 @@ far fn video_upload() {
     dma_copy_vram(0, &HUD_MAP as far *u8, VRAM_HUD, HUD_MAP_SIZE);
     dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
     dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
+    dma_copy_vram(0, &FX_CHR as far *u8, VRAM_OBJ2 + (HELI_CHR_SIZE >> 1), FX_CHR_SIZE);
 
     // Mode 1, 8x8 tiles, and bit 3: BG3's priority-1 tiles draw in front
     // of everything, sprites included - the HUD over the dirt and the sky.

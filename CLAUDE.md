@@ -151,6 +151,7 @@ rotor_raiders/
 │   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the test rows
 │   ├── screen.r65            # The front end: title, briefing and after-action pages on BG3
 │   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
+│   ├── fx.r65                # Explosions and smoke: hindstrike's particle animations (bank 3, draw in 0)
 │   ├── hud.r65               # BG3 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
 │   ├── radar.r65             # BG3 strip row 2: the radar, a 256x8 bitmap the game draws
 │   ├── game.r65              # Match state: the two ends, the reset
@@ -188,6 +189,7 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 | BG3 | `hud` | HUD strip, radar, dialog, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
+| OBJ | `fx` | explosions and smoke, from hindstrike | camera-relative | after `heli` (4bpp, `FX_TILE0` on) |
 
 The clouds and the mountains share BG2 because they never share a scanline: one HDMA split
 gives each its own scroll. **They are two sheets**, `sky.tilemap.bmp` and
@@ -215,7 +217,7 @@ says what a bitmap produces**: `%.tilemap.bmp` is de-duplicated into a tileset *
 names its tiles back (`assets/gfx/%.chr`, `%.pal`, `%.tilemap`), a plain `%.bmp` gets the tileset
 alone, and the Makefile has one multi-target pattern rule for each - make decides between them by
 which source exists. Bit depth is the other axis and is a target-specific variable (`-b2`, with
-`obj`, `heli`, `sky`, `mountains` and `ground` set to `-b4`), since it has nothing to do with whether a sheet
+`obj`, `heli`, `fx`, `sky`, `mountains` and `ground` set to `-b4`), since it has nothing to do with whether a sheet
 carries a map. So are the tilemap attributes bmp2chr has no flag for - palette offset and
 priority bit, set afterwards by `tools/tilemap_attr.py`. The art depends on the Makefile, so
 editing either reconverts it.
@@ -223,7 +225,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
@@ -345,11 +347,23 @@ run on a stagger of one structure per frame in sixteen - a man covers eight pixe
 own sheet is drawn by `tools/heli_art.py`, and both write their 4-bit BMP through
 `tools/bmp4.py`, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
 
+Explosions and smoke (`src/fx.r65`) are hindstrike's particles (`game_particles.asm`): one
+16x16 sprite stepping along a row of `fx.bmp` a frame every 6 ticks, retired at the row's end,
+smoke rising a pixel every other tick. `tools/fx_art.py` copies the three rows out of
+hindstrike's `gfx/sprites1.bmp` with its own 16 colours (OBJ palette 5, CGRAM 208); the sheet
+loads straight after `heli`'s in the second name block, so its attribute carries `HELI_PAGE`.
+A bomb on the ground is a big blast; a lost airframe and a falling turret or bunker a big one
+with a smoke ring after it (`fx_burst`); a destroyed tank, van or launcher a small one with
+smoke. Eight slots, taken in turn, so a ninth replaces the oldest; the flip is from the frame
+count, never `rand()`. `main` calls `fx_update`/`fx_draw` only while `fx_live` is set - called
+idle every frame they cost `unit_budget` ten ticks.
+
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base
 (`struct_base_van`, scanned every 32 frames - a van is in the window ~75 frames) or the
 player's last helicopter (`heli_lost`). Any other loss hides the airframe for `HELI_RESPAWN`
 (120) frames while `camera_pan` brings the view home at a pace sized at the loss
-(`camera_x / 120 + 1`, so the far end of the world arrives inside the delay); the next
+(`camera_x / 72 + 1`, so the far end of the world arrives inside the delay) - after holding
+for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out; the next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test

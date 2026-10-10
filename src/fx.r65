@@ -1,0 +1,117 @@
+// fx - explosions and smoke: short sprite animations, ported from
+// hindstrike's particles (game_particles.asm).
+//
+// An effect is one 16x16 sprite stepping through a row of fx.bmp (cells
+// copied from hindstrike's sprites1.bmp by tools/fx_art.py), a frame every
+// FX_RATE ticks, gone at the row's end - hindstrike's explode_and_smoke
+// handler. Smoke drifts up as it goes, as its smoke_2d does. There are
+// three: the big explosion (a bomb, an airframe, a building falling), the
+// small one (a vehicle destroyed) and the smoke ring left after either.
+//
+// The sheet sits in the second OBJ name block straight after the airframe
+// sheet (video.r65), so its tiles are FX_TILE0 on with HELI_PAGE set, and
+// it has an OBJ palette of its own, 5 - hindstrike's sprite colours, as
+// copied. The flip comes from the frame count, never rand(), whose
+// sequence the parachutes own.
+
+#[bank(3)]
+
+const FX_BIG:   u8 = 0;            // fx.bmp row 0: SPR_EXPLODE_1, 8 frames
+const FX_SMALL: u8 = 1;            // row 1: SPR_EXPLODE_2, 4 frames
+const FX_SMOKE: u8 = 2;            // row 2: SPR_SMOKE, 8 frames
+const FX_FREE:  u8 = 0xFF;
+static FX_FRAMES: [u8; 3] = [8, 4, 8];
+
+const FX_MAX:  u16 = 8;            // effects alive at once; a ninth takes the oldest slot
+const FX_RATE: u8  = 6;            // ticks a frame, hindstrike's
+
+const CGRAM_OBJ_FX: u16 = 208;     // OBJ palette 5
+const OBJ_PAL_FX:   u16 = 0x0A00;
+const FX_TILE0:     u16 = HELI_CHR_SIZE >> 5;   // the airframe sheet's tile count
+const FX_ATTR:      u16 = 0x3000 | HELI_PAGE | OBJ_PAL_FX;   // priority 3
+
+#[lowram] static mut fx_kind:  [u8; 8];     // FX_*, or FX_FREE
+#[lowram] static mut fx_frame: [u8; 8];
+#[lowram] static mut fx_tick:  [u8; 8];
+#[lowram] static mut fx_y:     [u8; 8];     // top of the sprite, screen y
+#[lowram] static mut fx_x:     [u16; 8];    // left of the sprite, world x
+#[lowram] static mut fx_flip:  [u16; 8];    // the attribute's hflip bit, or 0
+#[lowram] static mut fx_live:  u8;          // how many are running: main calls nothing while 0
+#[lowram] static mut fx_next:  u16;         // the slot the next one takes
+
+far fn fx_init() {
+    for i in 0..FX_MAX { fx_kind[i] = FX_FREE; }
+    fx_live = 0;
+    fx_next = 0;
+}
+
+// fx_spawn - start effect *kind* centred on world x *x*, its top at screen
+// y *y*. Slots are taken in turn, so with all eight running the oldest
+// gives way - it is the nearest to finishing anyway.
+far fn fx_spawn(kind: u8, x: u16, y: u16) {
+    let i: u16 = fx_next;
+    fx_next = (i + 1) & (FX_MAX - 1);
+    if fx_kind[i] == FX_FREE { fx_live = fx_live + 1; }
+    fx_kind[i] = kind;
+    fx_frame[i] = 0;
+    fx_tick[i] = 0;
+    let mut left: u16 = 0;
+    if x > 8 { left = x - 8; }
+    fx_x[i] = left;
+    fx_y[i] = y as u8;
+    fx_flip[i] = (frames_loop & 1) << 14;            // 0x4000 on odd frames
+}
+
+// fx_burst - an explosion with smoke after it, at the centre *x* and top
+// *y* of what went up.
+far fn fx_burst(kind: u8, x: u16, y: u16) {
+    fx_spawn(kind, x, y);
+    fx_spawn(FX_SMOKE, x, y);
+}
+
+// fx_update - a tick: each effect a frame on every FX_RATE, smoke rising a
+// pixel every other tick, an effect at the end of its row retired.
+far fn fx_update() {
+    for i in 0..FX_MAX {
+        let k: u8 = fx_kind[i];
+        if k != FX_FREE {
+            let t: u8 = fx_tick[i] + 1;
+            if k == FX_SMOKE && (t & 1) == 0 && fx_y[i] > 16 { fx_y[i] = fx_y[i] - 1; }
+            if t >= FX_RATE {
+                fx_tick[i] = 0;
+                let f: u8 = fx_frame[i] + 1;
+                if f >= FX_FRAMES[k as u16] {
+                    fx_kind[i] = FX_FREE;
+                    fx_live = fx_live - 1;
+                } else {
+                    fx_frame[i] = f;
+                }
+            } else {
+                fx_tick[i] = t;
+            }
+        }
+    }
+}
+
+// fx_draw - the running effects into OAM, camera-relative; one off the
+// screen is culled rather than drawn. With oam_take, so in bank 0.
+#[bank(0)]
+
+far fn fx_draw() {
+    for i in 0..FX_MAX {
+        let k: u8 = fx_kind[i];
+        if k != FX_FREE {
+            let sx: u16 = fx_x[i] - camera_x;
+            // Inside the window, or straddling its left edge (sx wrapped to
+            // $FFF0..$FFFF, which the 9-bit OAM X places at -16..-1).
+            if sx < 256 || sx >= 0xFFF0 {
+                let slot: u16 = oam_take();
+                if slot < OAM_SLOTS {
+                    let tile: u16 = FX_TILE0 + ((k as u16) << 5) + ((fx_frame[i] as u16) << 1);
+                    oam.set_full!(slot, sx & 0x01FF, fx_y[i], tile | FX_ATTR | fx_flip[i]);
+                    oam.set_size!(slot, 1);        // 16x16
+                }
+            }
+        }
+    }
+}

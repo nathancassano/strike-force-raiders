@@ -61,6 +61,7 @@ far fn game_reset() {
     pad_init();
     heli_init();
     muni_init();
+    fx_init();
     unit_init();
     para_init();
     struct_init();

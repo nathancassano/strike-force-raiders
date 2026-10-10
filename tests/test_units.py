@@ -96,9 +96,11 @@ def test_unit_budget(state):
     gives 3664/3043. So a change to boot length moves this pin too. Then
     the rotor (0.807): one effect queued and sent every 4 frames is ~50
     cycles a frame on average, and on the budget line that drops 21 ticks
-    a minute; without it the run gives 2976.
+    a minute; without it the run gives 2976. The explosions and smoke
+    (src/fx.r65) cost one more (2954): their pool is skipped from main
+    while empty - called idle every frame it cost ten.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3663
-    assert v.frames_loop == 2955
+    assert v.frames_loop == 2954
