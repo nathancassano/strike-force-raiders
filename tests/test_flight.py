@@ -1,6 +1,6 @@
 """Phases 1-4: boot, the scrolling battlefield, the airframe and its weapons."""
 
-from fixtures import boot, read_snapshot, screen_colour
+from shared import boot, read_snapshot, screen_colour
 
 
 # ---- Phase 1 - harness ------------------------------------------------------

@@ -8,11 +8,11 @@ consumed by nothing else, so from a cold boot the sequence is fixed: the
 third and fourth chutes are the ones in ten that fail, so three men of five
 reach the ground, in the pool slots the cursor hands out.
 
-Most cases start from the `boarded` state (fixtures.py): the men bought, the
+Most cases start from the `boarded` state (shared.py): the men bought, the
 airframe landed on the pad and all five aboard.
 """
 
-from fixtures import boarded, boot, read_snapshot
+from shared import boarded, boot, read_snapshot
 
 FREE, INFANTRY = 0, 4      # unit kinds
 PLAYER = 0

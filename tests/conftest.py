@@ -6,7 +6,7 @@ ported with its expected values.
 
 A case drives the ROM with mesen_gdb.rom_driver's chainable input -
 `boot(s, "MISSION_TEST_QUIET").wait(20).right(30)` - and reads memory by name
-at the snapshot (fixtures.py). `boot` takes the name of one of the ROM's
+at the snapshot (shared.py). `boot` takes the name of one of the ROM's
 mission constants and boots that mission at power-on, front end skipped,
 by writing it to the ROM's boot_pick at boot_load's entry:
 
@@ -30,7 +30,7 @@ campaign is tuned.
 
 No mission at all gets the campaign proper, title page and all.
 
-A setup several cases share is a state in fixtures.py: a `@rom_state` builder,
+A setup several cases share is a state in shared.py: a `@rom_state` builder,
 built once per ROM and cached as a save state in build/.rom_driver, and a
 test starts there with `state(boarded)`.
 """

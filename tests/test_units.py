@@ -12,7 +12,7 @@ below came from that.
 Kinds: 0 free, 1 tank, 2 van, 3 launcher, 4 infantry, 5 engineer.
 """
 
-from fixtures import boot, eight_tanks, read_snapshot
+from shared import boot, eight_tanks, read_snapshot
 
 TANK, VAN, LAUNCHER, INFANTRY, ENGINEER = 1, 2, 3, 4, 5
 PLAYER, ENEMY = 0, 1
