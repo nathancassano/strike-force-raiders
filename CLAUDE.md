@@ -177,13 +177,18 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 | Layer | Sheet | Contents | Scroll | Tiles / VRAM map (words) |
 |---|---|---|---|---|
 | BG1 | `ground` | dirt, rows 179-223 | per-scanline HDMA ch6, eight bands | 4bpp $0000 / $6000 (64x32) |
-| BG2 | `sky` | stratus clouds rows 16-91, mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp $1000-$2FFF / $6800 (64x32) |
-| BG3 | `hud` | HUD strip, radar, dialog, front-end pages | fixed | 2bpp $3000 / $7800 (32x32) |
+| BG2 | `sky` + `mountains` | stratus clouds rows 16-91; mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp $1000-$3FFF (clouds' tiles, then mountains') / $6800 (64x32) |
+| BG3 | `hud` | HUD strip, radar, dialog, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
 
 The clouds and the mountains share BG2 because they never share a scanline: one HDMA split
-gives each its own scroll. **Priority does the layering**: BG1 draws over BG2 (the mountains
+gives each its own scroll. **They are two sheets**, `sky.tilemap.bmp` and
+`mountains.tilemap.bmp`, each an ordinary one-palette bitmap, and BG2 has one map and one tile
+area: the mountains' tiles go up straight after the clouds' (the Makefile offsets their map by
+the clouds' tile count, `tilemap_attr.py --tile-offset`), and `video_upload` lays the
+mountains' tile rows (`MOUNTAIN_ROW`.., 16-22) over the clouds' map in both screens. So each
+sheet draws only in its own band - `sky_art.py` checks it. **Priority does the layering**: BG1 draws over BG2 (the mountains
 end on the scanline above the dirt, so nothing of them is hidden under it); `BGMODE`'s BG3 bit (`set_bgmode!(1, 0x08)`) plus the priority
 bit on the HUD's tiles puts the HUD over everything, sprites included - except the radar row,
 written without the bit so the camera bracket sprite shows over it, and the blank HUD cell,
@@ -193,17 +198,17 @@ in front of the mountains.
 
 **CGRAM**: BG1 and BG2 draw 16-colour palettes from 0-127, and BG3's eight 4-colour ones are the
 first 32 of those. So the HUD keeps 0-31 (CGRAM 0, its navy, is also the backdrop - the sky),
-the ground is palette 2 (32-47), the sky 3-7 (48-127: clouds 3, mountains 4-7), and sprites
-get 128-255. A 4bpp sheet is drawn from palette 0 in its bitmap and moved up by
-`tools/tilemap_attr.py --pal` in the Makefile; `CGRAM_GROUND`/`CGRAM_SKY` in `video.r65` say
-where its `.pal` is uploaded. Change one, change both.
+the ground is palette 2 (32-47), the clouds 3 (48-63), the mountains 4 (64-79), 5-7 are free,
+and sprites get 128-255. Every 4bpp sheet is one palette, drawn as palette 0 in its bitmap and
+moved up by `tools/tilemap_attr.py --pal` in the Makefile; `CGRAM_GROUND`/`CGRAM_SKY`/
+`CGRAM_MOUNTAINS` in `video.r65` say where its `.pal` is uploaded. Change one, change both.
 
 All art is indexed BMP in `assets/src`, and **that is the only art in git**. **The file name
 says what a bitmap produces**: `%.tilemap.bmp` is de-duplicated into a tileset *and* the map that
 names its tiles back (`assets/gfx/%.chr`, `%.pal`, `%.tilemap`), a plain `%.bmp` gets the tileset
 alone, and the Makefile has one multi-target pattern rule for each - make decides between them by
 which source exists. Bit depth is the other axis and is a target-specific variable (`-b2`, with
-`obj`, `heli`, `sky` and `ground` set to `-b4`), since it has nothing to do with whether a sheet
+`obj`, `heli`, `sky`, `mountains` and `ground` set to `-b4`), since it has nothing to do with whether a sheet
 carries a map. So are the tilemap attributes bmp2chr has no flag for - palette offset and
 priority bit, set afterwards by `tools/tilemap_attr.py`. The art depends on the Makefile, so
 editing either reconverts it.
@@ -214,12 +219,11 @@ name for its art half. Both are build products, `.gitignore`d, and removed by `m
 `tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
-`sky_art.py` is the exception that already is final art. It paints the sky's two bands from
+`sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
 ComfyUI renders (`pixel_art_sdxl` with comfyui-seamless-tiling's `x_only` tiling, so they wrap).
 `sky_art.py mountains` takes a render's pixels: gimp crops, squashes to 512x44 and indexes it
 (the script-fu is in the file, `--scm`), then the tool keys the sky by silhouette (its bottom row
-sits on the dirt and must be solid), fits four 15-colour palettes and gives every 8x8 tile the
-one that fits it best - a tile cannot mix them. **`sky_art.py clouds` takes only a render's
+sits on the dirt and must be solid) and fits it one 15-colour palette. **`sky_art.py clouds` takes only a render's
 shapes**: the model's "pixels" are irregular 5-8 px blocks on no grid, and shrinking them 3x
 leaves streaky noise - tolerable on rock, junk on cloud - so the tool blurs the blocks away,
 averages the crop down and thresholds clean silhouettes, then draws them itself in a 15-step
@@ -229,14 +233,17 @@ caps), `--threshold T` to move the cloud/sky line, and `--haze N` on either to b
 backdrop colour `main.r65` sets, which is what makes a band read as distant. The current art is
 mountains `--key-grey --haze 0.3` (rows 135-178) and clouds from render `rotor_clouds_e_00001_`
 rows 30-480 at `--threshold 40 --haze 0.15` (rows 16-91, from right under the HUD, where a cloud cut flat at the
-top reads as running on behind it). The sky's tiles are near their VRAM region's 768 (536 now);
-the Makefile stops the build past it, since they would overwrite the sprites' at $4000. **Bigger sky art lengthens the boot** (its tiles upload in force blank), and a boot a frame longer shifts every
+top reads as running on behind it). The two sheets share BG2's 768 tiles (537 now); the
+Makefile stops the build past it, since they would overwrite the sprites' at $4000. **Bigger sky art lengthens the boot** (its tiles upload in force blank), and a boot a frame longer shifts every
 suite movie: the clouds' did, and moved `test_unit_budget`'s pin.
-Nothing generates graphics from code at build time. **`sky` and `ground` are stored
-folded** - 32 tiles wide by 64 tall, right-hand screen below the left - because a 64x32 SNES
-tilemap is two 32x32 screens and bmp2chr emits row-major at bitmap width. Each BG layer has its
-own de-duplicated tileset. A sheet's palette count is its BMP's colour count: `sky.tilemap.bmp`
-is 8-bit with 80 entries (five palettes), so its `.pal` is 160 bytes.
+Nothing generates graphics from code at build time. **`sky`, `mountains` and `ground` are drawn
+512x256, as they appear** across the layer's two screens, and the Makefile folds each on its way
+into bmp2chr (`tools/fold.py`, into `build/fold/`): a 64x32 SNES tilemap is two 32x32 screens one
+after the other and bmp2chr emits row-major at bitmap width, so it is fed the strip 32 tiles wide
+and 64 tall, right-hand screen below the left. Each BG layer has its
+own de-duplicated tileset (BG2's two sheets each have theirs, loaded one after the other). A
+sheet's `.pal` is its BMP's colour count: every BG sheet has 16 entries, one 32-byte palette,
+saved 8-bit or 4-bit as the editor likes (`fold.py` and bmp2chr take either).
 
 Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a munition 8x8.
 **There are two sprite sheets.** `obj.bmp` holds the units, the buildings, the decks and the

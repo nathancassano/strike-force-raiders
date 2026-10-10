@@ -361,7 +361,7 @@ and cannot host anything that must stay rectangular.
 - **Palettes.** Sprites are 4bpp (16 colours, 8 palettes, CGRAM 128–255) regardless of BG mode:
   one palette for units, one for structures. BG1 and BG2 share eight 16-colour palettes in
   CGRAM 0–127, and BG3's eight 4-colour ones are the first 32 of those: HUD 0–31, ground
-  palette 2, clouds 3, mountains 4–7.
+  palette 2, clouds 3, mountains 4 (a sheet each, one palette each); 5–7 free.
 - **Lint.** HDMA setup writes the same `BBADx` registers that rule C002 forbids; add the HDMA
   helpers to `exclude_subtrees` in `r65-lint.toml` alongside `boot_load`.
 

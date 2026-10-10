@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """
-Paint the sky - BG2, 4bpp, assets/src/sky.tilemap.bmp - from rendered art.
+Paint the sky's two sheets from rendered art: the clouds into
+assets/src/sky.tilemap.bmp and the mountains into
+assets/src/mountains.tilemap.bmp.
 
-One-off authoring helper, not part of the build: it writes the bitmap that
-the Makefile's bmp2chr rule converts, so the BMP stays the source of truth
-and an ordinary `make` picks the edit up. The sky holds two bands at two
-depths that never share a scanline, split by video.r65's SKY_SPLIT:
+One-off authoring helper, not part of the build: it writes the bitmaps that
+the Makefile's bmp2chr rule converts, so the BMPs stay the source of truth
+and an ordinary `make` picks an edit up. Each sheet is an ordinary bitmap a
+person can open and edit: 8-bit, one 16-colour palette (entry 0 the
+transparent sky, 1-15 the band's colours), the band drawn at its screen
+rows, 512x256 as it appears on screen (the Makefile folds it for bmp2chr,
+tools/fold.py):
 
-    clouds      rows 16-91, the bitmap's palette 0 (CGRAM 48-63), above it
-    mountains   rows 135-178, palettes 1-4 (CGRAM 64-127), below it
+    clouds      sky.tilemap.bmp, rows 16-91 - above video.r65's SKY_SPLIT
+    mountains   mountains.tilemap.bmp, rows 135-178 - below it, and inside
+                tile rows MOUNTAIN_ROW.. (video.r65), the only rows of the
+                mountains' map uploaded
 
-Each band is painted on its own and leaves the other alone.
+Both share BG2: the Makefile uploads the mountains' tiles after the clouds'
+and offsets their map to match, and video.r65 lays the mountains' tile rows
+over the clouds' map. So a sheet may draw only in its own band.
 
 Both start as ComfyUI renders: the pixel_art_sdxl workflow at 1536x640, its
 models passed through comfyui-seamless-tiling's SeamlessTile and its decode
@@ -24,7 +33,7 @@ afterwards - POST /free - or every later render of it tiles too.)
 
 MOUNTAINS take the render's pixels. gimp crops the band out, scales the full
 width to 512 and the crop to the band's height, and indexes to 128 colours
-without dither (the palettes are fitted here, so gimp's job is only to tidy
+without dither (the palette is fitted here, so gimp's job is only to tidy
 the render's anti-aliasing):
 
     python3 tools/sky_art.py --scm > sky.scm
@@ -33,17 +42,11 @@ the render's anti-aliasing):
     python3 tools/sky_art.py mountains band.bmp [--key-grey] [--haze N]
 
 CY and CH are the crop's top row and height in the render; squashing CH to
-44 rows flattens the peaks, which a distant range wants.
-
-- the sky becomes index 0, transparent, so the backdrop shows through: the
-  range is keyed by silhouette (key_silhouette), the solid pixels joined
-  to the bottom row and everything below their top in each column.
-  --key-grey takes grey for sky as well, for a render whose clouds touch
-  its peaks - not for snow caps;
-- a 4bpp tile draws from one 16-colour palette, the first of which is
-  transparent, so the range gets four palettes of 15 colours - every one
-  of them different - fitted and split by derive_palettes, and each tile is
-  given the palette that fits it with the least error.
+44 rows flattens the peaks, which a distant range wants. The sky is keyed
+by silhouette (key_silhouette): the solid pixels joined to the bottom row,
+and everything below their top in each column. --key-grey takes grey for
+sky as well, for a render whose clouds touch its peaks - not for snow caps.
+The range's 15 colours are fitted to it by k-means (fit_palette).
 
 CLOUDS take only the render's shapes. Its "pixels" are irregular blocks of
 5-8 render px on no grid, and shrinking that 3x slices them into streaky
@@ -58,18 +61,9 @@ own brightness mixed in so long bands are not uniform:
 CY and CH are the crop in the 1536x640 render itself (no gimp step);
 --threshold (0-255) moves the cloud/sky line, by default Otsu's.
 
-Both bands:
-
-- --haze N (0-1) blends the band's colours N of the way toward the game's
-  sky - the backdrop colour main.r65 sets: the air between the viewer and
-  something far off, which mutes colours and flattens contrast;
-- colours are kept MIN_SEP apart, so no slot goes on a difference no one
-  can see;
-- bmp2chr reads a tile's palette from the index range (16N+1..16N+15). The
-  bitmap is 8-bit with exactly 16 x 5 palette entries: bmp2chr sizes the
-  .pal from that count, and video.r65 uploads it whole at CGRAM_SKY;
-- written folded, 32 tiles wide by 64 tall, right-hand screen below the
-  left.
+Both bands: --haze N (0-1) blends the band's colours N of the way toward
+the game's sky - the backdrop colour main.r65 sets: the air between the
+viewer and something far off, which mutes colours and flattens contrast.
 """
 
 import re
@@ -78,16 +72,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
-BMP = 'assets/src/sky.tilemap.bmp'
 STRIP_W = 512
 PER = 15                      # colours a palette holds; entry 0 is transparent
-ENTRIES = 16 * 5              # the bitmap's palettes: clouds 0, mountains 1-4
-RESTARTS = 6                  # colour splits tried; see derive_palettes
+RESTARTS = 6                  # k-means starts tried; see fit_palette
 SKY_NEAR = 3 * 24 * 24        # squared RGB distance still counted as sky
 MIN_SEP = 14                  # RGB distance kept between any two colours of
-                              # a band: more than one 5-bit step in each channel
+                              # a palette: more than one 5-bit step in each channel
 GREY_SPREAD = 28              # --key-grey: a colour whose channels differ by
                               # less than this is grey, a cloud's colour
 SPECK = 6                     # clouds: an island or a hole this small is noise
@@ -100,10 +92,9 @@ CLOUD_HIGH = (244, 246, 250)  # ... and its lit top edge
 @dataclass
 class Band:
     name: str
+    bmp: str
     top: int                  # first row
     height: int
-    pal0: int                 # the bitmap's first palette for the band
-    pals: int                 # how many
 
     @property
     def bottom(self):
@@ -114,12 +105,12 @@ BANDS = {
     # Above SKY_SPLIT, from the row under the HUD strip (rows 0-15): a cloud
     # the crop cut flat at the top then reads as running on up behind the
     # strip, where at a row of open sky below it the cut would show.
-    'clouds': Band('clouds', 16, 76, 0, 1),
+    'clouds': Band('clouds', 'assets/src/sky.tilemap.bmp', 16, 76),
     # The last row is the scanline above the dirt (GND_TOP, 179) - not under
     # it: the base of a render is where its detail is, and rows under the
     # dirt are never seen. So the band's bottom row must be solid, or sky
     # shows above the dirt; main() checks.
-    'mountains': Band('mountains', 135, 44, 1, 4),
+    'mountains': Band('mountains', 'assets/src/mountains.tilemap.bmp', 135, 44),
 }
 
 BAND_SCM = r'''
@@ -154,6 +145,8 @@ def flood(seeds, ok, h):
     return hit
 
 
+# ------------------------------------------------------------- mountains ---
+
 def key_silhouette(rgb, grey):
     """Which pixels are drawn: the range's silhouette. A pixel is solid
     unless it is near the strip's top-left colour (the sky) - or, with
@@ -178,6 +171,89 @@ def key_silhouette(rgb, grey):
             drawn[y][x] = True
     return drawn
 
+
+def snes(c):
+    """*c* at the PPU's precision: 5 bits a channel, expanded back to 8 by
+    bit replication, so what is fitted is what will be shown."""
+    v5 = np.clip(np.rint(np.asarray(c, float) * 31 / 255), 0, 31).astype(int)
+    return tuple(int(v) for v in (v5 << 3) | (v5 >> 2))
+
+
+def lloyd(cols, w, init, iters=30):
+    """Lloyd's k-means: centres for the colours *cols* weighted *w*, from
+    *init*. A centre nobody chose moves to the worst-fitted colour."""
+    cents = np.array(init, float)
+    for _ in range(iters):
+        d = ((cols[:, None, :] - cents[None]) ** 2).sum(-1)
+        near = d.argmin(1)
+        new = cents.copy()
+        for j in range(len(cents)):
+            m = (near == j) & (w > 0)
+            if w[m].sum():
+                new[j] = (cols[m] * w[m, None]).sum(0) / w[m].sum()
+            elif w.sum():
+                new[j] = cols[int((w * d.min(1)).argmax())]
+        if np.allclose(new, cents):
+            break
+        cents = new
+    return cents
+
+
+def distinct(pal):
+    """Snap every colour to SNES precision and keep it MIN_SEP from every
+    other: one too close is pushed a 5-bit step at a time away from the
+    nearest. The fit puts its colours where the pixels are, and a dense
+    cluster draws several a single step apart - a slot spent on a difference
+    no one can see."""
+    out = []
+    for c in pal:
+        c = snes(c)
+        for tries in range(64):
+            if not out:
+                break
+            near = min(out, key=lambda o: dist(o, c))
+            if dist(near, c) >= MIN_SEP * MIN_SEP:
+                break
+            d = np.array(c) - np.array(near)
+            if not d.any():
+                d = np.ones(3) * (1 if sum(c) < 384 else -1)
+            if tries >= 32:                      # pinned at a wall: go round
+                d = -d
+            c = snes(np.clip(np.array(c) + 8 * np.sign(d), 0, 255))
+        out.append(c)
+    return out
+
+
+def fit_palette(rgb, drawn):
+    """PER colours for the drawn pixels, every one different: k-means over
+    the strip's colours weighted by how many pixels use each, from RESTARTS
+    fixed-seed starts, the lowest error kept. Dark to light."""
+    hist = {}
+    for y, row in enumerate(rgb):
+        for x, c in enumerate(row):
+            if drawn[y][x]:
+                hist[c] = hist.get(c, 0) + 1
+    cols = np.array(list(hist), float)
+    w = np.array(list(hist.values()), float)
+    k = min(PER, len(cols))
+    rnd = np.random.default_rng(0x4111)
+    best = None
+    for _ in range(RESTARTS):
+        start = cols[rnd.choice(len(cols), size=k, replace=False, p=w / w.sum())]
+        pal = distinct(lloyd(cols, w, start))
+        err = (w * ((cols[:, None, :] - np.array(pal, float)[None]) ** 2).sum(-1).min(1)).sum()
+        if best is None or err < best[0]:
+            best = (err, pal)
+    return sorted(best[1], key=sum)
+
+
+def index_pixels(rgb, drawn, pal):
+    """Each drawn pixel as 1 + its nearest palette colour, sky as 0."""
+    return [[1 + min(range(len(pal)), key=lambda i: dist(c, pal[i])) if drawn[y][x] else 0
+             for x, c in enumerate(row)] for y, row in enumerate(rgb)]
+
+
+# ---------------------------------------------------------------- clouds ---
 
 def otsu(values):
     """The threshold that best splits *values* into two classes."""
@@ -211,7 +287,6 @@ def cloud_shapes(band, render, cy, ch, threshold):
     wide.paste(crop.crop((w - pad, 0, w, ch)), (0, 0))
     wide.paste(crop, (pad, 0))
     wide.paste(crop.crop((0, 0, pad, ch)), (w + pad, 0))
-    from PIL import ImageFilter
     wide = wide.filter(ImageFilter.GaussianBlur(BLUR))
     small = wide.crop((pad, 0, pad + w, ch)).resize((STRIP_W, band.height), Image.BOX)
     lum = np.asarray(small, float)
@@ -297,190 +372,17 @@ def cloud_ramp(haze):
     return ramp
 
 
-def tiles(band, drawn):
-    """The drawn pixels of each 8x8 tile, as (x, y) in the strip. Tiles fall
-    on the layer's 8 px grid, not the strip's: a band's top need not be a
-    multiple of 8."""
-    out = []
-    for ay in range(band.top & ~7, band.bottom + 1, 8):
-        rows = [y for y in range(ay - band.top, ay - band.top + 8) if 0 <= y < band.height]
-        for tx in range(0, STRIP_W, 8):
-            px = [(x, y) for y in rows
-                  for x in range(tx, tx + 8) if drawn[y][x]]
-            if px:
-                out.append(px)
-    return out
-
-
-def snes(c):
-    """*c* at the PPU's precision: 5 bits a channel, expanded back to 8 by
-    bit replication, so what is fitted is what will be shown."""
-    v5 = np.clip(np.rint(np.asarray(c, float) * 31 / 255), 0, 31).astype(int)
-    return tuple(int(v) for v in (v5 << 3) | (v5 >> 2))
-
-
-def lloyd(cols, w, init, iters=30):
-    """Lloyd's k-means: centres for the colours *cols* weighted *w*, from
-    *init*. A centre nobody chose moves to the worst-fitted colour."""
-    cents = np.array(init, float)
-    for _ in range(iters):
-        d = ((cols[:, None, :] - cents[None]) ** 2).sum(-1)
-        near = d.argmin(1)
-        new = cents.copy()
-        for j in range(len(cents)):
-            m = (near == j) & (w > 0)
-            if w[m].sum():
-                new[j] = (cols[m] * w[m, None]).sum(0) / w[m].sum()
-            elif w.sum():
-                new[j] = cols[int((w * d.min(1)).argmax())]
-        if np.allclose(new, cents):
-            break
-        cents = new
-    return cents
-
-
-def distinct(pal, taken=()):
-    """Snap every colour to SNES precision and keep it MIN_SEP from every
-    other: one too close is pushed a 5-bit step at a time away from the
-    nearest. The fit puts its colours where the pixels are, and a dense
-    cluster draws several a single step apart - a slot spent on a difference
-    no one can see."""
-    out = list(taken)
-    for c in pal:
-        c = snes(c)
-        for tries in range(64):
-            if not out:
-                break
-            near = min(out, key=lambda o: dist(o, c))
-            if dist(near, c) >= MIN_SEP * MIN_SEP:
-                break
-            d = np.array(c) - np.array(near)
-            if not d.any():
-                d = np.ones(3) * (1 if sum(c) < 384 else -1)
-            if tries >= 32:                      # pinned at a wall: go round
-                d = -d
-            c = snes(np.clip(np.array(c) + 8 * np.sign(d), 0, 255))
-        out.append(c)
-    return out[len(taken):]
-
-
-def derive_palettes(rgb, tile_px, npals):
-    """*npals* palettes of at most PER colours, every colour different.
-
-    Start from the npals x PER colours that best fit the strip as a whole
-    (or the strip's own colours, if it has fewer), then alternate two
-    steps: split the colours into palettes - each tile is drawn in
-    whichever palette fits it best, and moving a colour to another palette,
-    or swapping two, is kept while it lowers the total error - and
-    re-centre each palette on the pixels of the tiles that chose it (a
-    palette no tile chose is re-seeded from the worst-fitted tiles, so no
-    slot goes unshown). A tile cannot borrow from a second palette, so the
-    split is what decides which colours meet in a tile. The whole is run
-    from RESTARTS fixed-seed starts and the best kept."""
-    uniq = {}
-    tile_hist = []
-    for px in tile_px:
-        h = {}
-        for x, y in px:
-            u = uniq.setdefault(rgb[y][x], len(uniq))
-            h[u] = h.get(u, 0) + 1
-        tile_hist.append(h)
-    cols = np.array(list(uniq), float)
-    H = np.zeros((len(tile_px), len(cols)))
-    for t, h in enumerate(tile_hist):
-        for u, n in h.items():
-            H[t, u] = n
-    weight = H.sum(0)
-    k = min(npals * PER, len(cols))
-    rnd = np.random.default_rng(0x4111)
-
-    def column(pal, group):
-        if not group:
-            return np.full(len(tile_px), np.inf)
-        D = ((cols[:, None, :] - np.array([pal[j] for j in group], float)[None]) ** 2).sum(-1)
-        return H @ D.min(1)
-
-    def search(pal, part):
-        E = np.stack([column(pal, g) for g in part], 1)
-        cur = E.min(1).sum()
-        improved = True
-        while improved:
-            improved = False
-            for p in range(npals):
-                for i in range(len(part[p]) - 1, -1, -1):
-                    for q in range(npals):
-                        if q == p or i >= len(part[p]):
-                            continue
-                        # Move p's colour i to q, or swap it with each of q's.
-                        trials = [None] if len(part[q]) < PER else []
-                        trials += list(range(len(part[q])))
-                        for j in trials:
-                            a, b = list(part[p]), list(part[q])
-                            if j is None:
-                                b.append(a.pop(i))
-                            else:
-                                a[i], b[j] = b[j], a[i]
-                            Ep, Eq = column(pal, a), column(pal, b)
-                            old_p, old_q = E[:, p].copy(), E[:, q].copy()
-                            E[:, p], E[:, q] = Ep, Eq
-                            e = E.min(1).sum()
-                            if e < cur - 1e-9:
-                                cur, improved = e, True
-                                part[p], part[q] = a, b
-                                break
-                            E[:, p], E[:, q] = old_p, old_q
-        return cur, E
-
-    best = None
-    for _ in range(RESTARTS):
-        start = cols[rnd.choice(len(cols), size=k, replace=False, p=weight / weight.sum())]
-        pal = distinct(lloyd(cols, weight, start))
-        order = list(rnd.permutation(k))
-        part = [order[n::npals] for n in range(npals)]
-        for _ in range(6):
-            cur, E = search(pal, part)
-            if best is None or cur < best[0]:
-                best = (cur, [[pal[j] for j in g] for g in part])
-            owner = E.argmin(1)
-            worst = list(np.argsort(-E.min(1)))
-            new = list(pal)
-            for n in range(npals):
-                if not part[n]:
-                    continue
-                w = H[owner == n].sum(0)
-                if not w.sum():                   # unchosen: the worst tiles
-                    w = H[worst[:8]].sum(0)
-                    del worst[:8]
-                init = [pal[j] for j in part[n]]
-                for j, c in zip(part[n], lloyd(cols, w, init)):
-                    new[j] = c
-            pal = distinct(new)
-    pals = best[1]
-    # Dark to light within a palette, palettes by their darkest colour.
-    return sorted([sorted(p, key=lambda c: sum(c)) for p in pals],
-                  key=lambda p: sum(p[0]) if p else 999)
-
-
-def fit(band, rgb, tile_px, pals):
-    """Index each pixel 0 or 16(pal0+N)+1.., one palette N a tile."""
-    out = [[0] * STRIP_W for _ in range(band.height)]
-    used = [0] * len(pals)
-    for px in tile_px:
-        best = min((n for n in range(len(pals)) if pals[n]), key=lambda n: sum(
-            min(dist(rgb[y][x], c) for c in pals[n]) for x, y in px))
-        used[best] += 1
-        pal = pals[best]
-        for x, y in px:
-            k = min(range(len(pal)), key=lambda i: dist(rgb[y][x], pal[i]))
-            out[y][x] = 16 * (band.pal0 + best) + 1 + k
-    return out, used
-
+# ---------------------------------------------------------------- common ---
 
 def source_const(path, pattern, what):
     m = re.search(pattern, open(path).read())
     if not m:
         raise SystemExit(f"sky_art.py: no {what} in {path}")
     return m.groups()
+
+
+def video_const(name):
+    return int(source_const('src/video.r65', rf'const {name}:\s*u\d+\s*=\s*(\d+)', name)[0])
 
 
 def backdrop():
@@ -491,45 +393,42 @@ def backdrop():
     return tuple((v << 3) | (v >> 2) for v in map(int, rgb5))
 
 
-def check_split():
-    """Each band on its side of video.r65's SKY_SPLIT, or it scrolls at the
-    other band's rate."""
-    split = int(source_const('src/video.r65', r'const SKY_SPLIT:\s*u8\s*=\s*(\d+)',
-                             'SKY_SPLIT')[0])
+def check_layout():
+    """The bands where video.r65 expects them: each on its side of
+    SKY_SPLIT, or it scrolls at the other's rate, and the mountains inside
+    the tile rows of their map that are uploaded - and the clouds outside
+    them, since those rows of the clouds' map are overwritten."""
+    split = video_const('SKY_SPLIT')
+    row0, rows = video_const('MOUNTAIN_ROW'), video_const('MOUNTAIN_ROWS')
     c, m = BANDS['clouds'], BANDS['mountains']
     if not (c.bottom < split <= m.top):
         raise SystemExit(f"sky_art.py: clouds end at {c.bottom} and mountains start at "
                          f"{m.top}, but SKY_SPLIT is {split}")
+    lo, hi = 8 * row0, 8 * (row0 + rows) - 1
+    if not (lo <= m.top and m.bottom <= hi and c.bottom < lo):
+        raise SystemExit(f"sky_art.py: the mountains' tile rows are {row0}-{row0 + rows - 1} "
+                         f"(scanlines {lo}-{hi}): mountains {m.top}-{m.bottom} must sit inside "
+                         f"them and clouds {c.top}-{c.bottom} above")
+
+
+def paint(band, idx, pal):
+    """Write the band's sheet: a fresh 8-bit 512x256 bitmap, the 16-entry
+    palette (0 the transparent sky, 1-15 *pal*), the band at its rows."""
+    im = Image.new('P', (STRIP_W, 256), 0)
+    flat = [0, 0, 0]
+    for c in pal:
+        flat += list(c)
+    flat += [0, 0, 0] * (16 - 1 - len(pal))
+    im.putpalette(flat)
+    px = im.load()
+    for y in range(band.height):
+        for x in range(STRIP_W):
+            px[x, band.top + y] = idx[y][x]
+    im.save(band.bmp)
 
 
 def opt(args, name, kind, default=None):
     return kind(args[args.index(name) + 1]) if name in args else default
-
-
-def paint(band, idx, pals):
-    """Write the band's indices and palettes into the bitmap, clearing its
-    old art wherever it was and leaving the other band alone."""
-    im = Image.open(BMP).copy()
-    assert im.mode == 'P' and im.size == (256, 512), (im.mode, im.size)
-    pal = (im.getpalette() + [0] * 3 * ENTRIES)[:3 * ENTRIES]
-    lo, hi = 16 * band.pal0, 16 * (band.pal0 + band.pals)
-    pal[3 * lo:3 * hi] = [0] * 3 * (hi - lo)
-    for n, sub in enumerate(pals):
-        for k, c in enumerate(sub):
-            i = 16 * (band.pal0 + n) + 1 + k
-            pal[3 * i:3 * i + 3] = list(c)
-    im.putpalette(pal)
-    px = im.load()
-    for y in range(512):
-        for x in range(256):
-            if lo <= px[x, y] < hi:
-                px[x, y] = 0
-    for y in range(band.height):
-        for x in range(STRIP_W):
-            half, sx = divmod(x, 256)               # folded: right screen below
-            if idx[y][x]:
-                px[sx, half * 256 + band.top + y] = idx[y][x]
-    im.save(BMP)
 
 
 def main():
@@ -540,7 +439,7 @@ def main():
         raise SystemExit("usage: sky_art.py clouds RENDER.png CY CH [--threshold T] [--haze N]"
                          "\n       sky_art.py mountains BAND.bmp [--key-grey] [--haze N]"
                          "\n       sky_art.py --scm")
-    check_split()
+    check_layout()
     band = BANDS[sys.argv[1]]
 
     if band.name == 'clouds':
@@ -549,12 +448,11 @@ def main():
         mask, lum, t = cloud_shapes(band, sys.argv[2], cy, ch, opt(args, '--threshold', int))
         level = shade_clouds(mask, lum)
         ramp = cloud_ramp(opt(args, '--haze', float, 0.0))
-        idx = [[16 * band.pal0 + v if v else 0 for v in row] for row in level.tolist()]
-        paint(band, idx, [ramp])
+        paint(band, level.tolist(), ramp)
         seam = sum(mask[:, -1] != mask[:, 0])
         used = len(set(level[mask].tolist()))
-        print(f"{BMP}: clouds rows {band.top}-{band.bottom}, threshold {t}, "
-              f"{int(mask.sum())} px, {used} of {PER} ramp colours used, "
+        print(f"{band.bmp}: clouds rows {band.top}-{band.bottom}, threshold {t}, "
+              f"{int(mask.sum())} px, {used} of {PER} colours used, "
               f"{seam} rows differ across the wrap")
         return
 
@@ -574,10 +472,8 @@ def main():
         sky = backdrop()
         rgb = [[tuple(round(c + (k - c) * haze) for c, k in zip(px, sky)) for px in row]
                for row in rgb]
-    tile_px = tiles(band, drawn)
-    pals = derive_palettes(rgb, tile_px, band.pals)
-    idx, used = fit(band, rgb, tile_px, pals)
-    paint(band, idx, pals)
+    pal = fit_palette(rgb, drawn)
+    paint(band, index_pixels(rgb, drawn, pal), pal)
     # The wrap should be no harder an edge than the drawing's own: ranked
     # against every other column step (an average misleads - pixel art is
     # blocks, so most neighbouring columns are identical).
@@ -585,9 +481,7 @@ def main():
         return sum(dist(rgb[y][a], rgb[y][b]) for y in range(band.height))
     seam = step(STRIP_W - 1, 0)
     softer = sum(step(x, x + 1) < seam for x in range(STRIP_W - 1))
-    distinct_n = len({c for p in pals for c in p})
-    print(f"{BMP}: mountains rows {band.top}-{band.bottom}, tiles per palette {used}, "
-          f"{distinct_n} distinct colours in {band.pals * PER} slots, "
+    print(f"{band.bmp}: mountains rows {band.top}-{band.bottom}, {len(pal)} colours, "
           f"wrap sharper than {softer} of {STRIP_W - 1} column edges")
 
 

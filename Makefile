@@ -76,13 +76,13 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 #              of any existing destination file, silently truncating a
 #              sheet that has grown
 #
-# BACKGROUNDS ARE STORED FOLDED. A 64x32 SNES tilemap is two 32x32 screens
-# held one after the other, but bmp2chr walks a bitmap row-major at its full
-# width. So each 64-tile-wide layer is authored 32 tiles wide and 64 tall -
-# right-hand screen *below* the left, not beside it - and the row-major
-# output is then byte-identical to what the PPU expects. Editing sky or
-# ground means remembering that the bottom half continues off the right edge
-# of the top half. hud is a single 32x32 screen and needs no fold.
+# BACKGROUNDS ARE FOLDED ON THE WAY IN. A 64x32 SNES tilemap is two 32x32
+# screens held one after the other, but bmp2chr walks a bitmap row-major at
+# its full width. So a 512x256 sheet (ground, sky, mountains - drawn as they
+# appear on screen) is folded by tools/fold.py into build/fold/, its
+# right-hand 256 px moved below the left, and bmp2chr reads that: its
+# row-major output is then byte-identical to what the PPU expects. hud is a
+# single 32x32 screen and fold.py passes it through as it is.
 #
 # Two rule sets, told apart by the source's name. Both are multi-target
 # pattern rules - make's way of saying "one run of this command produces
@@ -104,7 +104,8 @@ BMP2CHR_DEPTH = -b2
 BMP2CHR_POST  = true
 
 # The sprite sheets are 4bpp: the shared one, and the airframe's own. So
-# are Mode 1's BG1 and BG2 - the ground and the sky; the HUD on BG3 is 2bpp.
+# are Mode 1's BG1 and BG2 - the ground, and the sky's two sheets (clouds
+# and mountains); the HUD on BG3 is 2bpp.
 assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/heli.chr assets/gfx/heli.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: BMP2CHR_DEPTH = -b4
@@ -112,7 +113,8 @@ assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_D
 
 # Tilemap attributes bmp2chr has no flag for, set afterwards by
 # tools/tilemap_attr.py. The numbers must match where video.r65 uploads
-# each .pal (CGRAM_SKY, CGRAM_GROUND, in 16-colour palettes).
+# each .pal (CGRAM_GROUND, CGRAM_SKY, CGRAM_MOUNTAINS, in 16-colour
+# palettes).
 # - The 4bpp sheets are drawn from palette 0 and moved up: BG1 and BG2 share
 #   CGRAM 0-127, and its first two palettes are BG3's - the HUD's.
 # - The ground carries the priority bit, so the airframe rising out of it
@@ -121,14 +123,24 @@ assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_D
 # - The HUD carries it too, so with BGMODE's BG3 bit its rows draw over the
 #   dirt and the sky. The radar row is the exception, written at runtime
 #   without it, so the camera bracket sprite shows over it.
-# The sky's tiles must also fit their VRAM region, $1000-$3FFF (video.r65
-# VRAM_SKYC): 768 4bpp tiles, 24576 bytes. Past it they overwrite the
-# sprites' tiles at $4000, silently, so the build stops instead.
+assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: BMP2CHR_DEPTH = -b4
+# - The clouds (sky) and the mountains share BG2 and its one tile area: the
+#   mountains' tiles are uploaded straight after the clouds', so their map
+#   names them that many tiles on (--tile-offset, the clouds' tile count,
+#   from sky.chr's size - hence the extra prerequisite). Together they must
+#   fit BG2's VRAM, $1000-$3FFF (video.r65 VRAM_SKYC): 768 4bpp tiles,
+#   24576 bytes. Past it they overwrite the sprites' tiles at $4000,
+#   silently, so the build stops instead.
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: \
-	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3 && \
-	  { [ $$(stat -c%s assets/gfx/sky.chr) -le 24576 ] || \
-	    { echo "sky.chr is $$(stat -c%s assets/gfx/sky.chr) bytes: over the 768 tiles VRAM $$1000-$$3FFF holds" >&2; \
-	      rm -f assets/gfx/sky.chr; exit 1; }; }
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3
+assets/gfx/mountains.tilemap: assets/gfx/sky.chr
+assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: \
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/mountains.tilemap --pal 4 \
+	    --tile-offset $$(( $$(stat -c%s assets/gfx/sky.chr) / 32 )) && \
+	  { bg2=$$(( $$(stat -c%s assets/gfx/sky.chr) + $$(stat -c%s assets/gfx/mountains.chr) )); \
+	    [ $$bg2 -le 24576 ] || \
+	    { echo "sky.chr + mountains.chr are $$bg2 bytes: over the 768 tiles BG2's VRAM $$1000-$$3FFF holds" >&2; \
+	      rm -f assets/gfx/mountains.chr; exit 1; }; }
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/ground.tilemap --pal 2 --priority
 assets/gfx/hud.chr assets/gfx/hud.pal assets/gfx/hud.tilemap: \
@@ -137,9 +149,10 @@ assets/gfx/hud.chr assets/gfx/hud.pal assets/gfx/hud.tilemap: \
 # A sheet that carries a tilemap: tiles de-duplicated (-t), and the map
 # names them back in the bitmap's order. The depths and the tilemap
 # attributes are set in this file, so editing it reconverts the art.
-assets/gfx/%.chr assets/gfx/%.pal assets/gfx/%.tilemap: assets/src/%.tilemap.bmp Makefile tools/tilemap_attr.py
-	@mkdir -p assets/gfx
-	$(R65X) bmp2chr $< -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -t -f
+assets/gfx/%.chr assets/gfx/%.pal assets/gfx/%.tilemap: assets/src/%.tilemap.bmp Makefile tools/tilemap_attr.py tools/fold.py
+	@mkdir -p assets/gfx $(BUILD_DIR)/fold
+	@python3 tools/fold.py $< $(BUILD_DIR)/fold/$*.bmp
+	$(R65X) bmp2chr $(BUILD_DIR)/fold/$*.bmp -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -t -f
 	@$(BMP2CHR_POST)
 
 # And a sheet without one: every tile kept, addressed by its number.

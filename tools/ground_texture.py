@@ -35,7 +35,7 @@ GROUND_H = 45                 # to the screen's foot: 8 HDMA bands of 5, the
                               # last one's scroll holding under the HUD row
 CLEAR_FROM = 168              # the band's old top: blanked so the sky's tree line
                               # shows down to the dirt
-HALVES = (0, 256)             # left screen at rows 0-255, right below it
+HALVES = (0, 256)             # the two 256 px screens of the 512 px sheet
 
 HIGHLIGHT = (150, 122, 70)    # was the marker yellow; now a sandy highlight
 
@@ -106,15 +106,15 @@ def paint(px):
     for base in HALVES:
         for y in range(CLEAR_FROM, GROUND_Y):
             for x in range(SCREEN_W):
-                px[x, base + y] = 0
+                px[base + x, y] = 0
         for row in range(GROUND_H):
             for x in range(SCREEN_W):
-                px[x, base + GROUND_Y + row] = field[row][x]
+                px[base + x, GROUND_Y + row] = field[row][x]
 
 
 def main():
     im = Image.open(BMP).copy()        # a mapped BMP is read-only
-    assert im.mode == 'P' and im.size == (256, 512), (im.mode, im.size)
+    assert im.mode == 'P' and im.size == (512, 256), (im.mode, im.size)
     pal = im.getpalette()
     pal[9:12] = list(HIGHLIGHT)
     im.putpalette(pal)
