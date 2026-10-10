@@ -471,6 +471,9 @@ far fn heli_update(held: u16) {
         camera_pan(heli_cam_step);
         return;
     }
+    // Up, rising or on a deck: the rotor (checked here, not in sfx_rotor,
+    // so the three frames in four it is quiet cost no far call).
+    if (frames_loop & (ROTOR_EVERY - 1)) == 0 { sfx_rotor(heli_x_px + (HELI_W >> 1), heli_landed); }
     if heli_rising != 0 {
         heli_y = heli_y - HELI_RISE;
         if heli_y <= HELI_Y_HOVER {

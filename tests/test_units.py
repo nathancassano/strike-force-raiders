@@ -93,9 +93,12 @@ def test_unit_budget(state):
     (0.831). The last step is not a cost: the clouds' art made the boot's
     upload a frame longer, and a minute of this run from a boot one frame
     later is a different battle - the same code with the old sky art still
-    gives 3664/3043. So a change to boot length moves this pin too.
+    gives 3664/3043. So a change to boot length moves this pin too. Then
+    the rotor (0.807): one effect queued and sent every 4 frames is ~50
+    cycles a frame on average, and on the budget line that drops 21 ticks
+    a minute; without it the run gives 2976.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3662
-    assert v.frames_loop == 2978
+    assert v.frames_nmi == 3663
+    assert v.frames_loop == 2955

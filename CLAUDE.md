@@ -166,7 +166,7 @@ rotor_raiders/
 ├── assets/
 │   ├── src/                  # Source art (indexed BMP; %.tilemap.bmp also emits a tilemap)
 │   ├── gfx/                  # Generated .chr / .pal / .tilemap - build output, not in git
-│   ├── sound/                # SNES GSS export from hindstrike: spc700.bin (driver + effects), music_*.bin, hindstrike.gsm (the project), sounds.asm/.h (names)
+│   ├── sound/                # SNES GSS export from hindstrike (pitch edits: tools/sfx_transpose.py): spc700.bin (driver + effects), music_*.bin, hindstrike.gsm (the project), sounds.asm/.h (names)
 │   └── levels/               # Battlefield placement lists
 ├── tools/                    # play.py, mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators (sky_art.py, ...)
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
@@ -570,8 +570,8 @@ hand into `SFX_*`/`MUS_*` - re-export and re-port them together).
   bank is 32K, so the Makefile cuts `spc700.bin` into `build/sound/spc700_{1,2}.bin` for banks 5
   and 6, uploaded as two loads with `SCMD_LOAD` between, as hindstrike does.
 - `sfx_play(chn, sfx, vol, pan)` - an effect on a driver channel (0-7), volume 0-127, pan 0-255
-  (128 centre, heard only after `spc_stereo(1)`). Music takes the low channels its tune needs,
-  so effects belong on the free high ones (hindstrike: menus on 7).
+  (128 centre, heard only after `spc_stereo(1)`); queued, see below. Music takes the low channels
+  its tune needs, so effects belong on the free high ones (hindstrike: menus on 7).
 - `music_play(MUS_*)` uploads a tune (0.4-3.6K, several frames - a screen change, not
   mid-battle) and starts it; `music_stop`, `music_pause(1|0)`, `sound_stop_all`,
   `spc_global_volume(vol, speed)`, `spc_channel_volume(mask, vol)`.
@@ -586,10 +586,28 @@ What plays: the title page starts `MUS_OPERATION_HINDSTRIKE` (`screen_show`, thr
 something at world x - silent off screen, panned by screen position (`spc_stereo(1)` at boot) -
 one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the player's gun
 (`SFX_PLAYER_GUN1`), the enemy airframe's and the turrets' (`SFX_ENEMY_GUN`), tank shells
-(`SFX_ENEMY_CANNON`), a bomb going off (`SFX_EXPLODE_1`) and a lost airframe of either side
-(`SFX_EXPLODE_2`). A call waits on the driver's acknowledgement - measured at 250-360 CPU cycles,
-a scanline or two - so effects are cheap enough to fire from the tick; a tune's upload is not.
-Test missions have no front end, so no tune is uploaded under the suite.
+(`SFX_ENEMY_CANNON`), a bomb going off (`SFX_EXPLODE_1`), a lost airframe of either side
+(`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
+or `SFX_ENEMY_MISSILE` by its side), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
+every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `heli_update`; 19 in the
+air, 11 idling on a deck - a fifth of where it started, which ran over everything - jittered by 1
+from the frame count, never `rand()`). Its four effects are pitched down a fourth, B-4 to F#4, by
+`tools/sfx_transpose.py SEMITONES SFX...`: the GSS tool has no command-line export, so the tool
+moves the notes in both `spc700.bin` (the compiled effect streams) and `hindstrike.gsm` (their
+song rows), and a re-export from GSS keeps the change.
+
+**Effects are queued, not sent.** hindstrike's `sfx_play` waits for the driver to acknowledge the
+command (250-360 CPU cycles); a rotor every 4 frames on top of the guns pushed busy frames past
+vblank, and a dropped tick re-deals the simulation (it turned `test_the_hot_pilot_hunts_the_player`'s
+dogfight). Here `sfx_play` fills its channel's slot (`sfx_want`/`sfx_vol`/`sfx_pan`, a bit in
+`sfx_mask`; a newer effect on the channel replaces it) and `sound_flush` - called from `main` before
+the tick and before the draw, only when `sfx_mask` is set - sends one per call, round robin, if the
+driver reads idle, and does not wait: the driver takes a command in microseconds and clears its
+own command latch (`setReady` in `snesgss/snes/spc700.asm`), so nothing is replayed. Checked by a
+probe in the ROM: a send is echoed after 7 polls and done 12 later. Music and the other commands
+still go through the waiting `spc_command`, at screen changes only. The rotor costs the
+`unit_budget` stress run 21 ticks a minute (it writes its slot directly, skipping two far calls)
+and is pinned there. Test missions have no front end, so no tune is uploaded under the suite.
 
 ## Key R65 Patterns for SNES
 

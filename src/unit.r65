@@ -620,6 +620,7 @@ fn unit_launch(i: u16) {
                 l.armed = 0;
                 muni_spawn(MUNI_MISSILE, lx, (UNIT_BASE_Y - 8) << 8, Q10(0),
                            Q10(0) - MISSILE_SPEED, MISSILE_LIFE, units[i].owner);
+                sfx_missile(units[i].owner, lx);
                 launcher_shot[owner] = muni_last;
                 unit_free(i);
             }

@@ -91,6 +91,16 @@ const SFX_CHN_TURRET:  u8 = 2;   // turrets, the super bunker, the bank
 const SFX_CHN_CANNON:  u8 = 3;   // tank shells
 const SFX_CHN_BLAST:   u8 = 4;   // bombs going off
 const SFX_CHN_LOST:    u8 = 5;   // an airframe lost
+const SFX_CHN_MISSILE: u8 = 6;   // a base's or a missile truck's launch
+const SFX_CHN_ROTOR:   u8 = 7;   // the player's airframe, all the time it is up
+
+// The rotor is one of four short effects (SFX_HELI_1..4) restarted every
+// ROTOR_EVERY frames in turn, as hindstrike's intro keeps its rotor going;
+// quieter idling on the ground than in the air, so it sits under the guns.
+const ROTOR_EVERY:   u16 = 4;
+const ROTOR_VOL:     u8  = 19;   // a fifth of the 96 it started at: it
+const ROTOR_VOL_IDLE: u8 = 11;   // ran over everything else; 56 idling
+const ROTOR_JITTER:  u16 = 1;    // how much quieter it may be, from 0
 
 // Where the driver wants music data in sound RAM, from spc700.bin's header
 // (spc_init). Bare: no initialiser on a mutable static (CLAUDE.md).
@@ -177,6 +187,8 @@ far fn spc_init() {
     }
     spc_command(SCMD_INITIALIZE as u16, 0);
     music_now = MUS_NONE;
+    sfx_mask = 0;
+    sfx_next = 0;
 }
 
 // The code bytes the first half of spc700.bin holds: 32K less the header.
@@ -201,12 +213,54 @@ far fn spc_channel_volume(channels: u8, volume: u8) {
     spc_command(SCMD_CHANNEL_VOLUME as u16, ((channels as u16) << 8) | (volume as u16));
 }
 
+// ---------------------------------------------------------- the effects ---
+// sfx_play queues; sound_flush sends. hindstrike sends an effect at once
+// and waits for the driver's acknowledgement - 250-360 CPU cycles, enough
+// for a rotor restarted every 4 frames to push a busy frame past vblank,
+// and a dropped tick re-deals the whole simulation. So an effect waits in
+// its channel's slot (a newer one on the same channel replaces it) and
+// sound_flush, called twice a frame from main, hands one to the driver per
+// call without waiting: only when the driver reads idle (port 0 zero), and
+// the next call is milliseconds later, long after the driver - ~100 us a
+// command - has taken it. The driver clears its command latch itself
+// (spc700.asm setReady), so a command left in port 0 is never replayed.
+#[lowram] static mut sfx_want: [u8; 8];   // the effect queued on each channel
+#[lowram] static mut sfx_vol:  [u8; 8];
+#[lowram] static mut sfx_pan:  [u8; 8];
+// A bit a channel with an effect waiting. main tests it before calling
+// sound_flush, so a frame with nothing queued costs one byte test: the
+// unit_budget stress run sits on the budget line, and a flush that scanned
+// eight slots twice a frame cost it 150 ticks a minute.
+#[lowram] static mut sfx_mask: u8;
+#[lowram] static mut sfx_next: u8;        // round robin: the channel tried first
+
 // sfx_play - play effect *sfx* on channel *chn* (0-7) at *vol* (0-127)
-// and *pan* (0 left, 128 centre, 255 right). The channel rides in the
-// command byte's high nibble, the volume in port 1.
+// and *pan* (0 left, 128 centre, 255 right): queued, sent by sound_flush.
 far fn sfx_play(chn: u8, sfx: u8, vol: u8, pan: u8) {
-    let command: u16 = ((vol as u16) << 8) | (((chn as u16) << 4) & 0xF0) | (SCMD_SFX_PLAY as u16);
-    spc_command(command, ((pan as u16) << 8) | (sfx as u16));
+    let c: u16 = (chn & 7) as u16;
+    sfx_want[c] = sfx;
+    sfx_vol[c] = vol;
+    sfx_pan[c] = pan;
+    sfx_mask = sfx_mask | CHN_BIT[c];
+}
+
+static CHN_BIT: [u8; 8] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80];
+
+// sound_flush - send one queued effect, if the driver is idle; never waits.
+// Called only with sfx_mask non-zero. The channel rides in the command
+// byte's high nibble, the volume in port 1, the effect and pan in ports
+// 2-3; port 0 last, as it is what the driver reads on.
+far fn sound_flush() {
+    if APUIO0 != SCMD_NONE { return; }
+    let mut c: u8 = sfx_next;
+    while (sfx_mask & CHN_BIT[c as u16]) == 0 { c = (c + 1) & 7; }
+    let i: u16 = c as u16;
+    APUIO2 = sfx_want[i];
+    APUIO3 = sfx_pan[i];
+    APUIO1 = sfx_vol[i];
+    APUIO0 = (c << 4) | SCMD_SFX_PLAY;
+    sfx_mask = sfx_mask & ~CHN_BIT[i];
+    sfx_next = (c + 1) & 7;
 }
 
 far fn music_stop() {
@@ -225,6 +279,11 @@ far fn music_start(track: u8) {
 // silent if it is off the screen (by more than half a unit, so a shot
 // fired just out of view is still heard), panned by where it is on it.
 far fn sfx_at(chn: u8, sfx: u8, x: u16) {
+    sfx_at_vol(chn, sfx, 127, x);
+}
+
+// sfx_at_vol - sfx_at at volume *vol* (0-127).
+far fn sfx_at_vol(chn: u8, sfx: u8, vol: u8, x: u16) {
     let mut pan: u16 = 0;
     if x < camera_x {
         if camera_x - x > 8 { return; }
@@ -233,7 +292,39 @@ far fn sfx_at(chn: u8, sfx: u8, x: u16) {
         if pan >= 264 { return; }
         if pan > 255 { pan = 255; }
     }
-    sfx_play(chn, sfx, 127, pan as u8);
+    sfx_play(chn, sfx, vol, pan as u8);
+}
+
+// sfx_missile - a missile launched by side *owner* at world x *x*: the
+// player's sound for the player's bases and trucks, the enemy's for theirs.
+far fn sfx_missile(owner: u8, x: u16) {
+    let mut sfx: u8 = SFX_ENEMY_MISSILE;
+    if owner == SIDE_PLAYER { sfx = SFX_PLAYER_MISSILE; }
+    sfx_at(SFX_CHN_MISSILE, sfx, x);
+}
+
+// sfx_rotor - the player's airframe's rotor, called every ROTOR_EVERY
+// frames while it is up (heli_update): the next of SFX_HELI_1..4, a little
+// louder or softer each time (from the frame count, not rand(), whose
+// sequence the parachutes own) so the loop does not drone. It runs all
+// match long, so it writes its queue slot itself rather than through
+// sfx_at_vol and sfx_play - those two far calls were most of the 27 ticks
+// a minute it first cost the unit_budget stress run - and needs no
+// off-screen test: the camera follows the airframe.
+far fn sfx_rotor(x: u16, landed: u8) {
+    let n: u16 = frames_loop >> 2;
+    let mut vol: u8 = ROTOR_VOL;
+    if landed != 0 { vol = ROTOR_VOL_IDLE; }
+    let mut pan: u16 = 128;
+    if x >= camera_x {
+        pan = x - camera_x;
+        if pan > 255 { pan = 255; }
+    }
+    let c: u16 = SFX_CHN_ROTOR as u16;
+    sfx_want[c] = SFX_HELI_1 + ((n & 3) as u8);
+    sfx_vol[c] = vol - (((n >> 2) & ROTOR_JITTER) as u8);
+    sfx_pan[c] = pan as u8;
+    sfx_mask = sfx_mask | CHN_BIT[c];
 }
 
 // music_pause - 1 pauses the tune where it is, 0 carries on.

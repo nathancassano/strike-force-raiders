@@ -168,6 +168,7 @@ fn main() -> ! {
             oam_flush();
             hud_flush();
         }
+        if sfx_mask != 0 { sound_flush(); }     // one queued effect; again before the draw
 
         pad_read_ports();
         let held: u16 = pad_poll();
@@ -214,6 +215,8 @@ fn main() -> ! {
                 if (trig & JOY_START) != 0 { game_continue(); }
             }
         }
+
+        if sfx_mask != 0 { sound_flush(); }     // what this tick queued, up to one more
 
         // Draw order is the OAM drop policy: airframe, munitions in flight,
         // buildings, then ground units from the camera centre outward.

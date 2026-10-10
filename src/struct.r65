@@ -895,6 +895,7 @@ fn struct_base_tick(i: u16) {
     if air_target(structs[i].owner, bx, BASE_RANGE) != AIR_NONE {
         muni_spawn(MUNI_MISSILE, bx, (GROUND_Y - 32) << 8, Q10(0), Q10(0) - MISSILE_SPEED,
                    MISSILE_LIFE, structs[i].owner);
+        sfx_missile(structs[i].owner, bx);
         structs[i].t = BASE_RATE;
     }
 }
