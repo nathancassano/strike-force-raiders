@@ -570,6 +570,7 @@ fn unit_fire(i: u16) {
                     let y: u16 = (UNIT_BASE_Y + 4) << 8;
                     muni_spawn(MUNI_SHELL, mx, y, v, Q10(0), SHELL_LIFE,
                                units[i].owner);
+                    sfx_at(SFX_CHN_CANNON, SFX_ENEMY_CANNON, mx);
                 }
             }
             if t.target < UNIT_MAX as u8 {

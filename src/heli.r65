@@ -200,6 +200,7 @@ far fn heli_init() {
 // with a full load; the last one is the match. High enough up, one of the
 // men aboard bails out as a paratrooper; the rest go with it.
 far fn heli_lost() {
+    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_x_px + (HELI_W >> 1));
     if heli_men > 0 && heli_y <= HELI_Y_BAIL {
         para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
     }
@@ -329,6 +330,7 @@ far fn heli_fire(held: u16, trig: u16) {
                 if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
                 muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
                            v, vy, BULLET_LIFE, SIDE_PLAYER);
+                sfx_at(SFX_CHN_GUN, SFX_PLAYER_GUN1, mx);
             }
         }
     }

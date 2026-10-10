@@ -421,6 +421,7 @@ fn struct_turret_fire(i: u16, tx: u16, ty: u16) {
         vy = Q10(0) - Q10::from_int(dy as i16).div(Q10::from_int(dx as i16)).mul(BULLET_SPEED);
     }
     muni_spawn(MUNI_BULLET, mx, my, v, vy, BULLET_LIFE, structs[i].owner);
+    sfx_at(SFX_CHN_TURRET, SFX_ENEMY_GUN, mx);
 }
 
 fn struct_turret_tick(i: u16) {
@@ -829,6 +830,7 @@ fn struct_super_tick(i: u16) {
         if units[j].x_px < x { mx = x; v = Q10(0) - BULLET_SPEED; }
         muni_spawn(MUNI_BULLET, mx, (GROUND_Y - TURRET_MUZZLE) << 8, v, Q10(0),
                    BULLET_LIFE, structs[i].owner);
+        sfx_at(SFX_CHN_TURRET, SFX_ENEMY_GUN, mx);
     }
 }
 

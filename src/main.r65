@@ -30,6 +30,7 @@ include!("lib/Q10.r65")
 
 // Subsystems
 include!("assets.r65")
+include!("sound.r65")
 include!("input.r65")
 include!("video.r65")
 include!("pad.r65")
@@ -84,9 +85,15 @@ fn init_reset() -> ! {
     main();
 }
 
-// One-time video setup. Runs entirely inside force-blank.
+// One-time setup. Runs entirely inside force-blank.
 fn boot_load() {
     INIDISP = FORCE_BLANK;
+
+    // The sound driver first: its upload is most of a second, and the
+    // suite's boot() measures it from here to video_load and allows for it.
+    spc_init();
+    spc_global_volume(127, 255);
+    spc_stereo(1);              // effects are panned by where they are on screen
 
     video_load();
 

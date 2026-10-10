@@ -216,6 +216,7 @@ far fn muni_update() {
                     if muni_kind[i] == MUNI_BOMB {
                         muni_bombs = muni_bombs - 1;
                         muni_kind[i] = MUNI_BLAST;
+                        sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, muni_x_px[i]);
                         muni_y[i] = GROUND_Y << 8;  // on the line, where the buildings' test looks
                     } else {
                         muni_kind[i] = MUNI_FREE;

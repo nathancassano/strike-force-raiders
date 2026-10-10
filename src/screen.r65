@@ -393,6 +393,9 @@ far fn screen_show(kind: u8) {
     if kind == SCREEN_END   { screen_end(); }
     screen_blit();
     game_state = GAME_SCREEN;
+    // The title's theme, on into the briefing; a few frames of upload the
+    // first time, nothing when it is already playing (music_start).
+    if kind == SCREEN_TITLE { music_start(MUS_OPERATION_HINDSTRIKE); }
 }
 
 // screen_hide - back to the field: the art's BG3 map over the page, every
@@ -406,6 +409,7 @@ far fn screen_hide() {
     INIDISP = 0x0F;
     hud_init();
     radar_init();
+    music_stop();               // the battle has its guns, not the theme
 }
 
 // screen_font - the console and its font. Force blank: boot_load only.

@@ -1,8 +1,8 @@
 """What the rotor_raiders ROM tests share: the helpers and the states.
 
-`boot` is the power-on: thirty frames for snes_init and boot_load to
-settle, with the mission picked by writing the ROM's boot_pick at
-boot_load's entry (main.r65). `read_snapshot` is the moment every case
+`boot` is the power-on: run to the ROM's main loop, then BOOT_SETTLE frames,
+with the mission picked by writing the ROM's boot_pick at boot_load's entry
+(main.r65). `read_snapshot` is the moment every case
 reads its values at: Select pressed, which calls the ROM's snapshot_point
 from the main loop. It returns the session's memory by name, so a case
 reads `v = read_snapshot(snes)` and asserts on `v.heli_x_px`. The colour
@@ -17,11 +17,19 @@ from PIL import Image
 
 from mesen_gdb.rom_driver import rom_state
 
-BOOT_FRAMES = 30
+# Power-on to main: the sound driver's upload (spc_init, ~156 frames) and
+# the inits. Generous, so a slower upload fails a test rather than hanging.
+BOOT_MAX_FRAMES = 600
+# Frames from main to where a case starts. The suite was calibrated booting
+# to frame 30 when a mission boot reached main at frame 17, before the
+# sound driver; counting from main instead keeps that timeline whatever
+# the boot costs.
+BOOT_SETTLE = 13
 
 
 def boot(s, mission=None):
-    """Power-on: run to frame BOOT_FRAMES, booting *mission*.
+    """Power-on: run to the main loop, then BOOT_SETTLE frames, booting
+    *mission*.
 
     *mission* names one of the ROM's mission constants: a test row -
     MISSION_TEST_QUIET, MISSION_TEST_HUNTER or MISSION_TEST_CONVOY
@@ -33,9 +41,10 @@ def boot(s, mission=None):
     and all.
     """
     if mission:
-        s.until("boot_load", max_frames=BOOT_FRAMES)
+        s.until("boot_load", max_frames=BOOT_MAX_FRAMES)
         s.var.boot_pick = getattr(s.var, mission) | s.var.BOOT_DIRECT
-    return s.wait(BOOT_FRAMES - s.frame)
+    s.until("main", max_frames=BOOT_MAX_FRAMES)
+    return s.wait(BOOT_SETTLE)
 
 
 def read_snapshot(s, *holding):

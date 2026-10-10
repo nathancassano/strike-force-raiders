@@ -208,6 +208,7 @@ far fn foe_reset() {
 // regen_time, rising out of the ground at the far edge; the last one is
 // the match, won.
 far fn foe_lost() {
+    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, foe_x_px + (HELI_W >> 1));
     foe_lives = foe_lives - 1;
     if foe_lives == 0 {
         game_over(GAME_WON);
@@ -840,6 +841,7 @@ fn foe_fire() {
                     if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
                     muni_spawn(MUNI_BULLET, mx, foe_y + (HELI_MUZZLE_Y << 8),
                                v, vy, BULLET_LIFE, SIDE_ENEMY);
+                    sfx_at(SFX_CHN_FOE_GUN, SFX_ENEMY_GUN, mx);
                 }
             }
         }

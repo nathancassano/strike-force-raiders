@@ -30,6 +30,11 @@ ART_PAL  = $(ART_CHR:.chr=.pal)
 ART_MAP  = $(addprefix assets/gfx/,$(addsuffix .tilemap,$(ART_MAPPED)))
 ART_OUT  = $(ART_CHR) $(ART_PAL) $(ART_MAP)
 BLOBS    = $(wildcard assets/sound/*.bin assets/levels/*.bin)
+# The sound driver, cut at 32K: a LoROM bank holds 32K and include_bytes!
+# takes a whole file, so src/sound.r65 embeds the two halves in banks of
+# their own. The first half is the 2-byte size header and 32766 bytes of
+# code, the second the rest - hindstrike's sounds.asm cuts it the same way.
+SOUND_SPLIT = $(BUILD_DIR)/sound/spc700_1.bin $(BUILD_DIR)/sound/spc700_2.bin
 
 # Tools
 R65C     = python -m r65.compiler.main
@@ -47,9 +52,17 @@ all: $(ROM_FILE)
 # src/assets.r65 is generated and so is not in $(R65_SRCS) on a fresh
 # checkout; naming it here is what pulls the whole bitmap -> chr -> bindings
 # chain into an ordinary `make`.
-$(BUILD_DIR)/main.asm: $(R65_SRCS) src/assets.r65 $(ART_OUT) $(BLOBS)
+$(BUILD_DIR)/main.asm: $(R65_SRCS) src/assets.r65 $(ART_OUT) $(BLOBS) $(SOUND_SPLIT)
 	@mkdir -p $(BUILD_DIR)
 	$(R65C) $(MAIN_SRC) -o $@ $(R65C_FLAGS)
+
+$(BUILD_DIR)/sound/spc700_1.bin: assets/sound/spc700.bin
+	@mkdir -p $(dir $@)
+	head -c 32768 $< > $@
+
+$(BUILD_DIR)/sound/spc700_2.bin: assets/sound/spc700.bin
+	@mkdir -p $(dir $@)
+	tail -c +32769 $< > $@
 
 # Assemble. Run from src/ so relative .INCBIN paths from include_bytes! resolve.
 $(BUILD_DIR)/main.o: $(BUILD_DIR)/main.asm
@@ -109,6 +122,7 @@ BMP2CHR_POST  = true
 assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/heli.chr assets/gfx/heli.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: BMP2CHR_DEPTH = -b4
+assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: BMP2CHR_DEPTH = -b4
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_DEPTH = -b4
 
 # Tilemap attributes bmp2chr has no flag for, set afterwards by
@@ -123,7 +137,6 @@ assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_D
 # - The HUD carries it too, so with BGMODE's BG3 bit its rows draw over the
 #   dirt and the sky. The radar row is the exception, written at runtime
 #   without it, so the camera bracket sprite shows over it.
-assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: BMP2CHR_DEPTH = -b4
 # - The clouds (sky) and the mountains share BG2 and its one tile area: the
 #   mountains' tiles are uploaded straight after the clouds', so their map
 #   names them that many tiles on (--tile-offset, the clouds' tile count,

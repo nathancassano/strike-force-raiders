@@ -1,0 +1,294 @@
+// sound - the SNES GSS sound driver: upload, commands, music and effects.
+//
+// The driver is Shiru's SNES GSS (the tracker that wrote assets/sound,
+// hindstrike.gsm its project): SPC700 code with the instruments and sound
+// effects built in (spc700.bin), and one block of note data per tune
+// (music_N.bin). This is a port of the 65816 side hindstrike drives it
+// with (~/hindstrike/sneslib.asm and sneslib.h): spc_load_data, the
+// command calls, sfx_play and music_play.
+//
+// The CPU talks to the SPC700 through the four APU ports ($2140-$2143).
+// spc_load_data speaks the boot ROM's (IPL) upload protocol; once the
+// driver runs, a command is a byte in port 0 (plus its high byte in port 1)
+// and a 16-bit parameter in ports 2-3, which the driver acknowledges by
+// putting a non-zero back in port 0 and clears when it is ready for the
+// next. Every wait below is on a port the driver writes, so a driver that
+// is not running hangs the CPU where it waits - which is how a broken
+// upload shows: the boot never reaches main.
+//
+// Channels are the driver's eight voices: music takes the low ones its
+// tune needs (music_N.bin's third byte), an effect plays on the channel
+// it is given, so effects belong on channels the music leaves free - in
+// battle, where the music is stopped, that is all of them (SFX_CHN_*).
+// Volume is 0-127; pan is 0 (left) to 255 (right), 128 the centre, and
+// only heard once spc_stereo(1) has switched off the driver's mono default.
+
+#[bank(3)]
+
+// ------------------------------------------------------------- commands ---
+const SCMD_NONE:           u8 = 0x00;   // the driver is ready for a command
+const SCMD_INITIALIZE:     u8 = 0x01;   // initialise the DSP
+const SCMD_LOAD:           u8 = 0x02;   // back to the loader, for new music data
+const SCMD_STEREO:         u8 = 0x03;   // stereo (1) or mono (0)
+const SCMD_GLOBAL_VOLUME:  u8 = 0x04;   // master volume and fade speed
+const SCMD_CHANNEL_VOLUME: u8 = 0x05;   // volume of a mask of channels
+const SCMD_MUSIC_PLAY:     u8 = 0x06;
+const SCMD_MUSIC_STOP:     u8 = 0x07;
+const SCMD_MUSIC_PAUSE:    u8 = 0x08;
+const SCMD_SFX_PLAY:       u8 = 0x09;
+const SCMD_STOP_ALL:       u8 = 0x0A;   // music and every effect
+
+// ----------------------------------------------- the GSS project's names ---
+// From assets/sound/sounds.asm, which SNES GSS writes on export: after
+// editing hindstrike.gsm and exporting, copy any new or renumbered names
+// here. Effect numbers index the effects built into spc700.bin.
+const SFX_PLAYER_GUN1:         u8 = 0;
+const SFX_PLAYER_GUN2:         u8 = 1;
+const SFX_PLAYER_GUN3:         u8 = 2;
+const SFX_PLAYER_GUN4:         u8 = 3;
+const SFX_GROUND_HIT:          u8 = 4;
+const SFX_PLAYER_HIT:          u8 = 5;
+const SFX_ENEMY_HIT:           u8 = 6;
+const SFX_PLAYER_MISSILE:      u8 = 7;
+const SFX_PLAYER_FLARE:        u8 = 8;
+const SFX_ENEMY_GUN:           u8 = 9;
+const SFX_ENEMY_CANNON:        u8 = 10;
+const SFX_ENEMY_MISSILE:       u8 = 11;
+const SFX_EXPLODE_1:           u8 = 12;
+const SFX_EXPLODE_2:           u8 = 13;
+const SFX_PRINTER_TYPE:        u8 = 14;
+const SFX_PRINTER_ROLL:        u8 = 15;
+const SFX_HELI_1:              u8 = 16;
+const SFX_HELI_2:              u8 = 17;
+const SFX_HELI_3:              u8 = 18;
+const SFX_HELI_4:              u8 = 19;
+const SFX_HELI_TAKE_OFF:       u8 = 20;
+const SFX_HELI_LANDING:        u8 = 21;
+const SFX_NO_MISSILE:          u8 = 22;
+const SFX_MISSILE_WARNING:     u8 = 23;
+const SFX_MESSAGE:             u8 = 24;
+const SFX_MENU_MOVE:           u8 = 25;
+const SFX_MENU_SELECT:         u8 = 26;
+const SFX_MENU_START:          u8 = 27;
+const SFX_MENU_WRONG_PASSWORD: u8 = 28;
+
+// Tunes, in music_N.bin order (MUS_ n is music_{n+1}.bin).
+const MUS_OPERATION_HINDSTRIKE: u8 = 0;
+const MUS_YOU_HAVE_YOUR_ORDERS: u8 = 1;
+const MUS_FIRE_FROM_THE_SKY:    u8 = 2;
+const MUS_FIRST_ROUND_IS_ON_ME: u8 = 3;
+const MUS_BLOWED_UP_SIR:        u8 = 4;
+const MUS_CONGRATULATIONS:      u8 = 5;
+const MUS_CONTROLS:             u8 = 6;
+const MUS_COUNT:                u8 = 7;
+
+// The battle's effect channels. Music is stopped in battle (screen_hide),
+// so all eight are free there; one kind of sound a channel, so a burst of
+// gunfire cannot cut an explosion short.
+const SFX_CHN_GUN:     u8 = 0;   // the player's gun
+const SFX_CHN_FOE_GUN: u8 = 1;   // the enemy airframe's
+const SFX_CHN_TURRET:  u8 = 2;   // turrets, the super bunker, the bank
+const SFX_CHN_CANNON:  u8 = 3;   // tank shells
+const SFX_CHN_BLAST:   u8 = 4;   // bombs going off
+const SFX_CHN_LOST:    u8 = 5;   // an airframe lost
+
+// Where the driver wants music data in sound RAM, from spc700.bin's header
+// (spc_init). Bare: no initialiser on a mutable static (CLAUDE.md).
+#[lowram] static mut spc_music_load_adr: u16;
+// The tune playing (MUS_*), or MUS_NONE: music_start does not reload it.
+#[lowram] static mut music_now: u8;
+const MUS_NONE: u8 = 0xFF;
+
+// ----------------------------------------------------------- the upload ---
+
+// spc_load_data - copy *size* bytes from *src* into sound RAM at *adr*
+// through the loader, then start the code at $0200. The loader is the
+// boot ROM's (IPL) at power-on, and the driver's own copy of its protocol
+// after SCMD_LOAD - both say they are ready with $AA in port 0.
+//
+// The protocol: the address in ports 2-3, 1 in port 1 (a transfer) and
+// $CC in port 0 to begin, echoed back; then each byte in port 1 with a
+// counter in port 0, echoed back before the next. The end is the counter
+// plus 2 in port 0 with 0 in port 1 (run, rather than transfer) and the
+// start address in ports 2-3; the driver then clears all four ports when
+// its code is up. A byte a time - 56K of driver is most of a second.
+far fn spc_load_data(adr: u16, size: u16, src: far *u8) {
+    while APUIO0 != 0xAA {}
+
+    APUIO2 = adr as u8;
+    APUIO3 = (adr >> 8) as u8;
+    APUIO1 = 0x01;
+    APUIO0 = 0xCC;
+    while APUIO0 != 0xCC {}
+
+    let mut i: u16 = 0;
+    while i < size {
+        let k: u8 = i as u8;
+        APUIO1 = src[i];            // the data first: port 0 is what it reads on
+        APUIO0 = k;
+        while APUIO0 != k {}
+        i = i + 1;
+    }
+
+    let kick: u8 = (size as u8) + 1;    // the last counter, size - 1, plus 2
+    APUIO2 = 0x00;
+    APUIO3 = 0x02;                       // run from $0200
+    APUIO1 = 0x00;
+    APUIO0 = kick;
+    while APUIO0 != kick {}
+
+    while (APUIO0 | APUIO1 | APUIO2 | APUIO3) != 0 {}
+}
+
+// spc_command - send *command* (its low byte the command, the high byte
+// any extra the command takes) with *param*, and wait for the driver to
+// take it. SCMD_LOAD is not acknowledged: the driver goes straight back to
+// its loader, which answers $AA instead.
+far fn spc_command(command: u16, param: u16) {
+    while APUIO0 != SCMD_NONE {}
+
+    APUIO2 = param as u8;
+    APUIO3 = (param >> 8) as u8;
+    APUIO1 = (command >> 8) as u8;     // port 1 before port 0, which triggers
+    APUIO0 = command as u8;
+
+    if (command as u8) != SCMD_LOAD {
+        while APUIO0 == SCMD_NONE {}
+    }
+}
+
+// spc_init - upload the driver and start it. spc700.bin is its size (2
+// bytes) and then the code; a LoROM bank holds 32K, so the Makefile splits
+// the file there (SPC_DRIVER_1/2) and the code goes up in two loads, the
+// second after SCMD_LOAD - the first as far as the first half reaches, to
+// sound RAM $0200 on, the rest straight after it at $81FE - as hindstrike's
+// spc_init does. Boot-time: most of a second, in force blank, before the
+// NMI is on.
+far fn spc_init() {
+    let size: u16 = (SPC_DRIVER_1[0] as u16) | ((SPC_DRIVER_1[1] as u16) << 8);
+    spc_music_load_adr = (SPC_DRIVER_1[14] as u16) | ((SPC_DRIVER_1[15] as u16) << 8);
+
+    if size < SPC_PART1 {
+        spc_load_data(0x0200, size, &SPC_DRIVER_1[2] as far *u8);
+    } else {
+        spc_load_data(0x0200, SPC_PART1, &SPC_DRIVER_1[2] as far *u8);
+        spc_command(SCMD_LOAD as u16, 0);
+        spc_load_data(0x0200 + SPC_PART1, size - SPC_PART1, &SPC_DRIVER_2 as far *u8);
+    }
+    spc_command(SCMD_INITIALIZE as u16, 0);
+    music_now = MUS_NONE;
+}
+
+// The code bytes the first half of spc700.bin holds: 32K less the header.
+const SPC_PART1: u16 = 32766;
+
+// --------------------------------------------------------------- driver ---
+
+// spc_stereo - 1 for stereo (pan heard), 0 for the mono default.
+far fn spc_stereo(stereo: u8) {
+    spc_command(SCMD_STEREO as u16, stereo as u16);
+}
+
+// spc_global_volume - fade the master volume to *volume* (0-127) at
+// *speed* (1 slowest, 255 at once).
+far fn spc_global_volume(volume: u8, speed: u8) {
+    spc_command(SCMD_GLOBAL_VOLUME as u16, ((speed as u16) << 8) | (volume as u16));
+}
+
+// spc_channel_volume - set the volume (0-127) of every channel whose bit
+// is set in *channels*.
+far fn spc_channel_volume(channels: u8, volume: u8) {
+    spc_command(SCMD_CHANNEL_VOLUME as u16, ((channels as u16) << 8) | (volume as u16));
+}
+
+// sfx_play - play effect *sfx* on channel *chn* (0-7) at *vol* (0-127)
+// and *pan* (0 left, 128 centre, 255 right). The channel rides in the
+// command byte's high nibble, the volume in port 1.
+far fn sfx_play(chn: u8, sfx: u8, vol: u8, pan: u8) {
+    let command: u16 = ((vol as u16) << 8) | (((chn as u16) << 4) & 0xF0) | (SCMD_SFX_PLAY as u16);
+    spc_command(command, ((pan as u16) << 8) | (sfx as u16));
+}
+
+far fn music_stop() {
+    spc_command(SCMD_MUSIC_STOP as u16, 0);
+    music_now = MUS_NONE;
+}
+
+// music_start - music_play, unless *track* is already the one playing: a
+// page that comes round again (the title after the end page) carries on
+// rather than reloading and restarting it.
+far fn music_start(track: u8) {
+    if music_now != track { music_play(track); }
+}
+
+// sfx_at - effect *sfx* on channel *chn* for something at world x *x*:
+// silent if it is off the screen (by more than half a unit, so a shot
+// fired just out of view is still heard), panned by where it is on it.
+far fn sfx_at(chn: u8, sfx: u8, x: u16) {
+    let mut pan: u16 = 0;
+    if x < camera_x {
+        if camera_x - x > 8 { return; }
+    } else {
+        pan = x - camera_x;
+        if pan >= 264 { return; }
+        if pan > 255 { pan = 255; }
+    }
+    sfx_play(chn, sfx, 127, pan as u8);
+}
+
+// music_pause - 1 pauses the tune where it is, 0 carries on.
+far fn music_pause(pause: u8) {
+    spc_command(SCMD_MUSIC_PAUSE as u16, pause as u16);
+}
+
+// sound_stop_all - silence the music and every effect.
+far fn sound_stop_all() {
+    spc_command(SCMD_STOP_ALL as u16, 0);
+    music_now = MUS_NONE;
+}
+
+// music_play - load tune *track* (MUS_*) into the driver and start it.
+far fn music_play(track: u8) {
+    match track {
+        0 => { music_load(&MUSIC_1 as far *u8, track); }
+        1 => { music_load(&MUSIC_2 as far *u8, track); }
+        2 => { music_load(&MUSIC_3 as far *u8, track); }
+        3 => { music_load(&MUSIC_4 as far *u8, track); }
+        4 => { music_load(&MUSIC_5 as far *u8, track); }
+        5 => { music_load(&MUSIC_6 as far *u8, track); }
+        6 => { music_load(&MUSIC_7 as far *u8, track); }
+        _ => {}
+    }
+}
+
+// music_load - a tune's block (its size, 2 bytes, then its data) uploaded
+// through the loader to where the driver's header said, and started, as
+// music_now. A few K a byte at a time, so several frames: call it at a
+// screen change, not mid-battle. (The tune is a parameter, not a lookup's
+// return: a far pointer does not fit a return register.)
+fn music_load(data: far *u8, track: u8) {
+    let size: u16 = (data[0] as u16) | ((data[1] as u16) << 8);
+    spc_command(SCMD_MUSIC_STOP as u16, 0);
+    spc_command(SCMD_LOAD as u16, 0);
+    spc_load_data(spc_music_load_adr, size, &data[2] as far *u8);
+    spc_command(SCMD_MUSIC_PLAY as u16, 0);
+    music_now = track;
+}
+
+// ----------------------------------------------------------------- data ---
+// The tunes share bank 3 with this code and the sprite sheets; the driver
+// takes two banks of its own. The Makefile cuts spc700.bin at 32K into
+// build/sound/ (a bank is 32K and include_bytes! takes a whole file).
+static MUSIC_1 = include_bytes!("../assets/sound/music_1.bin");
+static MUSIC_2 = include_bytes!("../assets/sound/music_2.bin");
+static MUSIC_3 = include_bytes!("../assets/sound/music_3.bin");
+static MUSIC_4 = include_bytes!("../assets/sound/music_4.bin");
+static MUSIC_5 = include_bytes!("../assets/sound/music_5.bin");
+static MUSIC_6 = include_bytes!("../assets/sound/music_6.bin");
+static MUSIC_7 = include_bytes!("../assets/sound/music_7.bin");
+
+#[bank(5)]
+static SPC_DRIVER_1 = include_bytes!("../build/sound/spc700_1.bin");
+
+#[bank(6)]
+static SPC_DRIVER_2 = include_bytes!("../build/sound/spc700_2.bin");
