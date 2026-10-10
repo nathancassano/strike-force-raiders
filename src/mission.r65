@@ -29,8 +29,8 @@ const MISSION_HARNESS_COL: u8 = 12;   // logistics pilot, forced column
 const MISSION_ROWS:    u8 = 13;
 
 // Where a fresh boot starts, until the front end picks. The tests reach
-// the harness rows by swapping boot_mission (main.r65) for boot_harness,
-// boot_harness_hot or boot_harness_col.
+// the harness rows by writing one to boot_pick (main.r65) at boot_load's
+// entry.
 const MISSION_START: u8 = 0;
 // What the forced harness rows buy. Forcing is the only way the suite
 // sees an enemy vehicle at a known place: left to itself the opponent

@@ -9,46 +9,86 @@ and a coast arrives under it; 32 does not, and a full-stick descent hits at
 4. right180 and a 60-frame coast puts the airframe at x 1014.
 """
 
-import pytest
-
-from harness import boot, expect, shot
-
-case = pytest.param
+from harness import boot, shot
 
 
-@pytest.mark.parametrize("script, checks", [
-    # Descending onto the deck lands on it; stopping short (x 714) or
-    # overshooting (x 1314) lands on open ground - down, but no deck.
-    case(lambda s: boot(s, "direct").wait(20).right(180).wait(60).down(30).wait(40),
-         {"v.heli_landed": 0x01, "v.heli_on_pad": 0x01}, id="pad_land"),
-    case(lambda s: boot(s, "direct").wait(20).right(120).wait(60).down(30).wait(40),
-         {"v.heli_landed": 0x01, "v.heli_on_pad": 0x00, "v.heli_y": 0x9800}, id="pad_short"),
-    case(lambda s: boot(s, "direct").wait(20).right(240).wait(60).down(30).wait(40),
-         {"v.heli_landed": 0x01, "v.heli_on_pad": 0x00}, id="pad_over"),
-    # A landed airframe does not slide: down at the start, then held right
-    # for 190 frames, it is still at x 64 on open ground, not on the deck.
-    case(lambda s: boot(s, "direct").wait(20).down(30).wait(40).right(190),
-         {"v.heli_landed": 0x01, "v.heli_on_pad": 0x00, "v.heli_x_px": 0x0040}, id="pad_slide"),
-    case(lambda s: boot(s, "direct").wait(20).right(180).wait(60).down(30).wait(40).up(20),
-         {"v.heli_landed": 0x00}, id="pad_takeoff"),
-    # Too fast: a full-stick descent onto the deck is a crash - a life gone.
-    case(lambda s: boot(s, "direct").wait(20).right(180).wait(60).down(80),
-         {"v.heli_lives": 0x03, "v.heli_landed": 0x00}, id="pad_crash"),
-    # Full rearm: fuel back to 100, and the reload countdowns give back
-    # rounds at 20 frames each and bombs at 10 while the airframe sits.
-    case(lambda s: boot(s, "harness").wait(20).b(60).a(1).right(180).wait(60).down(30).wait(40).wait(120),
-         {"v.heli_landed": 0x01, "v.heli_fuel": 0x64, "v.heli_gun": 0x3D, "v.heli_bombs": 0x0A},
-         id="pad_rearm"),
-    # One unit per 64 frames aloft.
-    case(lambda s: boot(s, "harness").wait(20).right(240), {"v.heli_fuel": 0x60}, id="fuel_burn"),
-    # Dry tank: gravity is allowed in exactly one place, and this is it. The
-    # airframe sinks with no input, and open ground is not a deck: touching
-    # it on a dead stick is a crash landing - a life gone, and by 7200
-    # frames the next airframe is up at hover height.
-    case(lambda s: boot(s, "harness").wait(7200),
-         {"v.heli_lives": 0x03, "v.heli_y": 0x6000, "v.heli_landed": 0x00}, id="fuel_dry"),
-])
-def test_pad(snes, script, checks):
-    script(snes)
-    shot(snes)
-    expect(snes, checks)
+def test_landing_on_the_deck(snes):
+    """Descending onto the deck lands on it."""
+    boot(snes, "direct").wait(20).right(180).wait(60).down(30).wait(40)
+    v = shot(snes)
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 1
+
+
+def test_landing_short_of_the_deck_is_open_ground(snes):
+    """Stopping short (x 714) lands on open ground - down, but no deck."""
+    boot(snes, "direct").wait(20).right(120).wait(60).down(30).wait(40)
+    v = shot(snes)
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 0
+    assert v.heli_y == 152 * 256
+
+
+def test_landing_past_the_deck_is_open_ground(snes):
+    """Overshooting (x 1314) lands on open ground - down, but no deck."""
+    boot(snes, "direct").wait(20).right(240).wait(60).down(30).wait(40)
+    v = shot(snes)
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 0
+
+
+def test_a_landed_airframe_does_not_slide(snes):
+    """Down at the start, then held right for 190 frames, it is still at x 64
+    on open ground, not on the deck.
+    """
+    boot(snes, "direct").wait(20).down(30).wait(40).right(190)
+    v = shot(snes)
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 0
+    assert v.heli_x_px == 64
+
+
+def test_taking_off_from_the_deck(snes):
+    boot(snes, "direct").wait(20).right(180).wait(60).down(30).wait(40).up(20)
+    v = shot(snes)
+    assert v.heli_landed == 0
+
+
+def test_a_full_stick_landing_crashes(snes):
+    """Too fast: a full-stick descent onto the deck is a crash - a life gone."""
+    boot(snes, "direct").wait(20).right(180).wait(60).down(80)
+    v = shot(snes)
+    assert v.heli_lives == 3
+    assert v.heli_landed == 0
+
+
+def test_the_deck_rearms_and_refuels(snes):
+    """Fuel back to 100, and the reload countdowns give back rounds at 20
+    frames each and bombs at 10 while the airframe sits.
+    """
+    boot(snes, "harness").wait(20).b(60).a(1).right(180).wait(60).down(30).wait(40).wait(120)
+    v = shot(snes)
+    assert v.heli_landed == 1
+    assert v.heli_fuel == 100
+    assert v.heli_gun == 61
+    assert v.heli_bombs == 10
+
+
+def test_fuel_burns_one_unit_per_64_frames(snes):
+    boot(snes, "harness").wait(20).right(240)
+    v = shot(snes)
+    assert v.heli_fuel == 96
+
+
+def test_a_dry_tank_sinks_and_crashes(snes):
+    """Gravity is allowed in exactly one place, and this is it.
+
+    The airframe sinks with no input, and open ground is not a deck: touching
+    it on a dead stick is a crash landing - a life gone, and by 7200 frames
+    the next airframe is up at hover height.
+    """
+    boot(snes, "harness").wait(7200)
+    v = shot(snes)
+    assert v.heli_lives == 3
+    assert v.heli_y == 96 * 256
+    assert v.heli_landed == 0

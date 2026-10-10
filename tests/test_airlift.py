@@ -8,65 +8,86 @@ consumed by nothing else, so from a cold boot the sequence is fixed: the
 third and fourth chutes are the ones in ten that fail, so three men of five
 reach the ground, in the pool slots the cursor hands out.
 
-Most cases start from the `boarded` state (conftest.py): the men bought, the
+Most cases start from the `boarded` state (states.py): the men bought, the
 airframe landed on the pad and all five aboard.
 """
 
-from harness import boot, expect, shot
+from harness import boot, shot
+from states import boarded
 
-INFANTRY = 4
+FREE, INFANTRY = 0, 4      # unit kinds
+PLAYER = 0
 
 
 def test_board(state):
-    snes = state("boarded")
-    shot(snes)
-    expect(snes, {"v.heli_men": 0x05, "v.heli_landed": 0x01,
-                  "v.units__kind__tag.u8[0]": 0, "v.units__kind__tag.u8[4]": 0})
+    """All five men aboard, and their pool slots free again."""
+    snes = state(boarded)
+    v = shot(snes)
+    assert v.heli_men == 5
+    assert v.heli_landed == 1
+    assert v.units__kind__tag.u8[0] == FREE
+    assert v.units__kind__tag.u8[4] == FREE
 
 
 def test_field(snes):
-    # In the field: landed on open ground at x 714 facing east, the men walk
-    # up under it from the base and board there too; no deck needed.
-    boot(snes, "harness").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(20).right(120).wait(60).down(30).wait(40).wait(1600)
-    shot(snes)
-    expect(snes, {"v.heli_men": 0x05, "v.heli_landed": 0x01, "v.heli_on_pad": 0x00})
+    """In the field: landed on open ground at x 714 facing east, the men walk
+    up under it from the base and board there too; no deck needed.
+    """
+    boot(snes, "harness")
+    snes.press("l", "right", frames=3).wait(3)
+    snes.press("l", "a", frames=3).wait(20)
+    snes.right(120).wait(60).down(30).wait(40).wait(1600)
+    v = shot(snes)
+    assert v.heli_men == 5
+    assert v.heli_landed == 1
+    assert v.heli_on_pad == 0
 
 
 def test_lost(state):
-    # Men aboard go down with the airframe: five aboard, then a balloon (the
-    # player's own bunker's, at x=2048) and the next airframe has none.
-    snes = state("boarded")
+    """Men aboard go down with the airframe: five aboard, then a balloon (the
+    player's own bunker's, at x=2048) and the next airframe has none.
+    """
+    snes = state(boarded)
     snes.upright(36).right(220)
-    shot(snes)
-    expect(snes, {"v.heli_men": 0x00, "v.heli_lives": 0x03})
+    v = shot(snes)
+    assert v.heli_men == 0
+    assert v.heli_lives == 3
 
 
 def test_bail(state):
-    # Lost a third of the band up or higher, one man bails out first: the
-    # balloon catches it at hover height, so a paratrooper is in the air ten
-    # frames on.
-    snes = state("boarded")
+    """Lost a third of the band up or higher, one man bails out first: the
+    balloon catches it at hover height, so a paratrooper is in the air ten
+    frames on.
+    """
+    snes = state(boarded)
     snes.upright(36).right(220).wait(10)
-    shot(snes)
-    expect(snes, {"v.para_live": 0x01, "v.heli_men": 0x00, "v.heli_lives": 0x03})
+    v = shot(snes)
+    assert v.para_live == 1
+    assert v.heli_men == 0
+    assert v.heli_lives == 3
 
 
 def test_crash(state):
-    # A crash at the ground line from the same load drops nobody.
-    snes = state("boarded")
+    """A crash at the ground line from the same load drops nobody."""
+    snes = state(boarded)
     snes.up(40).wait(60).down(80).wait(5)
-    shot(snes)
-    expect(snes, {"v.para_live": 0x00, "v.heli_men": 0x00, "v.heli_lives": 0x03})
+    v = shot(snes)
+    assert v.para_live == 0
+    assert v.heli_men == 0
+    assert v.heli_lives == 3
 
 
 def test_drop(state):
-    snes = state("boarded")
+    """Five drops, forty frames apart: three men reach the ground."""
+    snes = state(boarded)
     snes.up(20).right(40)
-    for i in range(5):                  # five drops, forty frames apart
+    for i in range(5):
         snes.x(3).wait(40 if i < 4 else 0)
     snes.wait(140)
-    shot(snes)
-    expect(snes, {"v.heli_men": 0x00,
-                  "v.units__kind__tag.u8[21]": INFANTRY, "v.units__kind__tag.u8[22]": INFANTRY,
-                  "v.units__kind__tag.u8[23]": INFANTRY, "v.units__kind__tag.u8[24]": 0,
-                  "v.units__owner.u8[21]": 0x00})
+    v = shot(snes)
+    assert v.heli_men == 0
+    assert v.units__kind__tag.u8[21] == INFANTRY
+    assert v.units__kind__tag.u8[22] == INFANTRY
+    assert v.units__kind__tag.u8[23] == INFANTRY
+    assert v.units__kind__tag.u8[24] == FREE
+    assert v.units__owner.u8[21] == PLAYER

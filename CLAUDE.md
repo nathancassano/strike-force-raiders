@@ -66,18 +66,26 @@ Do not ask a human to look at the screen - drive the ROM yourself.
 `pytest tests -n auto` (about 70-80 s on 8 cores; `pytest tests -k airlift` filters). It began as
 the old shell suite's cases, ported with their expected values, one file per phase (`test_flight.py`,
 `test_pad.py`, `test_units.py`, ... `test_campaign.py`); every completed phase leaves a case
-behind and the whole suite re-runs after each new one. A case drives the pad with chained calls
-that run as they are made - `boot(s, "harness").wait(20).right(30)` - then `shot(s)` (Select to
-`snapshot_point`) and checks a table of expressions against memory by
-name, exactly as the `.sym`/`.dbg` spell it, with an array's width stated
-(`harness.expect(snes, {"v.units__kind__tag.u8[3]": 4, "v.heli_x_px": 0x40})`). `boot`'s pick chooses the mission
-without input: the ROM asks `boot_mission()` (main.r65) what to boot, and a test stops at its
-entry and `jump`s to `boot_harness`, `boot_harness_hot`, `boot_harness_col` or `boot_direct` -
-`#[used]` functions nothing in the ROM calls, which return their mission in its place.
-`conftest.py`'s header says what each opponent is. A setup several cases share is a named state
-in `conftest.py` (`@rom_state`: `boarded`, `eight_tanks`, `five_passes`, `balloon_hit`,
-`at_turret`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and opened with
-`state("boarded")`.
+behind and the whole suite re-runs after each new one. Each case is one plain test function named
+in words, its explanation as the docstring - no parametrize tables, no lambdas:
+
+    def test_camera_follows_30_frames_right(snes):
+        boot(snes, "direct").wait(20).right(30)      # chained input, run as it is called
+        v = shot(snes)                               # Select to snapshot_point; memory by name
+        assert v.camera_x == 90
+
+Names are exactly as the `.sym`/`.dbg` spell them, with an array's width stated
+(`v.units__kind__tag.u8[3]`); values are decimal (8.8 heights as `96 * 256`), hex only for bit
+patterns. `boot`'s pick chooses the mission
+without input: `boot_load` boots the mission in `boot_pick` (main.r65), which the power-on sets
+to the campaign just before calling it; a test stops at `boot_load`'s entry and writes the
+mission it wants (`harness.boot`, from the ROM's `MISSION_*` constants, plus `BOOT_DIRECT` to
+skip the front end).
+`conftest.py`'s header says what each opponent is. A setup several cases share is a state
+in `tests/states.py` (`@rom_state` builders: `boarded`, `eight_tanks`, `five_passes`,
+`balloon_hit`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and
+opened by passing the builder: `from states import boarded`, then `state(boarded)`.
+
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
 `mesen_gdb.rom_driver` with the suite's own `boot` and `shot`, and screenshots at the
 ROM's `snapshot_point()` hook (fired by Select).
@@ -88,7 +96,7 @@ Actions: `waitN`, `start`, `shot`, `upN`/`downN`/`leftN`/`rightN`, `aN`/`bN`/`xN
 Combine with `+`, e.g. `up+a30`. A leading `@harness`, `@harness_hot`, `@harness_col` or
 `@direct` is `boot`'s pick; without one the run boots the campaign proper, title page and all.
 `tools/mkmovie.py` still builds Mesen movies (`tools/timeline.sh` uses one); a movie cannot
-`jump`, so it always boots the campaign proper.
+write `boot_pick`, so it always boots the campaign proper.
 
 `tools/pngstat.py shot.png [--expect R,G,B] [--min-pct N]` inspects what actually rendered -
 use it to assert on frames instead of trusting a clean exit code.
@@ -145,7 +153,7 @@ rotor_raiders/
 │   └── levels/               # Battlefield placement lists
 ├── tools/                    # play.py, mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
-├── tests/                    # pytest ROM suite (conftest.py, harness.py, test_*.py)
+├── tests/                    # pytest ROM suite (conftest.py, harness.py, states.py, test_*.py)
 ├── play.sh                   # One-shot scripted run + screenshot
 ├── build/                    # Compiled output (.asm, .smc, .sym, .dbg)
 └── Makefile                  # Build system for WLA-DX
@@ -314,7 +322,7 @@ fixed at the world's ends, the super bunker dead centre, turrets and bunkers alt
 through the contested middle either side of it) rather than transcribing the original's
 fifteen levels; `LAYOUT_MIDDLE_MAX` keeps the derived buildings inside the 16-slot pool.
 Rows 10-12 are the **harness missions**: the hand-made pre-campaign field with frozen tuning,
-reachable only through `boot_mission`'s harness picks, and the whole suite runs on them -
+reachable only by a test writing `boot_pick`, and the whole suite runs on them -
 see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
 
@@ -473,7 +481,7 @@ on map row 30 by `tools/hud_glyphs.py`, the names come from the letter row. `gam
 it before writing the battle-over line on row 10, from when they shared that row.
 
 Funds (`src/order.r65`) accumulate `heli_x_px >> 4` per frame against `ECON_THRESH`; that
-threshold is the pace knob and `econ_income` in the suite pins its current value. Orders go
+threshold is the pace knob. Orders go
 through an eight-deep queue that lets the next man out once the last has cleared the gate by a
 convoy space (`unit_spawn`'s spacing test), holding him when the pool is full rather than dropping him. Caps count men on the field plus men queued, and
 infantry and engineers share one cap.
