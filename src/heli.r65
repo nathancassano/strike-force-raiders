@@ -19,7 +19,7 @@ const HELI_W:     u16 = 32;               // two 16x16 OBJ cells
 const HELI_H:     u16 = 16;
 
 // Vertical limits in 8.8. The HUD strip owns the top two tile rows, and the
-// ground starts at y=168, so the airframe has to stop 16 px short of it.
+// ground line is GROUND_Y, so the airframe has to stop 16 px short of it.
 const HELI_Y_MIN: u16 = 16 << 8;
 const HELI_Y_MAX: u16 = (GROUND_Y - HELI_H) << 8;
 
@@ -73,6 +73,7 @@ const HELI_TURN_STEPS:       u8 = 5 * 3;  // the whole swing
 // the palette and the priority.
 const HELI_PAGE: u16 = 0x0100;
 const HELI_ATTR: u16 = 0x3000 | HELI_PAGE | OBJ_PAL_HELI;   // priority 3
+const HELI_ATTR_RISING: u16 = 0x2000 | HELI_PAGE | OBJ_PAL_HELI;   // 2: see heli_draw
 
 // The helicopter is the highest-priority object in the game, so it draws
 // first and takes the lowest slots from the shared allocator.
@@ -159,12 +160,13 @@ const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
 // Then it rises out of the ground at the start: from the ground line up
 // to hover height at a pixel a frame, drawn behind the ground band until
 // it has cleared it, and under nobody's control.
-const HELI_Y_HOVER: u16 = 96 << 8;
+const HELI_Y_HOVER: u16 = 112 << 8;
 const HELI_RISE:    u16 = 1 << 8;         // px/frame, 8.8
 // An airframe lost a third or more of its flight band off the ground
 // gets one man out of the door before it goes. Landed, it is at
 // HELI_Y_MAX, under the line, so this is also the "in the air" test.
-// The band is 16..152, 136 px; a third is 45 (`/ 3` does not fold).
+// Measured off the ground, as a third of the band when it was 16..152
+// (45 px, `/ 3` does not fold): every height below the ceiling is ground-relative.
 const HELI_Y_BAIL:  u16 = HELI_Y_MAX - (45 << 8);
 
 // heli_init - place the airframe. Statics are declared bare because an
@@ -611,11 +613,11 @@ far fn heli_draw() {
 
     // Facing left mirrors the airframe. Both cells take the hflip bit and
     // swap places, otherwise the nose half would render on the tail side.
-    // Rising out of the ground it is drawn at OBJ priority 0 - behind
-    // every layer, so the ground band covers it - until its box has
-    // cleared the ground line.
+    // Rising out of the ground it is drawn at OBJ priority 2 - behind the
+    // dirt, whose tiles carry the priority bit, but in front of the
+    // mountains behind it - until its box has cleared the ground line.
     let mut base: u16 = HELI_ATTR;
-    if heli_rising != 0 && heli_y + (HELI_H << 8) > (GROUND_Y << 8) { base = HELI_ATTR & 0x0FFF; }
+    if heli_rising != 0 && heli_y + (HELI_H << 8) > (GROUND_Y << 8) { base = HELI_ATTR_RISING; }
     let mut attr: u16 = base;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;

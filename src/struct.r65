@@ -120,7 +120,7 @@ const BANK_DMG_SHELL: u8  = 5;
 const BALLOON_HP:     u8  = 3;
 const BALLOON_REGROW: u8  = 240;          // frames, counted in 4s (see tick)
 const BALLOON_DX:     u16 = 8;            // over the bunker's centre
-const BALLOON_Y:      u16 = 56;
+const BALLOON_Y:      u16 = 72;
 const BALLOON_W:      u16 = 16;
 const BALLOON_H:      u16 = 16;
 

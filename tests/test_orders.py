@@ -42,12 +42,14 @@ def test_infantry_leave_the_gate_one_at_a_time(snes):
     """Right moves the ring to infantry; one order is five men.
 
     The gate lets the next out only when the last is a convoy space (32 px,
-    128 frames at a man's pace) clear of it: a minute in, one is on the field
-    and four still wait in the emitter.
+    64 frames at a man's half pixel a frame) clear of it: 40 frames on, one
+    is on the field and four still wait in the emitter. (It used to look at
+    60, a frame or two short of the second man - on the edge, so a boot one
+    frame longer let him out.)
     """
     boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "right", frames=3).wait(3)
-    snes.press("l", "a", frames=3).wait(60)
+    snes.press("l", "a", frames=3).wait(40)
     v = read_snapshot(snes)
     assert v.funds == 27
     assert v.units__kind__tag.u8[0] == INFANTRY

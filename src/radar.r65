@@ -1,7 +1,7 @@
 // radar - the strip's second row: the whole 8192 px world across 256 px,
 // 32 world pixels to one, drawn as pixels rather than sprites.
 //
-// The row is 32 tiles the game owns: RADAR_TILE.. in BG1's tileset, past
+// The row is 32 tiles the game owns: RADAR_TILE.. in BG3's tileset, past
 // whatever bmp2chr produced, mapped in order along map row RADAR_ROW so
 // the row is one 256x8 bitmap. It is drawn into a 512-byte shadow - 2bpp,
 // two planes a scanline, sixteen bytes a tile - and DMA'd to VRAM in
@@ -51,7 +51,7 @@
 
 const RADAR_ROW:    u16 = 1;
 const RADAR_PAL:    u16 = 1;                     // BG sub-palette: CGRAM 4..7
-const RADAR_TILE:   u16 = BG1_CHR_SIZE >> 4;     // first tile past the art
+const RADAR_TILE:   u16 = HUD_CHR_SIZE >> 4;     // first tile past the art
 const RADAR_SHIFT:  u16 = 5;                     // 8192 px -> 256
 const RADAR_PERIOD: u16 = 16;
 const RADAR_BYTES:  u16 = 512;
@@ -257,10 +257,10 @@ far fn radar_draw() {
 far fn radar_flush() {
     if radar_map_dirty != 0 {
         radar_map_dirty = 0;
-        dma_copy_vram(1, &radar_row as far *u8, VRAM_BG1 + (RADAR_ROW << 5), 64);
+        dma_copy_vram(1, &radar_row as far *u8, VRAM_HUD + (RADAR_ROW << 5), 64);
     }
     if radar_dirty != 0 {
         radar_dirty = 0;
-        dma_copy_vram(1, &radar_buf as far *u8, VRAM_BG1C + (RADAR_TILE << 3), RADAR_BYTES);
+        dma_copy_vram(1, &radar_buf as far *u8, VRAM_HUDC + (RADAR_TILE << 3), RADAR_BYTES);
     }
 }

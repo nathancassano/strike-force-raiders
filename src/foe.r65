@@ -34,6 +34,7 @@
 const FOE_START_X: u16 = WORLD_W - 64 - HELI_W;
 const FOE_LIVES:   u8  = 4;
 const FOE_ATTR:    u16 = (HELI_ATTR & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY;
+const FOE_ATTR_RISING: u16 = (HELI_ATTR_RISING & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY;
 
 // The pilot flies the player's airframe with the player's stick: each
 // frame it holds a direction or lets go, and the player's thrust, drag,
@@ -98,8 +99,8 @@ const FOE_RESPOND:  u8  = 60;             // frames between coin tosses on being
 // frames - the original's sine wave, biased upward. Under fire from the
 // ground it is the second, twice as tall and four times as quick: the
 // original's amplitude x4 when avoiding a turret.
-static foe_weave: [u16; 4] = [96 << 8, 72 << 8, 56 << 8, 72 << 8];
-static foe_jink:  [u16; 4] = [96 << 8, 56 << 8, 24 << 8, 56 << 8];
+static foe_weave: [u16; 4] = [112 << 8, 88 << 8, 72 << 8, 88 << 8];
+static foe_jink:  [u16; 4] = [112 << 8, 72 << 8, 40 << 8, 72 << 8];
 
 // States, in priority order.
 const FOE_WANDER:  u8 = 0;
@@ -1006,7 +1007,7 @@ far fn foe_draw() {
     let sy: u8 = (foe_y >> 8) as u8;
 
     let mut base: u16 = FOE_ATTR;
-    if foe_rising != 0 && foe_y + (HELI_H << 8) > (GROUND_Y << 8) { base = FOE_ATTR & 0x0FFF; }
+    if foe_rising != 0 && foe_y + (HELI_H << 8) > (GROUND_Y << 8) { base = FOE_ATTR_RISING; }
     let mut attr: u16 = base;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;

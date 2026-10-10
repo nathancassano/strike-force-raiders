@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Paint the ground band of assets/src/bg4.tilemap.bmp.
+Paint the ground band of assets/src/ground.tilemap.bmp.
 
 One-off authoring helper, not part of the build: it edits the bitmap that
 the Makefile's bmp2chr rule converts, so the BMP stays the source of truth
@@ -20,17 +20,21 @@ the eye needs something to track from one strip to the next, so stones
 grow from grit on the horizon to 4-5 px rocks at the bottom and the dot
 pattern opens out with nearness - the cue perspective gives anyway.
 
-Colour indices follow the BG4 palette: 1 dark earth, 2 earth, 3 highlight.
+Colour indices follow the ground's palette: 1 dark earth, 2 earth, 3 highlight.
 
     python3 tools/ground_texture.py && make
 """
 
 from PIL import Image
 
-BMP = 'assets/src/bg4.tilemap.bmp'
+BMP = 'assets/src/ground.tilemap.bmp'
 SCREEN_W = 256
-GROUND_Y = 168                # matches video.r65 GROUND_Y
-GROUND_H = 56                 # 8 HDMA bands of 7 scanlines
+GROUND_Y = 179                # matches video.r65 GND_TOP (the dirt, not the
+                              # unit plane GROUND_Y, 5 px lower)
+GROUND_H = 45                 # to the screen's foot: 8 HDMA bands of 5, the
+                              # last one's scroll holding under the HUD row
+CLEAR_FROM = 168              # the band's old top: blanked so the sky's tree line
+                              # shows down to the dirt
 HALVES = (0, 256)             # left screen at rows 0-255, right below it
 
 HIGHLIGHT = (150, 122, 70)    # was the marker yellow; now a sandy highlight
@@ -45,14 +49,14 @@ def lcg(seed):
 
 
 BANDS = 8
-BAND_H = 7
+BAND_H = 5
 
 
 def soil(x, row):
-    """Base earth for *row* of the band (1..55): a dot pattern whose
+    """Base earth for *row* of the band (1..44): a dot pattern whose
     density falls with nearness, so the far strips read darker and busier
     and the near ones open out - the same cue perspective gives."""
-    band = row // BAND_H
+    band = min(row // BAND_H, BANDS - 1)
     period = 5 + band                               # 5 .. 12
     if row % 3 == 1 and (x + (row // 3) * 2) % period == 1:
         return 1
@@ -82,7 +86,7 @@ def paint(px):
     # Every row gets its own, so each scanline has features to lock onto -
     # a row of bare dots is periodic and correlates at the dot period.
     for row in range(1, GROUND_H):
-        band = row // BAND_H
+        band = min(row // BAND_H, BANDS - 1)
         size_min = 1 + band // 2                    # 1 .. 4
         size_max = size_min + 1
         for _ in range(SCREEN_W // 40):
@@ -100,6 +104,9 @@ def paint(px):
             field[row][x] = 3
     field[0] = [3] * SCREEN_W                       # the horizon line
     for base in HALVES:
+        for y in range(CLEAR_FROM, GROUND_Y):
+            for x in range(SCREEN_W):
+                px[x, base + y] = 0
         for row in range(GROUND_H):
             for x in range(SCREEN_W):
                 px[x, base + GROUND_Y + row] = field[row][x]

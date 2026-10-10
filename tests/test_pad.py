@@ -26,7 +26,7 @@ def test_landing_short_of_the_deck_is_open_ground(snes):
     v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_on_pad == 0
-    assert v.heli_y == 152 * 256
+    assert v.heli_y == 168 * 256
 
 
 def test_landing_past_the_deck_is_open_ground(snes):
@@ -90,5 +90,5 @@ def test_a_dry_tank_sinks_and_crashes(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(7200)
     v = read_snapshot(snes)
     assert v.heli_lives == 3
-    assert v.heli_y == 96 * 256
+    assert v.heli_y == 112 * 256
     assert v.heli_landed == 0

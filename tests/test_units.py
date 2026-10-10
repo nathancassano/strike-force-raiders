@@ -87,9 +87,15 @@ def test_unit_budget(state):
     is pinned exactly: this run sits on the budget line, so any change to
     per-frame cost moves frames_loop. Its history - what each feature cost -
     is in the comment on this case in the retired tests/run.sh (git history);
-    the ratio is now 0.835.
+    the ratio is now 0.813: moving the ground line to 184 lengthened a lofted
+    round's climb to the top edge by 16 px (0.836), and Mode 1's sky split
+    is a second HDMA channel, which costs CPU time on every line it runs
+    (0.831). The last step is not a cost: the clouds' art made the boot's
+    upload a frame longer, and a minute of this run from a boot one frame
+    later is a different battle - the same code with the old sky art still
+    gives 3664/3043. So a change to boot length moves this pin too.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3664
-    assert v.frames_loop == 3061
+    assert v.frames_nmi == 3662
+    assert v.frames_loop == 2978

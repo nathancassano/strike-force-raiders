@@ -70,7 +70,8 @@ only to preserve proportion.
 
 Palette: the original game's entire art set is 13 colors, ≤10 per sprite. Sprites are 4bpp in
 every BG mode, so budget **one 16-color sprite palette for units** and a second for structures.
-BG art is 2bpp in Mode 0 — 3 colors plus transparent per tile. See Graphics architecture.
+BG art is 4bpp in Mode 1 — 15 colors plus transparent per tile — except the HUD's 2bpp. See
+Graphics architecture.
 
 ## Win and loss — keep exactly
 
@@ -286,15 +287,16 @@ to deliver briefings and in-battle warnings (van approaching, bank robbed, low f
 
 ## Graphics architecture
 
-**Mode 0 throughout — four 2bpp BG layers, no mode switching.** The ground parallax in the
-bottom third comes from per-scanline HDMA on a BG's horizontal scroll register, not Mode 7.
+**Mode 1 throughout — two 4bpp BG layers and a 2bpp one, no mode switching.** The ground
+parallax comes from per-scanline HDMA on a BG's horizontal scroll register, not Mode 7.
+(Phases 1-12 ran in Mode 0, four 2bpp layers; Mode 1 traded the fourth layer for 15 colours a
+tile, and the clouds and mountains now share one.)
 
 | Layer | Contents | Scroll |
 |---|---|---|
-| BG1 | HUD / radar strip (top ~24 lines) | Fixed; the rest of the layer is transparent (the battle-over line borrows row 10) |
-| BG2 | Near clouds | `camera_x >> 2` |
-| BG3 | Distant hills / horizon band | `camera_x >> 3` |
-| BG4 | Ground band, bottom ~1/3 | **Per-scanline HDMA** — see below |
+| BG1 (4bpp) | Dirt, rows 179-223 (units stand at 184) | **Per-scanline HDMA** — see below |
+| BG2 (4bpp) | Clouds (rows 16-91) and distant mountains (135-178) | HDMA split at line 104: clouds `camera_x >> 5` above (the farthest layer), mountains `>> 3` below |
+| BG3 (2bpp) | HUD / radar strip, order dialog, front-end pages | Fixed; over everything by `BGMODE`'s BG3 bit and the tiles' priority bit (the battle-over line borrows row 10) |
 
 Sky is the backdrop colour (CGRAM 0), optionally graded with an HDMA on `COLDATA`.
 
@@ -325,7 +327,7 @@ hardware timing at `camera_x = 948` — eight bands of exactly 9 scanlines stepp
 (`948>>5`), with BG2 at `cx>>2` = 237 and BG3 at `cx>>3` = 118.
 
 Eight values, rebuilt into a `#[lowram]` HDMA table each frame, one HDMA channel to feed
-`BG4HOFS`. Reversing the ramp (slower toward a horizon instead of faster toward the viewer) is
+the ground's H-offset (`BG4HOFS` in Mode 0, `BG1HOFS` now). Reversing the ramp (slower toward a horizon instead of faster toward the viewer) is
 a one-table change if it reads better in motion.
 
 **Band seams are the risk here.** The texture-space discontinuity between adjacent bands is
@@ -337,7 +339,7 @@ structured to break. If seams still read at SHIFT 5, subdivide to 16 bands of 4�
 
 **Register trap, cost an hour in phase 2:** BG4HOFS is **$2113**. `$210F` is BG2HOFS. Setting
 `BBAD` to `0x0F` silently drives the wrong layer per-scanline and looks like "HDMA isn't
-working".
+working". (In Mode 1 the ground is BG1, `$210D`, and `$210F` is the sky's split.)
 
 ### Everything on the ground is a sprite
 
@@ -350,14 +352,16 @@ and cannot host anything that must stay rectangular.
 ### Budgets
 
 - **VRAM: comfortable.** Dropping Mode 7 frees the 32 KB it would have taken at `$0000–$7FFF`.
-  Four 2bpp tilemaps and tilesets cost roughly 4 KB each; the remainder goes to sprite CHR,
-  which is exactly where a sprite-only game needs it.
-- **HDMA: 1–2 of 8 channels** — ground H-offset, optional sky gradient. Well clear of the
-  limit. (A BG1 vertical-scroll split for the HUD was planned and is not needed: the layer is
+  The 4bpp sky's tileset runs $1000-$2FFF and the rest are a few KB each; the remainder goes
+  to sprite CHR, which is exactly where a sprite-only game needs it.
+- **HDMA: 2 of 8 channels** — the ground's bands and the sky's split. Well clear of the
+  limit, but each costs CPU time on every scanline its table runs, so a table ends as soon as
+  it has nothing left to write. (A BG1 vertical-scroll split for the HUD was planned and is not needed: the layer is
   transparent below the strip.)
 - **Palettes.** Sprites are 4bpp (16 colours, 8 palettes, CGRAM 128–255) regardless of BG mode:
-  one palette for units, one for structures. BG art is 2bpp — 3 colours plus transparent per
-  tile, 8 sub-palettes per layer, CGRAM 0–127. Ample for sky, clouds, hills, and HUD text.
+  one palette for units, one for structures. BG1 and BG2 share eight 16-colour palettes in
+  CGRAM 0–127, and BG3's eight 4-colour ones are the first 32 of those: HUD 0–31, ground
+  palette 2, clouds 3, mountains 4–7.
 - **Lint.** HDMA setup writes the same `BBADx` registers that rule C002 forbids; add the HDMA
   helpers to `exclude_subtrees` in `r65-lint.toml` alongside `boot_load`.
 
@@ -418,12 +422,12 @@ architecture makes it much less new than originally planned.
 there is no unique BG content — every layer is a repeating pattern and everything
 mission-specific is a sprite. Scrolling reduces to:
 
-- **Clouds and hills:** write `(camera_x >> n) & 0x1FF` to each BG's H-offset register once per
-  frame and let the hardware wrap a 512 px (64×32-tile) map. `set_bg1_hscroll!` already exists
-  (`sneslib.r65:1459`, write-twice via the B register).
+- **Clouds and hills:** both on BG2; a two-entry HDMA table feeds `BG2HOFS` the clouds'
+  `camera_x >> 5` at line 0 and the mountains' `>> 3` at line 104, then ends - the register
+  holds it - and the hardware wraps the 512 px (64×32-tile) map.
 - **Ground band:** rebuild the 8-entry HDMA band table (shift-and-add, no multiplies) and let
-  the channel feed `BG4HOFS` per scanline.
-- **HUD:** BG1, fixed; nothing scrolls it.
+  the channel feed `BG1HOFS` per scanline.
+- **HUD:** BG3, fixed; nothing scrolls it.
 
 That removes the `VMAIN = 0x81` column-DMA machinery, the `#[lowram]` column buffer, and the
 on-demand column synthesis from the project entirely.

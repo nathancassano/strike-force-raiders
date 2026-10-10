@@ -1,30 +1,39 @@
-// video - Mode 0 four-layer background, HDMA ground parallax, and camera.
+// video - Mode 1 three-layer background, HDMA parallax, and camera.
 //
 // Layer plan (see the plan's Graphics architecture section):
-//   BG1  HUD strip, top of screen, does not scroll   (highest priority)
-//   BG2  near clouds     camera_x >> 2
-//   BG3  distant hills   camera_x >> 3
-//   BG4  ground band     per-scanline HDMA          (lowest priority, so
-//                                                    sprites sit in front)
+//   BG1  ground, 4bpp    per-scanline HDMA, eight bands     (in front of BG2)
+//   BG2  sky, 4bpp       clouds camera_x >> 5 above SKY_SPLIT, mountains
+//                        camera_x >> 3 below it - one HDMA split
+//   BG3  HUD, 2bpp       does not scroll; BGMODE's BG3 bit and the tiles'
+//                        priority bit put it over everything
 // Every layer is a repeating 512px pattern that wraps in hardware, so there
 // is no column refill anywhere in this game.
 
 #[bank(0)]
 
 // ---------------------------------------------------------------- VRAM ----
-// Word addresses. 2bpp tiles are 8 words each; a 64x32 tilemap is 0x800
-// words (two 32x32 screens), a 32x32 map is 0x400.
-// Each layer now carries its own tileset: r65x de-duplicates per bitmap, so
-// the tile numbering in one layer's tilemap means nothing in another's.
-// BG12NBA/BG34NBA address these in 4K-word units, hence bases 0..3.
-const VRAM_BG1C: u16 = 0x0000;
-const VRAM_BG2C: u16 = 0x1000;
-const VRAM_BG3C: u16 = 0x2000;
-const VRAM_BG4C: u16 = 0x3000;
-const VRAM_BG4:  u16 = 0x6000;   // 0x18 in $400-word units
-const VRAM_BG3:  u16 = 0x6800;   // 0x1A
-const VRAM_BG2:  u16 = 0x7000;   // 0x1C
-const VRAM_BG1:  u16 = 0x7800;   // 0x1E
+// Word addresses. 4bpp tiles are 16 words each, 2bpp 8; a 64x32 tilemap is
+// 0x800 words (two 32x32 screens), a 32x32 map is 0x400.
+// Each layer carries its own tileset: r65x de-duplicates per bitmap, so the
+// tile numbering in one layer's tilemap means nothing in another's.
+// BG12NBA/BG34NBA address these in 4K-word units. The sky outgrows one
+// unit (600-odd 4bpp tiles: the clouds and the mountains), so it runs on to
+// $3FFF, and the HUD's tiles go in the 2K words Mode 1 left free between
+// the sky's map and the HUD's - a 4K-word boundary, so BG3 can start there.
+const VRAM_GROUNDC: u16 = 0x0000;   // BG1
+const VRAM_SKYC:    u16 = 0x1000;   // BG2, to $3FFF: 768 tiles
+const VRAM_HUDC:    u16 = 0x7000;   // BG3, to $77FF: 256 2bpp tiles
+const VRAM_GROUND:  u16 = 0x6000;   // 0x18 in $400-word units
+const VRAM_SKY:     u16 = 0x6800;   // 0x1A
+const VRAM_HUD:     u16 = 0x7800;   // 0x1E
+
+// CGRAM. BG1 and BG2 draw 16-colour palettes from CGRAM 0-127, and BG3's
+// eight 4-colour ones are the first 32 of those - the HUD's, at 0 as it
+// always was (CGRAM 0 is also the backdrop: the sky). So the 4bpp sheets
+// start at palette 2. The Makefile names these same palettes in each map
+// (tools/tilemap_attr.py --pal): change one, change both.
+const CGRAM_GROUND: u16 = 32;       // palette 2
+const CGRAM_SKY:    u16 = 48;       // palettes 3-7: clouds 3, mountains 4-7
 
 // -------------------------------------------------------------- sprites ---
 // OBJ tiles sit at word $4000, clear of the BG tileset at $0000 and the four
@@ -127,23 +136,29 @@ const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed
 #[lowram] static mut focus_x: u16;        // what the camera follows
 
 // ------------------------------------------------------- ground parallax ---
-// Eight bands over the bottom 56 scanlines - a quarter of the 224-line
-// screen. The band artwork lives in BG4's tilemap from row GND_ROW in
-// tools/gen_assets.py; the two must cover the same scanlines. Band k scrolls at
+// Eight bands over the dirt, GND_TOP down. The band artwork lives in BG1's
+// tilemap from row GND_TOP (tools/ground_texture.py); the two must cover the
+// same scanlines. Band k scrolls at
 // (1 + k/2^SHIFT) x camera_x, built by one shift and seven adds - no
 // multiplies. Raising SHIFT narrows the spread and shrinks the seam between
 // adjacent bands; lowering it exaggerates the depth.
 const GND_SHIFT: u8  = 3;                 // 1.000x .. 1.875x across the band
-// Top of the ground band, in screen pixels. Everything that can hit the
-// ground measures against this: the airframe's floor, and every munition's
-// collision test.
-const GROUND_Y:  u16 = 168;
+// The ground line, in screen pixels: where every unit and building stands.
+// Everything that can hit the ground measures against this: the airframe's
+// floor, and every munition's collision test. It sits GROUND_Y - GND_TOP px
+// into the dirt, so what stands on it overlaps the dirt's top edge.
+const GROUND_Y:  u16 = 184;
+// The first scanline of dirt - the top of the HDMA bands. The mountains'
+// tree line (BG2) ends on the scanline above it.
+const GND_TOP:   u16 = 179;
 
 // An HDMA line count maxes out at 127, so the run above the ground needs two
 // entries.
-const GND_TOP_A: u8  = 127;               // scanlines above the ground, part 1
-const GND_TOP_B: u8  = 41;                // ... part 2 (127+41 = 168)
-const GND_BAND:  u8  = 7;                 // scanlines per band (8 x 7 = 56)
+const GND_TOP_A: u8  = 127;               // scanlines above the dirt, part 1
+const GND_TOP_B: u8  = 52;                // ... part 2 (127+52 = GND_TOP)
+const GND_BAND:  u8  = 5;                 // scanlines per band (8 x 5 = 40);
+                                          // the last band's value holds to
+                                          // 224, under the HUD's bottom row
 
 // HDMA table: [count, lo, hi] per entry, 0 terminates.
 // 2 entries above the ground + 8 bands + terminator = 31 bytes.
@@ -169,7 +184,7 @@ far fn gnd_table_build() {
     let d: u16 = cx >> GND_SHIFT;
     let mut v: u16 = cx;
 
-    // Both entries above the ground carry band 0's value; BG4's tilemap is
+    // Both entries above the ground carry band 0's value; BG1's tilemap is
     // empty up there, so it only has to be defined, not correct.
     GND_HDMA[1] = v as u8;
     GND_HDMA[2] = (v >> 8) as u8;
@@ -185,17 +200,42 @@ far fn gnd_table_build() {
     }
 }
 
-// gnd_hdma_init - point channel 6 at the band table.
-// Transfer mode 2 = two bytes written to one register, which is what the
-// write-twice scroll registers need.
+// ---------------------------------------------------------- sky parallax ---
+// BG2 holds two things at two depths that never share a scanline: the
+// clouds (rows 16-91) and the mountains (135-178). The clouds are the
+// farthest thing in the scene, a quarter of the mountains' rate: across the
+// whole 8192 px world they drift 256 px, half their 512 px loop. One HDMA
+// split gives
+// each its own scroll, so they fit on one layer: the clouds' value at line
+// 0, the mountains' at SKY_SPLIT, and the table ends there - the register
+// holds the last value written, and an HDMA channel costs CPU time on
+// every scanline until its table ends. Run to the foot of the screen it
+// cost the unit_budget stress 29 ticks a minute; ended at the split, 15.
+const SKY_SPLIT: u8 = 104;                // first scanline at the mountains' rate
+
+// [count, lo, hi] x 2 + terminator.
+#[lowram] static mut SKY_HDMA: [u8; 8];
+
+// gnd_hdma_init - point channel 6 at the ground's band table and channel 5
+// at the sky's split. Transfer mode 2 = two bytes written to one register,
+// which is what the write-twice scroll registers need.
 // NOTE: sets A1T/A1B directly rather than using dma_set_src!, whose `#:`
 // bank operator returns the wrong bank for WRAM symbols.
 far fn gnd_hdma_init() {
     DMAP6 = 0x02;
-    BBAD6 = 0x13;                  // $2113 BG4HOFS ($210F is BG2HOFS)
+    BBAD6 = 0x0D;                  // $210D BG1HOFS ($2113 is BG4HOFS)
     A1T6 = &GND_HDMA as u16;
     A1B6 = 0;
-    dma_set_hdma!(0x40);           // channel 6
+
+    SKY_HDMA[0] = SKY_SPLIT;
+    SKY_HDMA[3] = 1;               // one line: written once, then held
+    SKY_HDMA[6] = 0;               // terminator
+    DMAP5 = 0x02;
+    BBAD5 = 0x0F;                  // $210F BG2HOFS
+    A1T5 = &SKY_HDMA as u16;
+    A1B5 = 0;
+
+    dma_set_hdma!(0x60);           // channels 5 and 6 - HDMAEN takes both at once
 }
 
 // ---------------------------------------------------------------- setup ---
@@ -209,14 +249,14 @@ far fn video_load() {
     gnd_table_init();
     gnd_table_build();
     gnd_hdma_init();
+    scroll_update();
 
     // Small sprites are 8x8 (munitions later), large are 16x16 (the units).
     set_obj_sel!(ObjSize::T8x8_16x16, OBJ_BASE, 0);
     oam.clear();                    // every slot parked, so nothing to sweep
     oam_high = 0;
 
-    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::BG4
-                     | Screen::Obj);
+    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::Obj);
 }
 
 // --------------------------------------------------------------- camera ---
@@ -278,11 +318,16 @@ far fn focus_move(dx: i16) {
     }
 }
 
-// scroll_update - push this frame's scroll values. Call in vblank.
-// BG4 is driven by the HDMA band table, not written here.
+// scroll_update - this frame's sky scroll: the clouds' and the mountains'
+// values into the split HDMA table. Call in vblank. BG1 is driven by the
+// ground's band table (gnd_table_build), and BG3 does not scroll.
 far fn scroll_update() {
-    set_bg2_hscroll!(camera_x >> 2);
-    set_bg3_hscroll!(camera_x >> 3);
+    let c: u16 = camera_x >> 5;          // a quarter of the mountains'
+    let m: u16 = camera_x >> 3;
+    SKY_HDMA[1] = c as u8;
+    SKY_HDMA[2] = (c >> 8) as u8;
+    SKY_HDMA[4] = m as u8;
+    SKY_HDMA[5] = (m >> 8) as u8;
 }
 
 // ------------------------------------------------------------- uploads ---
@@ -292,40 +337,36 @@ far fn scroll_update() {
 #[bank(2)]
 
 far fn video_upload() {
-    // Mode 0 gives each layer its own 32-colour CGRAM block. A 2bpp tile
-    // draws from a 4-colour sub-palette, and every tilemap entry here names
-    // sub-palette 0, so only the first four colours of each block are used.
-    dma_copy_cgram(0, &BG1_PAL as far *u8, 0, BG1_PAL_SIZE);
-    dma_copy_cgram(0, &BG2_PAL as far *u8, 32, BG2_PAL_SIZE);
-    dma_copy_cgram(0, &BG3_PAL as far *u8, 64, BG3_PAL_SIZE);
-    dma_copy_cgram(0, &BG4_PAL as far *u8, 96, BG4_PAL_SIZE);
+    // The HUD's palette at 0 (BG3's, and the backdrop), the 4bpp sheets
+    // above it - see CGRAM_SKY.
+    dma_copy_cgram(0, &HUD_PAL as far *u8, 0, HUD_PAL_SIZE);
+    dma_copy_cgram(0, &GROUND_PAL as far *u8, CGRAM_GROUND, GROUND_PAL_SIZE);
+    dma_copy_cgram(0, &SKY_PAL as far *u8, CGRAM_SKY, SKY_PAL_SIZE);
     dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
     dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
     struct_palettes();              // the recoloured variants of both
 
-    dma_copy_vram(0, &BG1_CHR as far *u8, VRAM_BG1C, BG1_CHR_SIZE);
-    dma_copy_vram(0, &BG2_CHR as far *u8, VRAM_BG2C, BG2_CHR_SIZE);
-    dma_copy_vram(0, &BG3_CHR as far *u8, VRAM_BG3C, BG3_CHR_SIZE);
-    dma_copy_vram(0, &BG4_CHR as far *u8, VRAM_BG4C, BG4_CHR_SIZE);
-    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
-    dma_copy_vram(0, &BG2_MAP as far *u8, VRAM_BG2, BG2_MAP_SIZE);
-    dma_copy_vram(0, &BG3_MAP as far *u8, VRAM_BG3, BG3_MAP_SIZE);
-    dma_copy_vram(0, &BG4_MAP as far *u8, VRAM_BG4, BG4_MAP_SIZE);
+    dma_copy_vram(0, &GROUND_CHR as far *u8, VRAM_GROUNDC, GROUND_CHR_SIZE);
+    dma_copy_vram(0, &SKY_CHR as far *u8, VRAM_SKYC, SKY_CHR_SIZE);
+    dma_copy_vram(0, &HUD_CHR as far *u8, VRAM_HUDC, HUD_CHR_SIZE);
+    dma_copy_vram(0, &GROUND_MAP as far *u8, VRAM_GROUND, GROUND_MAP_SIZE);
+    dma_copy_vram(0, &SKY_MAP as far *u8, VRAM_SKY, SKY_MAP_SIZE);
+    dma_copy_vram(0, &HUD_MAP as far *u8, VRAM_HUD, HUD_MAP_SIZE);
     dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
     dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
 
-    set_bgmode!(0, 0);             // mode 0, all layers 8x8 tiles
-    set_bg1_map!(0x1E, 0);         // 32x32 - HUD does not scroll
-    set_bg2_map!(0x1C, 1);         // 64x32 - wraps at 512px
-    set_bg3_map!(0x1A, 1);
-    set_bg4_map!(0x18, 1);
+    // Mode 1, 8x8 tiles, and bit 3: BG3's priority-1 tiles draw in front
+    // of everything, sprites included - the HUD over the dirt and the sky.
+    set_bgmode!(1, 0x08);
+    set_bg1_map!(0x18, 1);         // ground, 64x32 - wraps at 512px
+    set_bg2_map!(0x1A, 1);         // sky, 64x32
+    set_bg3_map!(0x1E, 0);         // HUD, 32x32 - does not scroll
     set_bg12_chr!(0, 1);           // 4K-word units: $0000, $1000
-    set_bg34_chr!(2, 3);           // ... $2000, $3000
+    set_bg34_chr!(7, 0);           // $7000; there is no BG4 in Mode 1
 
     // Scroll registers show line (v+1), so -1 puts tilemap row 0 at the top.
     set_bg1_vscroll!(0xFFFF);
     set_bg2_vscroll!(0xFFFF);
     set_bg3_vscroll!(0xFFFF);
-    set_bg4_vscroll!(0xFFFF);
-    set_bg1_hscroll!(0);
+    set_bg3_hscroll!(0);
 }

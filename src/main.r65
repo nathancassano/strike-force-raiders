@@ -150,7 +150,7 @@ fn nmi_handler() {
 fn main() -> ! {
     loop {
         wait_nmi!();
-        // A front-end page owns BG1 and is the only layer on, so none of
+        // A front-end page owns BG3 and is the only layer on, so none of
         // the vblank traffic below has anywhere to go - only the rows a
         // typed continue code has changed.
         if game_state == GAME_SCREEN {

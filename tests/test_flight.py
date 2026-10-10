@@ -66,7 +66,7 @@ def test_airframe_spawns_at_rest(snes):
     boot(snes, "MISSION_CAKE_WALK")
     v = read_snapshot(snes)
     assert v.heli_x_px == 64
-    assert v.heli_y == 96 * 256
+    assert v.heli_y == 112 * 256
 
 
 def test_airframe_flies_right(snes):
@@ -104,7 +104,7 @@ def test_airframe_stops_under_the_hud(snes):
 def test_airframe_stops_on_the_ground(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(20).down(30).wait(40)
     v = read_snapshot(snes)
-    assert v.heli_y == 152 * 256
+    assert v.heli_y == 168 * 256
 
 
 # Tilt is cosmetic, from velocity ALONG THE NOSE: OAM sprite 0's tile picks
@@ -259,7 +259,7 @@ def test_a_round_leaves_at_muzzle_height(snes):
     """
     boot(snes, "MISSION_CAKE_WALK").wait(10).b(1)
     v = read_snapshot(snes)
-    assert v.muni_y.u16[0] == 103 * 256
+    assert v.muni_y.u16[0] == 119 * 256
 
 
 def test_y_fires_nothing(snes):

@@ -69,7 +69,7 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 # Those outputs are build products - they are not in git, and `make clean`
 # removes them.
 #
-#   -b2 / -b4  2bpp (Mode 0 backgrounds) or 4bpp (sprites) planar output
+#   -b2 / -b4  2bpp (the HUD on BG3) or 4bpp (BG1, BG2, sprites) planar output
 #   -p         also emit the .pal
 #   -t         de-duplicate tiles and emit a .tilemap
 #   -f         write the whole bitmap; without it bmp2chr stops at the size
@@ -80,17 +80,17 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 # held one after the other, but bmp2chr walks a bitmap row-major at its full
 # width. So each 64-tile-wide layer is authored 32 tiles wide and 64 tall -
 # right-hand screen *below* the left, not beside it - and the row-major
-# output is then byte-identical to what the PPU expects. Editing bg2/3/4
-# means remembering that the bottom half continues off the right edge of the
-# top half. bg1 is a single 32x32 screen and needs no fold.
+# output is then byte-identical to what the PPU expects. Editing sky or
+# ground means remembering that the bottom half continues off the right edge
+# of the top half. hud is a single 32x32 screen and needs no fold.
 #
 # Two rule sets, told apart by the source's name. Both are multi-target
 # pattern rules - make's way of saying "one run of this command produces
 # all of these", so a parallel build starts each conversion once rather
 # than once per output.
 #
-# Which rule make picks is settled by which bitmap exists: for bg1.chr the
-# plain rule wants assets/src/bg1.bmp, which is not there, so the tilemap
+# Which rule make picks is settled by which bitmap exists: for hud.chr the
+# plain rule wants assets/src/hud.bmp, which is not there, so the tilemap
 # rule takes it; for obj.chr it is the other way round.
 #
 # Bit depth is the other axis and is a target-specific variable, since it
@@ -103,27 +103,47 @@ $(ROM_FILE): $(BUILD_DIR)/main.o
 BMP2CHR_DEPTH = -b2
 BMP2CHR_POST  = true
 
-# The sprite sheets are 4bpp: the shared one, and the airframe's own.
+# The sprite sheets are 4bpp: the shared one, and the airframe's own. So
+# are Mode 1's BG1 and BG2 - the ground and the sky; the HUD on BG3 is 2bpp.
 assets/gfx/obj.chr assets/gfx/obj.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/heli.chr assets/gfx/heli.pal: BMP2CHR_DEPTH = -b4
+assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: BMP2CHR_DEPTH = -b4
+assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_DEPTH = -b4
 
-# The ground band's tilemap carries the per-tile priority bit (bit 13). In
-# Mode 0 a priority-0 sprite still draws over a low-priority BG3/BG4, so
-# without it the airframe rising out of the ground (heli.r65) would sit on
-# top of the dirt instead of under it. Transparent pixels are unaffected.
-# bmp2chr has no flag for it, so the bit is set on the tilemap afterwards.
-assets/gfx/bg4.chr assets/gfx/bg4.pal assets/gfx/bg4.tilemap: \
-	BMP2CHR_POST = python3 -c "p='assets/gfx/bg4.tilemap'; d=bytearray(open(p,'rb').read()); d[1::2]=bytes(b|0x20 for b in d[1::2]); open(p,'wb').write(d)"
+# Tilemap attributes bmp2chr has no flag for, set afterwards by
+# tools/tilemap_attr.py. The numbers must match where video.r65 uploads
+# each .pal (CGRAM_SKY, CGRAM_GROUND, in 16-colour palettes).
+# - The 4bpp sheets are drawn from palette 0 and moved up: BG1 and BG2 share
+#   CGRAM 0-127, and its first two palettes are BG3's - the HUD's.
+# - The ground carries the priority bit, so the airframe rising out of it
+#   (heli.r65, OBJ priority 2) draws behind the dirt but in front of the
+#   mountains on BG2.
+# - The HUD carries it too, so with BGMODE's BG3 bit its rows draw over the
+#   dirt and the sky. The radar row is the exception, written at runtime
+#   without it, so the camera bracket sprite shows over it.
+# The sky's tiles must also fit their VRAM region, $1000-$3FFF (video.r65
+# VRAM_SKYC): 768 4bpp tiles, 24576 bytes. Past it they overwrite the
+# sprites' tiles at $4000, silently, so the build stops instead.
+assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: \
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3 && \
+	  { [ $$(stat -c%s assets/gfx/sky.chr) -le 24576 ] || \
+	    { echo "sky.chr is $$(stat -c%s assets/gfx/sky.chr) bytes: over the 768 tiles VRAM $$1000-$$3FFF holds" >&2; \
+	      rm -f assets/gfx/sky.chr; exit 1; }; }
+assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: \
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/ground.tilemap --pal 2 --priority
+assets/gfx/hud.chr assets/gfx/hud.pal assets/gfx/hud.tilemap: \
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/hud.tilemap --priority
 
 # A sheet that carries a tilemap: tiles de-duplicated (-t), and the map
-# names them back in the bitmap's order.
-assets/gfx/%.chr assets/gfx/%.pal assets/gfx/%.tilemap: assets/src/%.tilemap.bmp
+# names them back in the bitmap's order. The depths and the tilemap
+# attributes are set in this file, so editing it reconverts the art.
+assets/gfx/%.chr assets/gfx/%.pal assets/gfx/%.tilemap: assets/src/%.tilemap.bmp Makefile tools/tilemap_attr.py
 	@mkdir -p assets/gfx
 	$(R65X) bmp2chr $< -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -t -f
 	@$(BMP2CHR_POST)
 
 # And a sheet without one: every tile kept, addressed by its number.
-assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp
+assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp Makefile
 	@mkdir -p assets/gfx
 	$(R65X) bmp2chr $< -o assets/gfx/$*.chr $(BMP2CHR_DEPTH) -p -f
 	@$(BMP2CHR_POST)
@@ -131,15 +151,24 @@ assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp
 # Bindings are generated from whatever r65x actually produced. Tile counts
 # move when art is edited - dedup decides them - so a hand-written size in
 # include_bytes! would silently desync from the file on disk.
-src/assets.r65: $(ART_OUT)
+# The backgrounds (the %.tilemap.bmp sheets) go in bank 1 and the sprite
+# sheets in bank 3: together they outgrow one 32K bank. The sky - 600-odd
+# 4bpp tiles of clouds and mountains - outgrows a share of one, and has
+# bank 4 to itself. Every upload takes a far pointer, so which bank a sheet
+# lands in is invisible to the code.
+src/assets.r65: $(ART_OUT) Makefile
 	@echo "[GEN] $@"
 	@{ \
 	  echo '// GENERATED by make - DO NOT EDIT, and do not commit.'; \
 	  echo '// Art source is assets/src/*.bmp, converted by r65x bmp2chr.'; \
 	  echo ''; \
-	  echo '#[bank(1)]'; \
-	  echo ''; \
 	  for n in $(ART); do \
+	    case " $(ART_MAPPED) " in \
+	      *" $$n "*) b=1;; \
+	      *) b=3;; \
+	    esac; \
+	    [ "$$n" = sky ] && b=4; \
+	    [ "$$b" = "$$bank" ] || { echo ''; echo "#[bank($$b)]"; echo ''; bank=$$b; }; \
 	    u=$$(echo $$n | tr a-z A-Z); \
 	    for k in chr tilemap pal; do \
 	      [ -f assets/gfx/$$n.$$k ] || continue; \

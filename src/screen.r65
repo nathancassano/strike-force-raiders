@@ -1,11 +1,11 @@
 // screen - the front end: the title page, the mission briefing and the
 // after-action page.
 //
-// All three are the same thing - BG1 written as a full 32x28 page of text
+// All three are the same thing - BG3 written as a full 32x28 page of text
 // with every other layer switched off, so the field behind them is not
-// hidden so much as not drawn. That is the whole trick: BG2-4 and OBJ keep
+// hidden so much as not drawn. That is the whole trick: BG1-2 and OBJ keep
 // their contents and their registers, `TM` just stops naming them, and a
-// page costs one DMA of the BG1 map at the moment it goes up rather than
+// page costs one DMA of the BG3 map at the moment it goes up rather than
 // anything per frame. Coming back restores the map from ROM and re-inits
 // the strip, since a page has written over both.
 //
@@ -14,7 +14,7 @@
 // (lib/default_font.r65, ASCII 32-126) uploaded at boot past the radar's
 // tiles. Its text area is the inside of the frame, so a centred line
 // clears and centres between the border columns. The border and the code
-// cursor are still the order dialog's pieces, read back out of the BG1
+// cursor are still the order dialog's pieces, read back out of the BG3
 // map by position (HUD_BOX_ROW, tools/hud_glyphs.py).
 //
 // The front end is the *campaign's*. A test mission (mission.r65) boots
@@ -32,7 +32,7 @@ const SCREEN_BRIEF: u8 = 2;
 const SCREEN_AFTER: u8 = 3;
 const SCREEN_END:   u8 = 4;               // the campaign, won
 
-// The font, in BG1's tileset after the art (BG1_CHR_SIZE / 16 tiles) and
+// The font, in BG3's tileset after the art (HUD_CHR_SIZE / 16 tiles) and
 // the radar's 32, on a sub-palette of its own: CGRAM 8-11, white with a
 // grey edge. Colour 0 is transparent, so the page's navy is the backdrop.
 const SCREEN_FONT_TILE:  u16 = 96;
@@ -370,13 +370,13 @@ fn screen_end() {
 
 // ------------------------------------------------------------ the page ---
 
-// screen_blit - the composed page to VRAM and BG1 alone on the screen.
+// screen_blit - the composed page to VRAM and BG3 alone on the screen.
 // Force blank because this is a 1792-byte DMA at an arbitrary point in the
 // frame; a black frame at a transition costs nothing.
 fn screen_blit() {
     INIDISP = FORCE_BLANK;
-    dma_copy_vram(0, &screen_page as far *u8, VRAM_BG1, SCREEN_ROWS << 6);
-    set_main_layers!(Screen::BG1);
+    dma_copy_vram(0, &screen_page as far *u8, VRAM_HUD, SCREEN_ROWS << 6);
+    set_main_layers!(Screen::BG3);
     INIDISP = 0x0F;
 }
 
@@ -395,15 +395,14 @@ far fn screen_show(kind: u8) {
     game_state = GAME_SCREEN;
 }
 
-// screen_hide - back to the field: the art's BG1 map over the page, every
+// screen_hide - back to the field: the art's BG3 map over the page, every
 // layer on again, and the strip recomposed, the page having written over
 // the rows it lives on.
 far fn screen_hide() {
     screen_kind = SCREEN_NONE;
     INIDISP = FORCE_BLANK;
-    dma_copy_vram(0, &BG1_MAP as far *u8, VRAM_BG1, BG1_MAP_SIZE);
-    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::BG4
-                     | Screen::Obj);
+    dma_copy_vram(0, &HUD_MAP as far *u8, VRAM_HUD, HUD_MAP_SIZE);
+    set_main_layers!(Screen::BG1 | Screen::BG2 | Screen::BG3 | Screen::Obj);
     INIDISP = 0x0F;
     hud_init();
     radar_init();
@@ -420,7 +419,7 @@ far fn screen_font() {
     // By DMA rather than Console::upload_font, which writes the 1520
     // bytes a register store at a time: that is a frame of boot, and the
     // suite's movies are timed from a boot of a fixed length.
-    dma_copy_vram(0, &CONSOLE_FONT as far *u8, VRAM_BG1C + (SCREEN_FONT_TILE << 3),
+    dma_copy_vram(0, &CONSOLE_FONT as far *u8, VRAM_HUDC + (SCREEN_FONT_TILE << 3),
                   SCREEN_FONT_TILES << 4);
     screen_con.set_tile_base(SCREEN_FONT_TILE);
     screen_con.set_align(ConsoleAlign::Center as u8);
@@ -449,7 +448,7 @@ far fn screen_flush() {
     if screen_dirty == 0 { return; }
     screen_dirty = 0;
     dma_copy_vram(1, &screen_page[SCREEN_CODE_ROW << 5] as far *u8,
-                  VRAM_BG1 + (SCREEN_CODE_ROW << 5), SCREEN_CODE_ROWS << 6);
+                  VRAM_HUD + (SCREEN_CODE_ROW << 5), SCREEN_CODE_ROWS << 6);
 }
 
 // screen_type - the d-pad over the title's code field: left and right

@@ -49,7 +49,7 @@ def test_balloon_rise(state):
     assert v.heli_x_px == 64
     assert v.heli_dead == 0
     assert v.heli_rising == 1
-    assert v.heli_y == 158 * 256
+    assert v.heli_y == 174 * 256
     assert v.camera_x == 0
 
 
