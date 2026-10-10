@@ -3,7 +3,7 @@
 
 Boots ROTOR_RAIDERS in Mesen-GDB, plays the actions, and screenshots at the
 ROM's snapshot_point hook (fired by Select) - the same boot and the same
-instant the pytest suite reads at (tests/harness.py).
+instant the pytest suite reads at (tests/fixtures.py).
 
     ./play.sh build/boot.png shot
     ./play.sh build/fly.png @MISSION_TEST_QUIET,wait60,right90,shot
@@ -34,7 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "tests"))
 
-from harness import boot, read_snapshot            # noqa: E402
+from fixtures import boot, read_snapshot            # noqa: E402
 from mesen_gdb.rom_driver import NotReached, Rom    # noqa: E402
 from mesen_gdb.rom_driver.backend import BUTTONS    # noqa: E402
 

@@ -6,8 +6,7 @@ units and, if the enemy's, at the helicopter; gunfire wears them down.
 entry 9.
 """
 
-from harness import boot, read_snapshot, screen_colour
-from states import balloon_hit
+from fixtures import balloon_hit, boot, read_snapshot, screen_colour
 
 FREE = 0                       # an empty unit slot's kind
 ENEMY, NOBODY = 1, 2           # owners

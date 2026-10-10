@@ -10,7 +10,7 @@ sprite over the row, in the slot after the airframe's two: at boot x 0, y 8
 (the row's first scanline), the bracket tile.
 """
 
-from harness import boot, read_snapshot, screen_colour
+from fixtures import boot, read_snapshot, screen_colour
 
 
 def radar_row(v, row):

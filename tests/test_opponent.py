@@ -1,7 +1,6 @@
 """Phases 9-10: win and loss, the CPU's purse, the enemy airframe and pilot."""
 
-from harness import boot, read_snapshot
-from states import five_passes
+from fixtures import boot, five_passes, read_snapshot
 
 GAME_PLAYING, GAME_LOST = 0, 2
 FREE = 0                                    # an empty unit slot's kind
@@ -12,7 +11,7 @@ FREE = 0                                    # an empty unit slot's kind
 # Two ends only: a van at the other side's base, or no helicopters left. The
 # van cannot be scripted from the pad in useful time - it was checked by
 # planting one at the enemy base with the debugger - so these cover the other
-# end and the way back. Both start from `five_passes` (states.py): five
+# end and the way back. Both start from `five_passes` (fixtures.py): five
 # pushes into the enemy base's missiles, which lose all four airframes.
 
 def test_game_lost(state):

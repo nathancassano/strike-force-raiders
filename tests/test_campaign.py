@@ -3,8 +3,7 @@
 These boot with nothing held, which is the campaign's first mission.
 """
 
-from harness import boot, read_snapshot, screen_colour
-from states import campaign_lost
+from fixtures import boot, campaign_lost, read_snapshot, screen_colour
 
 GAME_PLAYING, GAME_SCREEN = 0, 3
 SCREEN_NONE, SCREEN_TITLE, SCREEN_BRIEF, SCREEN_AFTER = 0, 1, 2, 3

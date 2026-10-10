@@ -9,7 +9,7 @@ and a coast arrives under it; 32 does not, and a full-stick descent hits at
 4. right180 and a 60-frame coast puts the airframe at x 1014.
 """
 
-from harness import boot, read_snapshot
+from fixtures import boot, read_snapshot
 
 
 def test_landing_on_the_deck(snes):

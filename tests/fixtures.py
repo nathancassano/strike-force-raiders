@@ -1,4 +1,4 @@
-"""Helpers the rotor_raiders ROM tests share.
+"""What the rotor_raiders ROM tests share: the helpers and the states.
 
 `boot` is the power-on: thirty frames for snes_init and boot_load to
 settle, with the mission picked by writing the ROM's boot_pick at
@@ -7,9 +7,15 @@ reads its values at: Select pressed, which calls the ROM's snapshot_point
 from the main loop. It returns the session's memory by name, so a case
 reads `v = read_snapshot(snes)` and asserts on `v.heli_x_px`. The colour
 checks are the old shell suite's.
+
+The states several cases share are `@rom_state` builders, at the bottom:
+each is built once per ROM and cached as a save state in build/.rom_driver,
+and a test imports the builder and starts there with `state(boarded)`.
 """
 
 from PIL import Image
+
+from mesen_gdb.rom_driver import rom_state
 
 BOOT_FRAMES = 30
 
@@ -55,3 +61,44 @@ def colour_pct(png, rgb, snes=False):
 def screen_colour(snes, tmp_path, rgb, snes_colour=False):
     """Screenshot now and return how much of it is *rgb*."""
     return colour_pct(snes.screenshot(tmp_path / "screen.png"), rgb, snes=snes_colour)
+
+
+# ---- states ------------------------------------------------------------------
+
+@rom_state
+def boarded(s):
+    """Five infantry bought, the airframe landed on the pad, all five aboard."""
+    boot(s, "MISSION_TEST_QUIET").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(20)
+    s.right(180).wait(60).down(30).wait(40).wait(2800)
+
+
+@rom_state
+def eight_tanks(s):
+    """The whole purse in tanks, then a minute of play: every pool slot live."""
+    boot(s, "MISSION_TEST_QUIET")
+    for _ in range(8):
+        s.press("l", "a", frames=3).wait(3)
+    s.wait(3600)
+
+
+@rom_state
+def five_passes(s):
+    """Five pushes into the enemy base's missiles: all four airframes lost."""
+    boot(s, "MISSION_TEST_QUIET")
+    for _ in range(5):
+        s.wait(20).right(1500).wait(300)
+
+
+@rom_state
+def campaign_lost(s):
+    """A campaign boot through title and briefing, four crash landings, Start."""
+    boot(s).start().wait(10).start().wait(20)
+    for frames in (200, 200, 200, 240):
+        s.down(40).wait(frames)
+    s.start().wait(20)
+
+
+@rom_state
+def balloon_hit(s):
+    """Climbed into the player's own bunker's balloon (x=2048), frame 421."""
+    boot(s, "MISSION_TEST_QUIET").up(20).right(401)

@@ -84,9 +84,10 @@ campaign mission, `MISSION_` and its briefing name, `boot(snes, "MISSION_CAKE_WA
 `boot_load`'s entry and writes the constant's value there, plus `BOOT_DIRECT` to skip the front
 end.
 `conftest.py`'s header says what each opponent is. A setup several cases share is a state
-in `tests/states.py` (`@rom_state` builders: `boarded`, `eight_tanks`, `five_passes`,
-`balloon_hit`, `campaign_lost`), built once, cached in `build/.rom_driver/`, and
-opened by passing the builder: `from states import boarded`, then `state(boarded)`.
+in `tests/fixtures.py`, beside `boot` and `read_snapshot` (`@rom_state` builders: `boarded`,
+`eight_tanks`, `five_passes`, `balloon_hit`, `campaign_lost`), built once, cached in
+`build/.rom_driver/`, and opened by passing the builder: `from fixtures import boarded`, then
+`state(boarded)`.
 
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
 `mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
@@ -155,7 +156,7 @@ rotor_raiders/
 │   └── levels/               # Battlefield placement lists
 ├── tools/                    # play.py, mkmovie.py, pngstat.py, poolstat.py, profile.py, timeline.sh, asset generators
 ├── design.md                 # Design and phase plan (Part 1 design, Part 2 technical, Part 3 phases)
-├── tests/                    # pytest ROM suite (conftest.py, harness.py, states.py, test_*.py)
+├── tests/                    # pytest ROM suite (conftest.py, fixtures.py, test_*.py)
 ├── play.sh                   # One-shot scripted run + screenshot
 ├── build/                    # Compiled output (.asm, .smc, .sym, .dbg)
 └── Makefile                  # Build system for WLA-DX

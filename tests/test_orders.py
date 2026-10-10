@@ -5,7 +5,7 @@ Left/Right walk the order ring and A buys. Every check is on the ROM's own
 state: the purse, the selection, and what came out of the base.
 """
 
-from harness import boot, read_snapshot
+from fixtures import boot, read_snapshot
 
 TANK, VAN, INFANTRY = 1, 2, 4
 
