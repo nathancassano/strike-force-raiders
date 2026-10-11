@@ -110,8 +110,10 @@ def test_unit_budget(state):
     #[soa] pool whose per-frame methods are inlined at their constant
     element and folded to absolute addressing (R65's const_index pass),
     leaving no call at all where each side used to call its own copy.
+    The enemy's paratrooper steering - off on this test mission - moved
+    the layout a tick (3662/2970).
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3663
-    assert v.frames_loop == 2971
+    assert v.frames_nmi == 3662
+    assert v.frames_loop == 2970

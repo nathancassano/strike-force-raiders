@@ -117,6 +117,7 @@ const FOE_DODGE:   u8 = 2;
 const FOE_HUNT:    u8 = 3;
 const FOE_BOMB:    u8 = 4;                // a ground unit
 const FOE_STRUCT:  u8 = 5;                // a turret or bunker
+const FOE_PARA:    u8 = 6;                // to a bunker to drop men on it
 // A bomb target: a unit slot, or a structure index with the top bit set.
 const FOE_TGT_STRUCT: u8 = 0x80;
 const FOE_TGT_NONE:   u8 = 0xFF;
@@ -727,8 +728,8 @@ impl Pilot {
     // building (the super bunker is dropped on regardless). Campaign
     // missions only (cpu_paras): not the frozen test missions. All of them on
     // the super bunker or when the airframe is under half its health or its
-    // bombs, otherwise one. It drops on what its flying takes it over: the
-    // original's steering toward a bunker to drop on is not here.
+    // bombs, otherwise one. Pilot::choose flies it to a bunker for this
+    // (FOE_PARA); a turret is dropped on only in passing.
     fn maybe_drop() {
         if pilot.para_t > 0 {
             if pilot.para_t > FOE_THINK { pilot.para_t = pilot.para_t - FOE_THINK; } else { pilot.para_t = 0; }
@@ -765,6 +766,32 @@ impl Pilot {
         }
         pilot.drop = n;
         pilot.gap = 0;
+    }
+
+    // Pilot::para_target - the nearest bunker or super bunker within
+    // FOE_VIEW that is not its side's and whose middle is east of FOE_WEST,
+    // other than a bunker its own men are already on the way to (the
+    // super bunker gets the whole load whatever); STRUCT_MAX with none.
+    fn para_target() -> u16 {
+        let cx: u16 = airframes[FOE].x_px + (HELI_W >> 1);
+        let mut best: u16 = STRUCT_MAX;
+        let mut best_d: u16 = FOE_VIEW;
+        for i in 0..struct_count {
+            let k: u8 = structs[i].kind;
+            if (k == StructKind::Bunker as u8 || k == StructKind::Super as u8) && structs[i].owner != SIDE_ENEMY {
+                let mid: u16 = structs[i].x + (structs[i].w >> 1);
+                if mid > FOE_WEST {
+                    let d: u16 = Pilot::apart(mid, cx);
+                    if d < best_d {
+                        if k == StructKind::Super as u8 || Pilot::men_on_the_way(i) == 0 {
+                            best_d = d;
+                            best = i;
+                        }
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     // Pilot::men_on_the_way - are its infantry or paratroopers in view
@@ -867,6 +894,23 @@ impl Pilot {
                     pilot.tx = hx;
                     if airframes[HELI].y > HELI_Y_MIN + (FOE_DODGE_Y << 8) { pilot.ty = airframes[HELI].y - (FOE_DODGE_Y << 8); } else { pilot.ty = HELI_Y_MIN; }
                 }
+                return;
+            }
+        }
+
+        // Paratroopers: with men aboard and a drop allowed, over to the
+        // nearest bunker in view that is not its side's, to put them on it
+        // (maybe_drop does the dropping once the airframe is over it).
+        // Not the original's - its steering leaves buildings alone and it
+        // drops on what it is near - but men on a bunker is the point of
+        // carrying them.
+        if cpu_paras != 0 && pilot.men > 0 && pilot.para_t == 0 && pilot.drop == 0 {
+            let b: u16 = Pilot::para_target();
+            if b < STRUCT_MAX {
+                pilot.state = FOE_PARA;
+                let bx: u16 = structs[b].x + (structs[b].w >> 1);
+                if bx > (HELI_W >> 1) { pilot.tx = bx - (HELI_W >> 1); } else { pilot.tx = 0; }
+                pilot.ty = HELI_Y_HOVER;          // under the bunker's balloon
                 return;
             }
         }

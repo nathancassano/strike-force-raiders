@@ -540,9 +540,12 @@ on a decision (`Pilot::maybe_drop`) over a bunker or the super bunker not its si
 up on a player turret from the east within 64 px, it drops one - all of them on the super bunker
 or under half its health or bombs - unless its own men in view are already heading there; one
 drop per 30 s, the men 12 frames apart, their chutes failing on the frame count rather than
-`rand()` (the player's sequence) or `cpu_rand` (the purchases). It drops on what its flying
-takes it over; the original's steering to a bunker for it, and its bank raid, are not here
-(`FOE_WEST` keeps it out of the base's missiles). Not adapted: clouds, the kamikaze run, and the
+`rand()` (the player's sequence) or `cpu_rand` (the purchases). With men aboard and a drop
+allowed it flies to the nearest bunker or super bunker in view that is not its own
+(`Pilot::para_target`, the `FOE_PARA` mode, after refit, dodge and hunt, before bombing) and
+hovers over it - under the balloon - until they go: not the original's, whose steering leaves
+buildings alone, but carrying men is for that. Its bank raid is not here (`FOE_WEST` keeps it
+out of the base's missiles). Not adapted: clouds, the kamikaze run, and the
 smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
 per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
 `struct_collide` runs before `unit_collide`, which spends the blast, and the blast is snapped
