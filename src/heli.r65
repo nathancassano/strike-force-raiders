@@ -159,7 +159,7 @@ far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
 #[lowram] static mut heli_wreck_x:  u16;  // where it was lost: the camera holds there
 #[lowram] static mut heli_wreck_y:  u16;  // the wreck's top, 8.8: falls to HELI_Y_MAX
 #[lowram] static mut heli_wreck_vy: Q10;
-#[lowram] static mut heli_wreck_vx: Q10;   // the way on it had, burning off as it falls
+#[lowram] static mut heli_wreck_vx: Q10;   // half the way on it had, kept all the way down
 #[lowram] static mut heli_wreck_sub: u8;   // 1/256 px of heli_wreck_x
 #[lowram] static mut heli_wreck_face: u8;
 
@@ -708,7 +708,7 @@ far fn heli_lost() {
     heli_wreck_vy = Q10(0);
     if heli_vy > Q10(0) { heli_wreck_vy = heli_vy; }
     heli_wreck_face = heli_face_left;
-    heli_wreck_vx = heli_vx;
+    heli_wreck_vx = wreck_half(heli_vx);
     heli_wreck_sub = 0;
     sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_wreck_x);
     fx_burst(FX_BIG, heli_wreck_x, heli_y >> 8);
@@ -725,14 +725,20 @@ far fn heli_lost() {
     }
 }
 
+// wreck_half - half a speed, for a wreck: *v* / 2 toward zero. `>>` is
+// logical, so the sign is a branch.
+far fn wreck_half(v: Q10) -> Q10 {
+    if v >= Q10(0) { return Q10(((v.0 as u16) >> 1) as i16); }
+    return Q10(0) - Q10((((0 - v.0) as u16) >> 1) as i16);
+}
+
 // heli_wreck_tick - a frame of the wreck's fall, while it is in the air:
 // dead-stick gravity down, and a burst where it hits.
 far fn heli_wreck_tick() {
     if heli_wreck_vy < HELI_VY_MAX { heli_wreck_vy = heli_wreck_vy + HELI_GRAVITY; }
     heli_wreck_y = heli_wreck_y + ((heli_wreck_vy.0 as u16) << 2);
-    // The airframe's way on burns off as it falls - the dead stick's
-    // decay - and stops at the world's edges and on the ground.
-    heli_wreck_vx = approach(heli_wreck_vx, Q10(0), HELI_ACC);
+    // Half the airframe's way on carries it the whole way down, stopping
+    // only at the world's edges and on the ground.
     let d: i16 = heli_wreck_vx.0 << 2;      // 1/64 -> 1/256
     if d >= 0 {
         let m: u16 = d as u16;

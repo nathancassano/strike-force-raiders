@@ -103,11 +103,12 @@ def test_unit_budget(state):
     different battle at the same ratio (3662/2953, from 3663/2954). The
     missile alarm's per-frame check costs two ticks (3663/2951), and the
     enemy airframe's wreck - its two per-frame gates, and the burst where
-    it lands - two more (3662/2949). The wrecks' drift as they fall, two
-    more (3662/2947): only on the frames a wreck is in the air, but this
-    run loses airframes and those frames sit on the line.
+    it lands - two more (3662/2949). The wrecks' drift as they fall
+    gives one back (3662/2950): it keeps half the airframe's speed rather
+    than decaying it, which was a far call to approach() each frame of a
+    fall.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 2947
+    assert v.frames_loop == 2950

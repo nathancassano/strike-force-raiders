@@ -139,7 +139,7 @@ const FOE_WRECK_TIME: u8 = HELI_RESPAWN;
 #[lowram] static mut foe_wreck_x:    u16;    // centre
 #[lowram] static mut foe_wreck_y:    u16;    // top, 8.8
 #[lowram] static mut foe_wreck_vy:   Q10;
-#[lowram] static mut foe_wreck_vx:   Q10;    // the way on it had, burning off as it falls
+#[lowram] static mut foe_wreck_vx:   Q10;    // half the way on it had, kept all the way down
 #[lowram] static mut foe_wreck_sub:  u8;     // 1/256 px of foe_wreck_x
 #[lowram] static mut foe_wreck_face: u8;
 #[lowram] static mut foe_lives: u8;
@@ -1046,7 +1046,7 @@ far fn foe_lost() {
         foe_wreck_vy = Q10(0);
         if foe_vy > Q10(0) { foe_wreck_vy = foe_vy; }
         foe_wreck_face = foe_face_left;
-        foe_wreck_vx = foe_vx;
+        foe_wreck_vx = wreck_half(foe_vx);
         foe_wreck_sub = 0;
         foe_init();
         let t: u8 = cpu_stats[cpu_level as u16].regen_time;
@@ -1068,9 +1068,8 @@ far fn foe_wreck_tick() {
     if foe_wreck_y < HELI_Y_MAX {
         if foe_wreck_vy < HELI_VY_MAX { foe_wreck_vy = foe_wreck_vy + HELI_GRAVITY; }
         foe_wreck_y = foe_wreck_y + ((foe_wreck_vy.0 as u16) << 2);
-        // The airframe's way on burns off as it falls - the dead stick's
-        // decay - and stops at the world's edges and on the ground.
-        foe_wreck_vx = approach(foe_wreck_vx, Q10(0), HELI_ACC);
+        // Half the airframe's way on carries it the whole way down,
+        // stopping only at the world's edges and on the ground.
         let d: i16 = foe_wreck_vx.0 << 2;      // 1/64 -> 1/256
         if d >= 0 {
             let m: u16 = d as u16;

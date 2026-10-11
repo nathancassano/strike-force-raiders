@@ -374,10 +374,10 @@ player's last helicopter (`heli_lost`). Any other loss hides the airframe for `H
 (120) frames while `camera_pan` brings the view home at a pace sized at the loss
 (`camera_x / 72 + 1`, so the far end of the world arrives inside the delay) - after holding
 for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out. The wreck
-falls out of it in the crashing frame under dead-stick gravity, carrying the airframe's way on
-until the dead stick's decay (`HELI_ACC`) burns it off - straight down instead when the two
-airframes went into each other (`wreck_collided`) - bursts again where it lands
-and lies there in the crashed frame until the next airframe rises (`heli_draw_wreck`, drawing
+falls out of it in the crashing frame under dead-stick gravity, keeping half the airframe's way on
+(`wreck_half`) the whole way down - straight down instead when the two airframes went into each other
+(`wreck_collided`) - bursts again where it lands
+and lies there in the crashed frame until the next airframe rises (`wreck_draw`, drawing
 only - the loss is counted at once, and it is a separate function so the live draw pays
 nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). The enemy airframe's does the
 same on a timer of its own (`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts

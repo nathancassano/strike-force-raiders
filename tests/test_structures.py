@@ -36,14 +36,14 @@ def test_balloon_pan(state, tmp_path):
     """The camera holds on the wreck for HELI_LOSS_HOLD (48) frames while it
     goes up, then pans home: 60 frames after the loss it has had 12 frames
     of the pan. It held on the wreck as it drifted on: lost at full speed
-    to the right, it carried on ~45 px before its way burned off.
+    to the right, it kept half that speed all the way down, ~85 px.
     """
     snes = state(balloon_hit)
     snes.wait(60)
     v = read_snapshot(snes)
     assert v.heli_x_px == 64
     assert v.heli_dead == 60
-    assert v.camera_x == 1555
+    assert v.camera_x == 1595
     assert screen_colour(snes, tmp_path, CANOPY, snes_colour=True) == 0, "the canopy is nowhere on screen"
 
 
