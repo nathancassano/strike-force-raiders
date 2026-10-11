@@ -102,11 +102,14 @@ const HELI_FUEL_MAX:   u8 = 100;
 const HELI_FUEL_DRAIN: u8 = 64;           // frames per unit burned aloft
 const HELI_FUEL_FILL:  u8 = 4;            // frames per unit on the deck
 
-// Reload rates from the plan. These are the gating mechanism, not tuning
-// knobs: 64 rounds at 20 frames is the ~21 s from empty that makes ammo the
-// real bottleneck. The plan calls these "modulus timers"; countdowns do the
-// same job without a modulus, which for 20 and 10 would mean a mod8 call.
+// Reload rates. These are the gating mechanism, not tuning knobs. The
+// plan's rounds came back one per 20 frames, ~22 s from empty; they are
+// eight a time now, eight times as fast - ~9 s for 64 - while bombs keep
+// the plan's one per 10. The plan calls these "modulus timers"; countdowns
+// do the same job without a modulus, which for 20 and 10 would mean a
+// mod8 call.
 const HELI_GUN_RELOAD:  u8 = 20;
+const HELI_GUN_REFILL:  u8 = 8;           // rounds back each time it runs out
 const HELI_BOMB_RELOAD: u8 = 10;
 // The deck repairs too - the plan's "full rearm", and what the enemy
 // pilot's refit rule (health under 5 counts toward a return) assumes.
@@ -283,7 +286,11 @@ far fn heli_rearm() {
         heli_gun_t = heli_gun_t - 1;
     } else {
         heli_gun_t = HELI_GUN_RELOAD;
-        if heli_gun < HELI_GUN_MAX { heli_gun = heli_gun + 1; }
+        if heli_gun < HELI_GUN_MAX - HELI_GUN_REFILL {
+            heli_gun = heli_gun + HELI_GUN_REFILL;
+        } else {
+            heli_gun = HELI_GUN_MAX;
+        }
     }
 
     if heli_bomb_t > 0 {

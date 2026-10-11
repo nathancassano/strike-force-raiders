@@ -465,7 +465,11 @@ fn foe_rearm() {
         foe_gun_t = foe_gun_t - 1;
     } else {
         foe_gun_t = HELI_GUN_RELOAD;
-        if foe_gun < HELI_GUN_MAX { foe_gun = foe_gun + 1; }
+        if foe_gun < HELI_GUN_MAX - HELI_GUN_REFILL {
+            foe_gun = foe_gun + HELI_GUN_REFILL;
+        } else {
+            foe_gun = HELI_GUN_MAX;
+        }
     }
     if foe_bomb_t > 0 {
         foe_bomb_t = foe_bomb_t - 1;

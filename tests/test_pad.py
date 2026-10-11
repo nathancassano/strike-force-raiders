@@ -84,14 +84,16 @@ def test_a_flat_out_dive_crashes(snes):
 
 
 def test_the_deck_rearms_and_refuels(snes):
-    """Fuel back to 100, and the reload countdowns give back rounds at 20
-    frames each and bombs at 10 while the airframe sits.
+    """Fuel back to 100, and the reload countdowns give back rounds eight
+    every 21 frames and bombs one every 11 while the airframe sits: emptied
+    first, the gun has had seven refills by the snapshot (it had seven
+    single rounds when they came back one at a time).
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(20).b(60).a(1).right(180).wait(60).down(30).wait(40).wait(120)
+    boot(snes, "MISSION_TEST_QUIET").wait(20).b(400).a(1).right(180).wait(60).down(30).wait(40).wait(120)
     v = read_snapshot(snes)
     assert v.heli_landed == 1
     assert v.heli_fuel == 100
-    assert v.heli_gun == 61
+    assert v.heli_gun == 56
     assert v.heli_bombs == 10
 
 

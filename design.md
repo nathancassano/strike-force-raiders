@@ -147,7 +147,7 @@ man's pace that put five in a heap.)*
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
 - Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
   slice (d)) and then removed from the game, for both airframes.
-- Reload while landed: +1 gun/20f, +1 bomb/10f. Ammo is the real bottleneck
+- Reload while landed: +8 gun/20f, +1 bomb/10f. Ammo is the real bottleneck
   (~21 s from empty) — that gating is deliberate, keep it.
 - **Men are not restored by the pad** — you pick them up off the ground: a friendly infantryman
   **within 5 px of a landed airframe's middle** boards it, five aboard at most. **X drops them as
