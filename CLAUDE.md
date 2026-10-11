@@ -47,6 +47,12 @@ switches the other off. And an HDMA channel costs CPU time on every scanline unt
 ends, so a table that has nothing left to write ends rather than holding to the foot of the
 screen (the sky's stops at its split; run to 224 it cost `unit_budget` 29 ticks).
 
+**Bank 0 is full, and wlalink does not say so.** An over-full bank is linked over whatever
+follows it - the ROM header and vectors at the top of bank 0 - with an `Overwrite at` line and
+exit status 0, and the ROM crashes on its first frame. The Makefile fails the link on that line
+(`build/link.log`). Code that does not have to be in bank 0 (anything not calling `oam_take` or
+another near bank-0 routine) goes to bank 3 as a `far fn`, as `fx.r65` and `foe_lost` do.
+
 **`src/lib/` is a vendored copy of `/home/nathan/R65/stdlib/`.** It currently matches upstream
 except for the `rand.r65` change above. Check before copying code from another project - the
 other projects' copies have drifted by 50-170 lines.

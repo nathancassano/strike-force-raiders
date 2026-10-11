@@ -69,9 +69,17 @@ $(BUILD_DIR)/main.o: $(BUILD_DIR)/main.asm
 	cd src && $(WLA) $(WLA_FLAGS) ../build/main.o ../build/main.asm
 
 # Link using the compiler-generated linkfile (handles multi-bank layouts)
+# A bank that is over full is not an error to wlalink: it writes the code
+# over whatever is there - the ROM header and vectors at the top of bank 0
+# - says "Overwrite at", and exits 0. The ROM then crashes on its first
+# frame. So that line fails the build.
 $(ROM_FILE): $(BUILD_DIR)/main.o
 	@echo "[LINK] $@"
-	$(WLA_LINK) -v -S $(BUILD_DIR)/main.link $@
+	$(WLA_LINK) -v -S $(BUILD_DIR)/main.link $@ > $(BUILD_DIR)/link.log 2>&1 || { cat $(BUILD_DIR)/link.log; exit 1; }
+	@cat $(BUILD_DIR)/link.log
+	@if grep -q "Overwrite at" $(BUILD_DIR)/link.log; then \
+		echo "error: a bank overflowed and was linked over other code (link.log: 'Overwrite at')"; \
+		rm -f $@; exit 1; fi
 
 # ---------------------------------------------------------------- assets ----
 # All art is indexed BMP under assets/src, converted by `r65x bmp2chr`.
