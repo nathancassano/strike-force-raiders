@@ -38,11 +38,14 @@ def boot(s, mission=None):
     just before calling boot_load, so stopped at boot_load's entry the
     session writes the mission there, with BOOT_DIRECT to skip the front
     end, and boot_load reads it. None boots the campaign proper, title page
-    and all.
+    and all - but for the power-on BubbleZap intro, which BOOT_NO_INTRO
+    skips: it is ten seconds a case, and test_campaign.py covers it.
     """
+    s.until("boot_load", max_frames=BOOT_MAX_FRAMES)
     if mission:
-        s.until("boot_load", max_frames=BOOT_MAX_FRAMES)
         s.var.boot_pick = getattr(s.var, mission) | s.var.BOOT_DIRECT
+    else:
+        s.var.boot_pick = s.var.boot_pick | s.var.BOOT_NO_INTRO
     s.until("main", max_frames=BOOT_MAX_FRAMES)
     return s.wait(BOOT_SETTLE)
 

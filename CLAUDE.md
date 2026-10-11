@@ -107,8 +107,10 @@ in `tests/shared.py`, beside `boot` and `read_snapshot` (`@rom_state` builders: 
 **`boot` syncs on `main`, not on a frame number**: it runs the power-on to the ROM's main loop and
 then `BOOT_SETTLE` (13) frames, which is where a mission boot stood when the suite was calibrated
 (main at 17, inputs from 30). So the boot can cost what it likes - the sound driver's upload is
-~156 frames - without moving a case. `tools/mkmovie.py` cannot sync, so its `BOOT_FRAMES` idle
-(187) has to cover the upload and must grow with it.
+~156 frames - without moving a case. A boot of the campaign proper (no mission) also sets
+`BOOT_NO_INTRO` in `boot_pick`, skipping the power-on BubbleZap intro, which `test_campaign.py`
+covers on its own. `tools/mkmovie.py` cannot sync or skip, so its `BOOT_FRAMES` idle (843) has to
+cover the upload and the intro - main is at 834 - and must grow with them.
 
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
 `mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
@@ -159,6 +161,7 @@ rotor_raiders/
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
 │   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the test rows
 │   ├── screen.r65            # The front end: title, briefing and after-action pages on BG3
+│   ├── intro.r65             # The power-on BubbleZap logo: hindstrike's Mode 7 spin-in (bank 2)
 │   ├── heli.r65              # The airframes: the #[soa] pool (Airframe, both sides' methods) and the player's (Player)
 │   ├── foe.r65               # The enemy's pilot (Pilot): its decisions, and the world against its airframe
 │   ├── fx.r65                # Explosions and smoke: hindstrike's particle animations (bank 3, draw in 0)
@@ -426,6 +429,17 @@ Rows 10-12 are the **test missions** (`MISSION_TEST_QUIET`, `_HUNTER`, `_CONVOY`
 hand-made pre-campaign field with frozen tuning, reachable only by a test writing `boot_pick`,
 and the whole suite runs on them - see `tests/conftest.py`'s header. Treat their rows, their convoys and their layout as part of the
 tests.
+
+**The power-on intro** (`src/intro.r65`, bank 2) is hindstrike's `screen_bubblezap`: the
+BubbleZap logo in Mode 7, spinning in from far away, flashing white, settling to 1:1, a shine
+sweeping across it, then a fade - 640 frames, Start skipping to the fade. It runs from
+`boot_load` after the sound upload and before `video_load` (its map and 8bpp tiles fill VRAM's
+first 16K words; `clear_vram` follows), only on a power-on into the campaign proper. The art is
+`assets/src/bubblezap.tilemap.bmp` - the logo's strip of the 1024x1024 plane, a blank column first
+so tile 0 is blank - converted `-m7` (bank 4). Two changes from the original: no DSP-1 here, so
+the rotation (sixteenths of a turn only) is a 16-entry sine table times the scale on the PPU's
+Mode 7 multiplier in vblank; and the fades are colour math (COLDATA's intensity added, capped at
+white), not stepping 192 colours a frame, which overran the frame by half.
 
 **The front end** (`src/screen.r65`, phase 11, bank 2) is three pages - title, briefing,
 after-action - and they are all one mechanism: BG3 written as a full 32x28 page of text with

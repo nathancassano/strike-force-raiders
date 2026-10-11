@@ -45,6 +45,7 @@ include!("hud.r65")
 include!("radar.r65")
 include!("game.r65")
 include!("screen.r65")
+include!("intro.r65")
 include!("heli.r65")
 include!("foe.r65")
 include!("fx.r65")
@@ -75,6 +76,10 @@ fn snapshot_point() {
 // title page; the tests boot any mission, front end skipped, by stopping at
 // boot_load's entry and writing this before boot_load reads it.
 const BOOT_DIRECT: u8 = 0x80;
+// The BubbleZap intro runs on a real power-on into the campaign; a test
+// that boots the campaign proper sets this beside the mission to skip it,
+// so the suite is not ten seconds and an intro's worth of frames longer.
+const BOOT_NO_INTRO: u8 = 0x40;
 #[lowram] static mut boot_pick: u8;
 
 // Power-on: hardware setup, then hand off to the game loop.
@@ -86,7 +91,8 @@ fn init_reset() -> ! {
     main();
 }
 
-// One-time setup. Runs entirely inside force-blank.
+// One-time setup. Runs entirely inside force-blank - but for the intro,
+// which has a screen of its own.
 fn boot_load() {
     INIDISP = FORCE_BLANK;
 
@@ -95,6 +101,15 @@ fn boot_load() {
     spc_init();
     spc_global_volume(127, 255);
     spc_stereo(1);              // effects are panned by where they are on screen
+
+    // The BubbleZap logo (intro.r65), before the game's VRAM goes up: it
+    // runs its own Mode 7 screen and leaves VRAM to be cleared. Only on a
+    // power-on into the campaign proper.
+    let pick: u8 = boot_pick;
+    if (pick & (BOOT_DIRECT | BOOT_NO_INTRO)) == 0 && (pick & 0x3F) < MISSION_COUNT {
+        intro_show();
+        clear_vram();
+    }
 
     video_load();
 
@@ -111,8 +126,7 @@ fn boot_load() {
     para_init();
     // The mission comes first: struct_init lays out what it placed, and
     // every init below reads what it set.
-    let pick: u8 = boot_pick;
-    let m: u8 = pick & ~BOOT_DIRECT;
+    let m: u8 = pick & ~(BOOT_DIRECT | BOOT_NO_INTRO);
     mission_set(m);
     struct_init();
     econ_init();

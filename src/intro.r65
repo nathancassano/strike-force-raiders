@@ -1,0 +1,203 @@
+// intro - the BubbleZap logo at power-on: hindstrike's screen_bubblezap,
+// ported from ~/hindstrike.
+//
+// About ten seconds of Mode 7, run from boot_load after the sound driver's
+// upload and before video_load, which has to follow: the logo's map and
+// tiles fill VRAM's first 16K words. The logo spins in from far away -
+// sixteen steps a turn, the scale falling by a step that shrinks as it
+// comes - flashes white as it fills the screen, then zooms back out to 1:1
+// with its colours fading in. Past INTRO_SHINE a window sweeps right
+// across it, colour math adding a fixed brightness inside, and the last
+// INTRO_FADE frames fade the screen out. Start skips to that fade.
+//
+// The fades are colour math, not palette arithmetic. hindstrike steps all
+// 192 colours a unit toward the logo's or toward white each frame - here
+// that cost more than a frame, the intro running half again its length -
+// and a fade toward white is just what adding a fixed colour does: the
+// palette goes up once as the logo's, and COLDATA's intensity `w` (0-31,
+// added to every channel, capped at white) steps down a unit where
+// hindstrike fades toward the logo and up a unit where it fades to white.
+// The same direction, rate and ends; the way in from white is a lift of
+// every colour rather than each channel coming down to meet its own. The
+// shine reuses colour math, but `w` is 0 long before INTRO_SHINE.
+//
+// hindstrike computed each frame's rotation on the DSP-1, which this
+// cartridge does not have. Its angle only ever steps in sixteenths of a
+// turn, so INTRO_SIN holds those sixteen sines, and the products with the
+// scale come from the PPU's Mode 7 multiplier (M7A x M7B into MPY), which
+// is usable only when Mode 7 is not drawing - in vblank, before that
+// frame's matrix is written over it.
+//
+// The art is assets/src/bubblezap.tilemap.bmp: the logo's strip of the
+// 1024x1024 plane, a blank tile column first so tile 0 - every cell the
+// map leaves alone - is blank. It goes to INTRO_MAP_COL, INTRO_MAP_ROW.
+
+#[bank(2)]
+
+const INTRO_FRAMES:  u16 = 640;
+const INTRO_FADE:    u16 = 16;            // frames of the brightness ramp at each end
+const INTRO_SHINE:   u16 = 480;           // the window's sweep starts after this
+const INTRO_COLORS:  u16 = 192;           // the logo's palette entries, as hindstrike
+const INTRO_MAP_COL: u16 = 49;            // the strip's place in the 128x128 map:
+const INTRO_MAP_ROW: u16 = 62;            // its logo centred on the plane's (512, 512)
+const INTRO_MAP_W:   u16 = 29;
+const INTRO_MAP_H:   u16 = 4;
+
+// sin(k/16 turn) x 127, k = 0..15, as the signed byte M7B takes.
+static INTRO_SIN: [u8; 16] = [0, 49, 90, 117, 127, 117, 90, 49,
+                              0, 207, 166, 139, 129, 139, 166, 207];
+
+// intro_upload - the logo into VRAM, in force blank. Mode 7 VRAM is
+// interleaved: the map is every word's low byte, the tiles' pixels every
+// word's high byte, so each goes in a byte at a time with VMAIN's
+// increment on the byte it writes.
+fn intro_upload() {
+    VMAIN = 0x80;                          // increment after the high byte
+    VMADD = 0;
+    DMAP0 = 0x00;                          // 1 register, 1 byte a transfer
+    BBAD0 = 0x19;                          // $2119 VMDATAH
+    let src: far *u8 = &BUBBLEZAP_CHR as far *u8;
+    A1T0 = src as u16;
+    A1B0 = src.bank_byte();
+    DAS0 = BUBBLEZAP_CHR_SIZE;
+    dma_trigger!(0);
+
+    VMAIN = 0x00;                          // increment after the low byte
+    let mut k: u16 = 0;                    // the tilemap's entry: two bytes, the tile low
+    for r in 0..INTRO_MAP_H {
+        VMADD = ((INTRO_MAP_ROW + r) << 7) + INTRO_MAP_COL;
+        for c in 0..INTRO_MAP_W {
+            VMDATAL = BUBBLEZAP_MAP[k];
+            k = k + 2;
+        }
+    }
+}
+
+// intro_mul - (scale x s) >> 7 on the Mode 7 multiplier, *s* a signed
+// sine of INTRO_SIN: the matrix entry, in its 8.8, as a word. Vblank only.
+fn intro_mul(scale: u16, s: u8) -> u16 {
+    M7A = scale as u8;
+    M7A = (scale >> 8) as u8;
+    M7B = s;
+    let lo: u16 = MPYL as u16;
+    let mid: u16 = MPYM as u16;
+    let hi: u16 = MPYH as u16;
+    return (hi << 9) | (mid << 1) | (lo >> 7);
+}
+
+// intro_show - the whole intro, from force blank to force blank. NMI is on
+// (snes_init), so wait_nmi! paces it a frame at a time.
+far fn intro_show() {
+    INIDISP = FORCE_BLANK;
+    intro_upload();
+    dma_copy_cgram(0, &BUBBLEZAP_PAL as far *u8, 0, INTRO_COLORS << 1);
+
+    BGMODE = 7;
+    M7SEL = 0x80;                          // outside the plane: transparent; no flip
+    set_main_layers!(Screen::BG1);
+    BG1HOFS = (512 - 128) as u8;           // the plane's (512, 512) at the screen's centre
+    BG1HOFS = ((512 - 128) >> 8) as u8;
+    BG1VOFS = (512 - 112) as u8;
+    BG1VOFS = ((512 - 112) >> 8) as u8;
+    set_m7_center!(512, 512);
+    // Colour math adds COLDATA to the logo and the backdrop: the whiteness
+    // `w` everywhere, and from INTRO_SHINE the shine - 8, only inside
+    // window 1, which sweeps across.
+    TMW = 0x1F;
+    W12SEL = 0x00;
+    WOBJSEL = 0x20;                        // window 1 on the colour window
+    WBGLOG = 0;
+    CGWSEL = 0x00;                         // colour math everywhere, until the shine
+    CGADSUB = 0x21;                        // add, on BG1 and the backdrop
+    COLDATA = 0xE0 | 31;                   // it starts white
+    WH0 = 0;
+    WH1 = 0;
+
+    let mut frame: u16 = 0;
+    let mut bright: u8 = 0;
+    let mut scale: u16 = 4096;
+    let mut angle: u16 = 0;                // sixteenths of a turn
+    let mut state: u8 = 0;                 // 0 spinning in, 1 settling out
+    let mut step: u16 = 32;
+    let mut wxs: u16 = 0;
+    let mut wxe: u16 = 0;
+    let mut w: u8 = 31;                    // whiteness: COLDATA's intensity
+    INIDISP = 0;                           // on, at brightness 0
+    while frame < INTRO_FRAMES {
+        wait_nmi!();
+        if frame > INTRO_SHINE {
+            CGWSEL = 0x10;                 // only inside the window: the shine
+            COLDATA = 0xE0 | 8;
+        } else {
+            COLDATA = 0xE0 | w;
+        }
+        let mut ma: u16 = scale;
+        let mut mb: u16 = 0;
+        if angle != 0 {
+            let s: u16 = intro_mul(scale, INTRO_SIN[angle]);
+            ma = intro_mul(scale, INTRO_SIN[(angle + 4) & 15]);
+            mb = s;
+        }
+        let nb: u16 = 0 - mb;
+        M7A = ma as u8;
+        M7A = (ma >> 8) as u8;
+        M7B = nb as u8;
+        M7B = (nb >> 8) as u8;
+        M7C = mb as u8;
+        M7C = (mb >> 8) as u8;
+        M7D = ma as u8;
+        M7D = (ma >> 8) as u8;
+        WH0 = wxs as u8;
+        WH1 = wxe as u8;
+
+        if frame < INTRO_FADE && bright < 15 {
+            bright = bright + 1;
+            INIDISP = bright;
+        }
+        if frame > INTRO_SHINE { wxe = wxe + 16; }
+        if frame > INTRO_SHINE + 4 { wxs = wxs + 16; }
+        if wxe > 255 { wxe = 255; }
+        if wxs > 255 { wxs = 255; }
+        if frame >= INTRO_FRAMES - INTRO_FADE && bright > 0 {
+            bright = bright - 1;
+            INIDISP = bright;
+        }
+
+        if state == 0 {
+            scale = scale - step;              // wraps past 0 into the 4096-up range
+            angle = (angle + 1) & 15;
+            if (frame & 7) == 0 && step > 1 { step = step - 1; }
+            if frame < 100 && (frame & 1) == 0 {
+                if w > 0 { w = w - 1; }        // toward the logo
+            } else {
+                if scale < 48 && w < 31 { w = w + 1; }   // toward white
+            }
+            if scale >= 4096 {
+                scale = 0;
+                state = 1;
+            }
+        } else {
+            if w > 0 { w = w - 1; }
+            angle = 0;
+            if scale < 256 { scale = scale + 2; }
+        }
+
+        pad_read_ports();
+        if frame > INTRO_FADE && frame < INTRO_FRAMES - INTRO_FADE {
+            if (pad_poll() & JOY_START) != 0 { frame = INTRO_FRAMES - INTRO_FADE; }
+        }
+        frame = frame + 1;
+    }
+
+    // Back to how video_load expects to find things: force blank, no
+    // windows or colour math. boot_load clears VRAM of the plane
+    // (clear_vram is a bank-0 routine).
+    INIDISP = FORCE_BLANK;
+    TMW = 0;
+    WOBJSEL = 0;
+    CGWSEL = 0;
+    CGADSUB = 0;
+    COLDATA = 0xE0;
+    WH0 = 0;
+    WH1 = 0;
+}

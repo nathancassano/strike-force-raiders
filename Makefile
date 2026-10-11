@@ -134,6 +134,8 @@ assets/gfx/fx.chr assets/gfx/fx.pal: BMP2CHR_DEPTH = -b4
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: BMP2CHR_DEPTH = -b4
 assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: BMP2CHR_DEPTH = -b4
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: BMP2CHR_DEPTH = -b4
+# The power-on BubbleZap logo (src/intro.r65) is Mode 7: 8bpp, a byte a pixel.
+assets/gfx/bubblezap.chr assets/gfx/bubblezap.pal assets/gfx/bubblezap.tilemap: BMP2CHR_DEPTH = -m7
 
 # Tilemap attributes bmp2chr has no flag for, set afterwards by
 # tools/tilemap_attr.py. The numbers must match where video.r65 uploads
@@ -190,7 +192,8 @@ assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp Makefile
 # The backgrounds (the %.tilemap.bmp sheets) go in bank 1 and the sprite
 # sheets in bank 3: together they outgrow one 32K bank. The sky - 600-odd
 # 4bpp tiles of clouds and mountains - outgrows a share of one, and has
-# bank 4 to itself. Every upload takes a far pointer, so which bank a sheet
+# bank 4, with the intro's Mode 7 logo (7K of 8bpp tiles, too much for what
+# bank 1 has left). Every upload takes a far pointer, so which bank a sheet
 # lands in is invisible to the code.
 src/assets.r65: $(ART_OUT) Makefile
 	@echo "[GEN] $@"
@@ -204,6 +207,7 @@ src/assets.r65: $(ART_OUT) Makefile
 	      *) b=3;; \
 	    esac; \
 	    [ "$$n" = sky ] && b=4; \
+	    [ "$$n" = bubblezap ] && b=4; \
 	    [ "$$b" = "$$bank" ] || { echo ''; echo "#[bank($$b)]"; echo ''; bank=$$b; }; \
 	    u=$$(echo $$n | tr a-z A-Z); \
 	    for k in chr tilemap pal; do \

@@ -32,6 +32,28 @@ def test_mission_first(snes):
 # briefing and Start again into the battle. A page is GAME_SCREEN with
 # screen_kind saying which, and the field behind it is untouched.
 
+def test_power_on_plays_the_intro_then_the_title(snes):
+    """A real power-on - no test flags - plays the BubbleZap intro
+    (intro.r65) after the sound driver's upload: its 640 frames, plus the
+    upload of the logo, before the title page goes up.
+    """
+    snes.until("intro_show", max_frames=400)
+    start = snes.frame
+    snes.until("screen_show", max_frames=800)
+    assert 640 <= snes.frame - start < 680
+
+
+def test_start_skips_the_intro(snes):
+    """Start, once the intro has faded in, skips to its fade-out: the title
+    is up within its last 16 frames and a few more.
+    """
+    snes.until("intro_show", max_frames=400)
+    start = snes.frame
+    snes.wait(60).press("start", frames=4)
+    snes.until("screen_show", max_frames=100)
+    assert snes.frame - start < 120
+
+
 def test_a_campaign_opens_on_the_title(snes):
     boot(snes).wait(30)
     v = read_snapshot(snes)
