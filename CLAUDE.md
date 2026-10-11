@@ -377,12 +377,13 @@ for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays 
 falls out of it under dead-stick gravity, spinning through the crashing frame and the turn's
 drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe's way on
 (`wreck_half`) the whole way down - straight down instead when the two airframes went into each other
-(`wreck_collided`) - bursts again where it lands
-and lies there in the crashed frame until the next airframe rises (`wreck_draw`, drawing
-only - the loss is counted at once, and it is a separate function so the live draw pays
-nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). The enemy airframe's does the
-same on a timer of its own (`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts
-the next one up at once), through the same `wreck_draw` in its palette. Both sides' falls
+(`wreck_collided`) - and goes up where it hits: a second big explosion, and it is gone
+(`wreck_draw`, drawing only - the loss is counted at once, and it is a separate function so the
+live draw pays nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). One lost on the
+ground leaves no wreck. The enemy airframe's falls the same way on a timer of its own
+(`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts the next one up at once),
+through the same `wreck_draw` in its palette, but bursts small where it lands and lies there
+in the crashed frame for the rest of the timer. Both sides' falls
 and `heli_lost`/`foe_lost` are in bank 3. The last airframe of either side leaves no wreck: the field freezes
 as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to

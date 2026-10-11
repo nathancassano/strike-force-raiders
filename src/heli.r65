@@ -605,7 +605,10 @@ far fn heli_update(held: u16) {
 // leave a stale high bit and render the sprite 256 px away.
 far fn heli_draw() {
     if heli_dead > 0 {                    // lost: the wreck, until the next one rises
-        wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, HELI_RESPAWN - heli_dead);
+        // Only while it falls: it goes up where it hits (heli_wreck_tick).
+        if heli_wreck_y < HELI_Y_MAX {
+            wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, HELI_RESPAWN - heli_dead);
+        }
         return;
     }
 
@@ -750,7 +753,7 @@ far fn wreck_half(v: Q10) -> Q10 {
 }
 
 // heli_wreck_tick - a frame of the wreck's fall, while it is in the air:
-// dead-stick gravity down, and a burst where it hits.
+// dead-stick gravity down, and where it hits it goes up and is gone.
 far fn heli_wreck_tick() {
     if heli_wreck_vy < HELI_VY_MAX { heli_wreck_vy = heli_wreck_vy + HELI_GRAVITY; }
     heli_wreck_y = heli_wreck_y + ((heli_wreck_vy.0 as u16) << 2);
@@ -782,8 +785,10 @@ far fn heli_wreck_tick() {
     if heli_wreck_y >= HELI_Y_MAX {
         heli_wreck_y = HELI_Y_MAX;
         heli_wreck_vx = Q10(0);
+        // It goes up where it hits: a second big explosion, and the wreck
+        // is gone (heli_draw draws it only in the air).
         sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, heli_wreck_x);
-        fx_spawn(FX_SMALL, heli_wreck_x, GROUND_Y - 16);
+        fx_spawn(FX_BIG, heli_wreck_x, GROUND_Y - 16);
     }
 }
 
