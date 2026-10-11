@@ -89,9 +89,9 @@ def test_a_bombed_van_stops_jamming_the_radar(snes):
     # where it is final.
     snes.until("radar_blank")
     assert snes.u16("radar_jam") == 14
-    snes.write("airframes__x_px", v.units__x_px.u16[8] - 20, 2)
+    snes.write("airframes__x_px", snes.raw("units__x_px").u16[8] - 20, 2)   # where it is now
     snes.write("airframes__vx", 0, 2)
-    snes.a(1).wait(60)
+    snes.a(3).wait(60)          # stopped mid-frame: a one-frame press can miss the pad read
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[8] == FREE
     snes.until("radar_blank")
