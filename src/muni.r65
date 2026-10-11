@@ -159,6 +159,7 @@ fn muni_move_x(i: u16, v: Q10) {
 far fn muni_update() {
     let mut up0: u8 = 0;
     let mut up1: u8 = 0;
+    let mut lock: u8 = 0;                 // a missile is homing on the player's airframe
     for i in 0..MUNI_MAX {
         let kind: u8 = muni_kind[i];
         if kind != MUNI_FREE {
@@ -182,6 +183,7 @@ far fn muni_update() {
                     if foe_dead > 0 || foe_rising != 0 { up = 0; }
                 } else {
                     if heli_dead > 0 || heli_rising != 0 { up = 0; }
+                    lock = up;
                 }
                 if up != 0 {
                     muni_vx[i] = MISSILE_SPEED;
@@ -233,6 +235,11 @@ far fn muni_update() {
     }
     muni_up[0] = up0;
     muni_up[1] = up1;
+    // The cockpit's alarm while one is locked on, hindstrike's every 32
+    // frames; centred - it is the airframe's, not the missile's.
+    if lock != 0 && (frames_loop & 31) == 0 {
+        sfx_play(SFX_CHN_WARN, SFX_MISSILE_WARNING, 127, 128);
+    }
 }
 
 // muni_draw - place the live munitions, camera-relative, into the OAM slots

@@ -100,9 +100,10 @@ def test_unit_budget(state):
     (src/fx.r65) cost one more (2954): their pool is skipped from main
     while empty - called idle every frame it cost ten. A bomb landing on a
     vehicle now goes off rather than vanishing on its roof, which is a
-    different battle at the same ratio (3662/2953, from 3663/2954).
+    different battle at the same ratio (3662/2953, from 3663/2954). The
+    missile alarm's per-frame check costs two ticks (3663/2951).
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3662
-    assert v.frames_loop == 2953
+    assert v.frames_nmi == 3663
+    assert v.frames_loop == 2951

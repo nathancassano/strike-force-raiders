@@ -606,7 +606,9 @@ one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the 
 (`SFX_PLAYER_GUN1`), the enemy airframe's and the turrets' (`SFX_ENEMY_GUN`), tank shells
 (`SFX_ENEMY_CANNON`), a bomb going off or a vehicle destroyed (`SFX_EXPLODE_1`), a lost
 airframe of either side or a turret or bunker falling (`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
-or `SFX_ENEMY_MISSILE` by its side), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
+or `SFX_ENEMY_MISSILE` by its side), the missile alarm (`SFX_MISSILE_WARNING`, centred, every 32
+frames while a missile homes on the player's airframe - `muni_update`, on the loss channel as
+`SFX_CHN_WARN`, so a hit cuts it), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
 every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `heli_update`; 19 in the
 air, 11 idling on a deck - a fifth of where it started, which ran over everything - jittered by 1
 from the frame count, never `rand()`). Its four effects are pitched down a fourth, B-4 to F#4, by
