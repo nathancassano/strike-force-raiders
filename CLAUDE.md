@@ -206,7 +206,7 @@ carry the bit as well, so an airframe rising out of it at OBJ priority 2 is behi
 in front of the mountains.
 
 **CGRAM**: BG1 and BG2 draw 16-colour palettes from 0-127, and BG3's eight 4-colour ones are the
-first 32 of those. So the HUD keeps 0-31 (CGRAM 0, its navy, is also the backdrop - the sky),
+first 32 of those. So the HUD keeps 0-31 (CGRAM 0 is also the backdrop - the sky, #3d9aec, the clouds' art drawn against it),
 the ground is palette 2 (32-47), the clouds 3 (48-63), the mountains 4 (64-79), 5-7 are free,
 and sprites get 128-255. Every 4bpp sheet is one palette, drawn as palette 0 in its bitmap and
 moved up by `tools/tilemap_attr.py --pal` in the Makefile; `CGRAM_GROUND`/`CGRAM_SKY`/

@@ -13,7 +13,7 @@ def test_boot(snes, tmp_path):
     """
     boot(snes)
     read_snapshot(snes)
-    assert screen_colour(snes, tmp_path, (33, 49, 115)) >= 40, "the sky dominates the frame"
+    assert screen_colour(snes, tmp_path, (57, 156, 239)) >= 40, "the sky dominates the frame"
 
 
 # ---- Phase 2 - scrolling battlefield ----------------------------------------
