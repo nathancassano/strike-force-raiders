@@ -62,6 +62,10 @@ const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
 const HELI_TILE_TURN_34:     u8 = 32;
 const HELI_TILE_TURN_HEAD:   u8 = 36;
 const HELI_TILE_TURN_SLIGHT: u8 = 40;
+// The wreck, in each row's last four columns: falling out of the air
+// after a loss, then down on the ground until the next airframe rises.
+const HELI_TILE_CRASHING:    u8 = 12;
+const HELI_TILE_CRASHED:     u8 = 44;
 const HELI_TURN_HOLD:        u8 = 3;      // frames per drawing
 const HELI_TURN_STEPS:       u8 = 5 * 3;  // the whole swing
 // The airframe has a sheet of its own (assets/src/heli.bmp, drawn by
@@ -153,6 +157,11 @@ far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
 #[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
 #[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized at the loss
 #[lowram] static mut heli_wreck_x:  u16;  // where it was lost: the camera holds there
+#[lowram] static mut heli_wreck_y:  u16;  // the wreck's top, 8.8: falls to HELI_Y_MAX
+#[lowram] static mut heli_wreck_vy: Q10;
+#[lowram] static mut heli_wreck_vx: Q10;   // the way on it had, burning off as it falls
+#[lowram] static mut heli_wreck_sub: u8;   // 1/256 px of heli_wreck_x
+#[lowram] static mut heli_wreck_face: u8;
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
 // airframe is lost - a life goes (order.r65's heli_lives) and it returns
@@ -206,26 +215,6 @@ far fn heli_init() {
     heli_dead = 0;
     heli_rising = 0;
     heli_cam_step = 0;
-}
-
-// heli_lost - the airframe is gone. The next one starts from the pad
-// with a full load; the last one is the match. High enough up, one of the
-// men aboard bails out as a paratrooper; the rest go with it.
-far fn heli_lost() {
-    heli_wreck_x = heli_x_px + (HELI_W >> 1);
-    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_wreck_x);
-    fx_burst(FX_BIG, heli_wreck_x, heli_y >> 8);
-    if heli_men > 0 && heli_y <= HELI_Y_BAIL {
-        para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
-    }
-    heli_lives = heli_lives - 1;
-    if heli_lives == 0 {
-        game_over(GAME_LOST);
-    } else {
-        heli_init();
-        heli_dead = HELI_RESPAWN;
-        heli_cam_step = div16(camera_x, HELI_RESPAWN - HELI_LOSS_HOLD) + 1;
-    }
 }
 
 // heli_collide - enemy rounds against the airframe's box, and the
@@ -485,6 +474,9 @@ far fn heli_update(held: u16) {
             heli_rising = 1;
             heli_y = GROUND_Y << 8;
         }
+        // The wreck falls (heli_wreck_tick). Drawing only: the loss has
+        // already been counted.
+        if heli_wreck_y < HELI_Y_MAX { heli_wreck_tick(); }
         // Held on the wreck while it goes up (camera_update follows the
         // focus too, so the focus stays there), then home in what is left.
         if heli_dead >= HELI_RESPAWN - HELI_LOSS_HOLD {
@@ -612,7 +604,10 @@ far fn heli_update(held: u16) {
 // so both cells go through set_full!, which writes the 9th X bit. set! would
 // leave a stale high bit and render the sprite 256 px away.
 far fn heli_draw() {
-    if heli_dead > 0 { return; }          // no slots taken; oam_end parks them
+    if heli_dead > 0 {                    // lost: the wreck, until the next one rises
+        wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR);
+        return;
+    }
 
     // Tilt comes from speed along the nose, not from the sign of vx.
     // Facing left sets the hflip bit, which already mirrors the lean, so
@@ -668,3 +663,105 @@ far fn heli_draw() {
         oam.set_size!(r as u8, 1);
     }
 }
+
+// wreck_draw - a lost airframe where it fell, either side's (foe_draw
+// passes the enemy's palette in *base*): the crashing frame while it
+// drops, the crashed one on the ground. *cx* is its centre, *y* its top
+// in 8.8. The camera leaves it behind, so it is culled off the screen -
+// the 9-bit X wrap would put a far one back on. Its own function, so the
+// live draws pay nothing for it.
+fn wreck_draw(cx: u16, y: u16, face: u8, base: u16) {
+    let d: u16 = cx - (HELI_W >> 1) - camera_x;
+    if d >= 256 && d < 0xFFE0 { return; }
+    let mut tile: u8 = HELI_TILE_CRASHED;
+    if y < HELI_Y_MAX { tile = HELI_TILE_CRASHING; }
+    let sx: u16 = d & 0x01FF;
+    let sy: u8 = (y >> 8) as u8;
+    let mut attr: u16 = base;
+    let mut near: u8 = tile;
+    let mut far_: u8 = tile + 2;
+    if face != 0 {
+        attr = base | 0x4000;             // OAM hflip, the cells swapped
+        near = tile + 2;
+        far_ = tile;
+    }
+    let l: u16 = oam_take();
+    let r: u16 = oam_take();
+    if r < OAM_SLOTS {
+        oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
+        oam.set_size!(l as u8, 1);
+        oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
+        oam.set_size!(r as u8, 1);
+    }
+}
+
+// Bank 3: the loss and the wreck's fall run a frame at a time at most,
+// and bank 0 is full.
+#[bank(3)]
+
+// heli_lost - the airframe is gone. The next one starts from the pad
+// with a full load; the last one is the match. High enough up, one of the
+// men aboard bails out as a paratrooper; the rest go with it.
+far fn heli_lost() {
+    heli_wreck_x = heli_x_px + (HELI_W >> 1);
+    heli_wreck_y = heli_y;
+    heli_wreck_vy = Q10(0);
+    if heli_vy > Q10(0) { heli_wreck_vy = heli_vy; }
+    heli_wreck_face = heli_face_left;
+    heli_wreck_vx = heli_vx;
+    heli_wreck_sub = 0;
+    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_wreck_x);
+    fx_burst(FX_BIG, heli_wreck_x, heli_y >> 8);
+    if heli_men > 0 && heli_y <= HELI_Y_BAIL {
+        para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
+    }
+    heli_lives = heli_lives - 1;
+    if heli_lives == 0 {
+        game_over(GAME_LOST);
+    } else {
+        heli_init();
+        heli_dead = HELI_RESPAWN;
+        heli_cam_step = div16(camera_x, HELI_RESPAWN - HELI_LOSS_HOLD) + 1;
+    }
+}
+
+// heli_wreck_tick - a frame of the wreck's fall, while it is in the air:
+// dead-stick gravity down, and a burst where it hits.
+far fn heli_wreck_tick() {
+    if heli_wreck_vy < HELI_VY_MAX { heli_wreck_vy = heli_wreck_vy + HELI_GRAVITY; }
+    heli_wreck_y = heli_wreck_y + ((heli_wreck_vy.0 as u16) << 2);
+    // The airframe's way on burns off as it falls - the dead stick's
+    // decay - and stops at the world's edges and on the ground.
+    heli_wreck_vx = approach(heli_wreck_vx, Q10(0), HELI_ACC);
+    let d: i16 = heli_wreck_vx.0 << 2;      // 1/64 -> 1/256
+    if d >= 0 {
+        let m: u16 = d as u16;
+        let s: u16 = (heli_wreck_sub as u16) + (m & 0x00FF);
+        heli_wreck_sub = s as u8;
+        heli_wreck_x = heli_wreck_x + (m >> 8) + (s >> 8);
+        if heli_wreck_x > WORLD_W - (HELI_W >> 1) {
+            heli_wreck_x = WORLD_W - (HELI_W >> 1);
+            heli_wreck_vx = Q10(0);
+        }
+    } else {
+        let m: u16 = (0 - d) as u16;
+        let mut whole: u16 = m >> 8;
+        let frac: u16 = m & 0x00FF;
+        if (heli_wreck_sub as u16) < frac { whole = whole + 1; }
+        heli_wreck_sub = heli_wreck_sub - (frac as u8);
+        if heli_wreck_x <= whole + (HELI_W >> 1) {
+            heli_wreck_x = HELI_W >> 1;
+            heli_wreck_vx = Q10(0);
+        } else {
+            heli_wreck_x = heli_wreck_x - whole;
+        }
+    }
+    if heli_wreck_y >= HELI_Y_MAX {
+        heli_wreck_y = HELI_Y_MAX;
+        heli_wreck_vx = Q10(0);
+        sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, heli_wreck_x);
+        fx_spawn(FX_SMALL, heli_wreck_x, GROUND_Y - 16);
+    }
+}
+
+#[bank(0)]

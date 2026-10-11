@@ -25,6 +25,11 @@ would put a cell's lower half in the wrong place. Two rows of cells:
     row 2   the turn frames: three-quarter view at cols 0-3, head-on at
             cols 4-7, slight turn at cols 8-11 (tiles 32, 36, 40)
 
+and the wreck in each row's last four columns: crashing (falling after a
+loss) at row 0 cols 12-15, crashed (down on the ground) at row 2 cols
+12-15 (tiles 12, 44). The sheet is drawn art now (ec7833d), which this
+tool would overwrite; the wreck frames were added to it by hand.
+
 Palette indices: 1 black, 2 dark green, 3 green, 4 canopy blue, 5 light
 grey, 6 orange. 0 is transparent. The order matches obj.bmp's first seven
 entries, so the same two greens carry the owner's colour.

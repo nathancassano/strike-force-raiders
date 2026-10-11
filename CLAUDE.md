@@ -262,7 +262,9 @@ saved 8-bit or 4-bit as the editor likes (`fold.py` and bmp2chr take either).
 
 Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a munition 8x8.
 **There are two sprite sheets.** `obj.bmp` holds the units, the buildings, the decks and the
-munitions at $4000 (tiles 0-255); `heli.bmp` holds the two airframes' six frames alone, loaded
+munitions at $4000 (tiles 0-255); `heli.bmp` holds the two airframes' frames alone - three
+flight, three turn, and the wreck's two in each row's last four columns, crashing (tile 12) and
+crashed (44) - loaded
 into the second OBJ name block at $5000, so its tile numbers are 256 + the sheet's and the 9th
 tile bit (`HELI_PAGE`) rides in the attribute word. It has its own CGRAM palette as well
 (`OBJ_PAL_HELI`, palette 3, and palette 4 for the enemy's), so the airframes can be redrawn or
@@ -371,7 +373,17 @@ The match (`src/game.r65`) ends two ways only: a van of either side inside the o
 player's last helicopter (`heli_lost`). Any other loss hides the airframe for `HELI_RESPAWN`
 (120) frames while `camera_pan` brings the view home at a pace sized at the loss
 (`camera_x / 72 + 1`, so the far end of the world arrives inside the delay) - after holding
-for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out; the next
+for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out. The wreck
+falls out of it in the crashing frame under dead-stick gravity, carrying the airframe's way on
+until the dead stick's decay (`HELI_ACC`) burns it off - straight down instead when the two
+airframes went into each other (`wreck_collided`) - bursts again where it lands
+and lies there in the crashed frame until the next airframe rises (`heli_draw_wreck`, drawing
+only - the loss is counted at once, and it is a separate function so the live draw pays
+nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). The enemy airframe's does the
+same on a timer of its own (`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts
+the next one up at once), through the same `wreck_draw` in its palette. Both sides' falls
+and `heli_lost`/`foe_lost` are in bank 3. The last airframe of either side leaves no wreck: the field freezes
+as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
