@@ -131,11 +131,12 @@ const FOE_TGT_NONE:   u8 = 0xFF;
 #[lowram] static mut foe_landed: u8;
 #[lowram] static mut foe_dead:  u8;       // frames until the next airframe; 0 = flying
 #[lowram] static mut foe_rising: u8;
-// The wreck, as the player's (heli.r65): it falls and lies where it was
-// lost for FOE_WRECK_TIME, on a timer of its own, since a row with no
-// regen_time puts the next airframe up at once.
+// The wreck, as the player's (heli.r65): it falls, and goes up and is
+// gone where it hits - on a timer of its own, since a row with no
+// regen_time puts the next airframe up at once. FOE_WRECK_TIME is only a
+// cap, and the spin's clock: a fall takes 45 frames at most.
 const FOE_WRECK_TIME: u8 = 120;
-#[lowram] static mut foe_wreck_t:    u8;     // frames left to show it; 0 = none
+#[lowram] static mut foe_wreck_t:    u8;     // frames left to show it; 0 = none, or down
 #[lowram] static mut foe_wreck_x:    u16;    // centre
 #[lowram] static mut foe_wreck_y:    u16;    // top, 8.8
 #[lowram] static mut foe_wreck_vy:   Q10;
@@ -1042,7 +1043,10 @@ far fn foe_lost() {
     if foe_lives == 0 {
         game_over(GAME_WON);              // the field freezes as it stands, the player's way
     } else {
-        foe_wreck_t = FOE_WRECK_TIME;
+        // A wreck only when it was lost in the air: one on the ground is
+        // gone in its explosion.
+        foe_wreck_t = 0;
+        if foe_y < HELI_Y_MAX { foe_wreck_t = FOE_WRECK_TIME; }
         foe_wreck_x = foe_x_px + (HELI_W >> 1);
         foe_wreck_y = foe_y;
         foe_wreck_vy = Q10(0);
@@ -1061,10 +1065,11 @@ far fn foe_lost() {
     }
 }
 
-// foe_wreck_tick - the wreck's fall, a copy of heli_update's: dead-stick
-// gravity to the ground, a burst where it hits, then it lies there until
-// its time is up. Drawing only - the loss is already counted. Bank 3:
-// bank 0 has no room for it, and only the draw needs to be there.
+// foe_wreck_tick - the wreck's fall, a copy of heli_wreck_tick's: dead-
+// stick gravity to the ground, and where it hits it goes up in a big
+// explosion and is gone (foe_wreck_t to 0, which ends the draw). Drawing
+// only - the loss is already counted. Bank 3: bank 0 has no room for it,
+// and only the draw needs to be there.
 far fn foe_wreck_tick() {
     foe_wreck_t = foe_wreck_t - 1;
     if foe_wreck_y < HELI_Y_MAX {
@@ -1098,8 +1103,9 @@ far fn foe_wreck_tick() {
         if foe_wreck_y >= HELI_Y_MAX {
             foe_wreck_y = HELI_Y_MAX;
             foe_wreck_vx = Q10(0);
+            foe_wreck_t = 0;
             sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, foe_wreck_x);
-            fx_spawn(FX_SMALL, foe_wreck_x, GROUND_Y - 16);
+            fx_spawn(FX_BIG, foe_wreck_x, GROUND_Y - 16);
         }
     }
 }

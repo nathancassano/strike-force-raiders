@@ -384,8 +384,9 @@ drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe'
 live draw pays nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). One lost on the
 ground leaves no wreck. The enemy airframe's falls the same way on a timer of its own
 (`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts the next one up at once),
-through the same `wreck_draw` in its palette, but bursts small where it lands and lies there
-in the crashed frame for the rest of the timer. Both sides' falls
+through the same `wreck_draw` in its palette, and goes up and is gone where it hits just the
+same. Nothing draws the crashed frame (`HELI_TILE_CRASHED`, tile 44) now; `wreck_draw` keeps
+the case. Both sides' falls
 and `heli_lost`/`foe_lost` are in bank 3. The last airframe of either side leaves no wreck: the field freezes
 as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
