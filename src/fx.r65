@@ -7,6 +7,10 @@
 // handler. Smoke drifts up as it goes, as its smoke_2d does. There are
 // three: the big explosion (a bomb, an airframe, a building falling), the
 // small one (a vehicle destroyed) and the smoke ring left after either.
+// A fourth is not hindstrike's: a man down (FX_MAN, fx_man), the unit
+// sheet's UNIT_TILE_MAN_DOWN held one long frame where he fell, in his
+// side's palette and facing - so a dead man stays a moment without the
+// unit pool keeping him.
 //
 // The sheet sits in the second OBJ name block straight after the airframe
 // sheet (video.r65), so its tiles are FX_TILE0 on with HELI_PAGE set, and
@@ -19,11 +23,12 @@
 const FX_BIG:   u8 = 0;            // fx.bmp row 0: SPR_EXPLODE_1, 8 frames
 const FX_SMALL: u8 = 1;            // row 1: SPR_EXPLODE_2, 4 frames
 const FX_SMOKE: u8 = 2;            // row 2: SPR_SMOKE, 8 frames
+const FX_MAN:   u8 = 3;            // obj.bmp's UNIT_TILE_MAN_DOWN, 1 frame
 const FX_FREE:  u8 = 0xFF;
-static FX_FRAMES: [u8; 3] = [8, 4, 8];
+static FX_FRAMES: [u8; 4] = [8, 4, 8, 1];
+static FX_RATE:   [u8; 4] = [6, 6, 6, 120];  // ticks a frame: hindstrike's 6; a man lies two seconds
 
 const FX_MAX:  u16 = 8;            // effects alive at once; a ninth takes the oldest slot
-const FX_RATE: u8  = 6;            // ticks a frame, hindstrike's
 
 const CGRAM_OBJ_FX: u16 = 208;     // OBJ palette 5
 const OBJ_PAL_FX:   u16 = 0x0A00;
@@ -35,7 +40,7 @@ const FX_ATTR:      u16 = 0x3000 | HELI_PAGE | OBJ_PAL_FX;   // priority 3
 #[lowram] static mut fx_tick:  [u8; 8];
 #[lowram] static mut fx_y:     [u8; 8];     // top of the sprite, screen y
 #[lowram] static mut fx_x:     [u16; 8];    // left of the sprite, world x
-#[lowram] static mut fx_flip:  [u16; 8];    // the attribute's hflip bit, or 0
+#[lowram] static mut fx_attr:  [u16; 8];    // the first frame's tile and attribute
 #[lowram] static mut fx_live:  u8;          // how many are running: main calls nothing while 0
 #[lowram] static mut fx_next:  u16;         // the slot the next one takes
 
@@ -45,10 +50,11 @@ far fn fx_init() {
     fx_next = 0;
 }
 
-// fx_spawn - start effect *kind* centred on world x *x*, its top at screen
-// y *y*. Slots are taken in turn, so with all eight running the oldest
-// gives way - it is the nearest to finishing anyway.
-far fn fx_spawn(kind: u8, x: u16, y: u16) {
+// fx_put - start effect *kind* centred on world x *x*, its top at screen
+// y *y*, its first frame *attr* (tile and attribute). Slots are taken in
+// turn, so with all eight running the oldest gives way - it is the nearest
+// to finishing anyway.
+fn fx_put(kind: u8, x: u16, y: u16, attr: u16) {
     let i: u16 = fx_next;
     fx_next = (i + 1) & (FX_MAX - 1);
     if fx_kind[i] == FX_FREE { fx_live = fx_live + 1; }
@@ -59,7 +65,23 @@ far fn fx_spawn(kind: u8, x: u16, y: u16) {
     if x > 8 { left = x - 8; }
     fx_x[i] = left;
     fx_y[i] = y as u8;
-    fx_flip[i] = (frames_loop & 1) << 14;            // 0x4000 on odd frames
+    fx_attr[i] = attr;
+}
+
+// fx_spawn - one of fx.bmp's effects at *x*, *y*, as fx_put, flipped on
+// odd frames.
+far fn fx_spawn(kind: u8, x: u16, y: u16) {
+    let tile: u16 = FX_TILE0 + ((kind as u16) << 5);
+    fx_put(kind, x, y, tile | FX_ATTR | ((frames_loop & 1) << 14));
+}
+
+// fx_man - a man of *side* down where he fell, *x* his unit's x_px. He
+// stands in columns 2-7 of his cell and lies in 2-13, which mirrors onto
+// itself, so the one centre (x + 5) serves both sides.
+far fn fx_man(x: u16, side: u8) {
+    let mut attr: u16 = (UNIT_TILE_MAN_DOWN as u16) | UNIT_ATTR;
+    if side == SIDE_ENEMY { attr = attr | 0x4000 | OBJ_PAL_ENEMY; }
+    fx_put(FX_MAN, x + 5, UNIT_BASE_Y, attr);
 }
 
 // fx_burst - an explosion with smoke after it, at the centre *x* and top
@@ -69,7 +91,7 @@ far fn fx_burst(kind: u8, x: u16, y: u16) {
     fx_spawn(FX_SMOKE, x, y);
 }
 
-// fx_update - a tick: each effect a frame on every FX_RATE, smoke rising a
+// fx_update - a tick: each effect a frame on every FX_RATE of its kind, smoke rising a
 // pixel every other tick, an effect at the end of its row retired.
 far fn fx_update() {
     for i in 0..FX_MAX {
@@ -77,7 +99,7 @@ far fn fx_update() {
         if k != FX_FREE {
             let t: u8 = fx_tick[i] + 1;
             if k == FX_SMOKE && (t & 1) == 0 && fx_y[i] > 16 { fx_y[i] = fx_y[i] - 1; }
-            if t >= FX_RATE {
+            if t >= FX_RATE[k as u16] {
                 fx_tick[i] = 0;
                 let f: u8 = fx_frame[i] + 1;
                 if f >= FX_FRAMES[k as u16] {
@@ -107,8 +129,8 @@ far fn fx_draw() {
             if sx < 256 || sx >= 0xFFF0 {
                 let slot: u16 = oam_take();
                 if slot < OAM_SLOTS {
-                    let tile: u16 = FX_TILE0 + ((k as u16) << 5) + ((fx_frame[i] as u16) << 1);
-                    oam.set_full!(slot, sx & 0x01FF, fx_y[i], tile | FX_ATTR | fx_flip[i]);
+                    let tile: u16 = fx_attr[i] + ((fx_frame[i] as u16) << 1);
+                    oam.set_full!(slot, sx & 0x01FF, fx_y[i], tile);
                     oam.set_size!(slot, 1);        // 16x16
                 }
             }

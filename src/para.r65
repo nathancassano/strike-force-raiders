@@ -132,7 +132,8 @@ far fn para_update() {
             if y >= PARA_GROUND_Y {
                 para_y[i] = PARA_GROUND_Y;
                 if st == PARA_FALLING {
-                    para_state[i] = PARA_FREE;      // splat
+                    fx_man(para_x[i], para_owner[i]);   // splat
+                    para_state[i] = PARA_FREE;
                     para_live = para_live - 1;
                 } else {
                     if struct_bank_rob_at(para_x[i], para_owner[i]) != 0 {

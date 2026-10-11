@@ -282,6 +282,8 @@ tiles on a scanline, not four, which is what keeps eight bunched tanks and a bun
 the PPU's 34 (`unit_draw_one`; the sheet's fourth tile column of every vehicle is blank).
 A marching man (infantry or engineer) alternates his standing frame with a stride frame
 (`UNIT_TILE_MAN_WALK`, tile 74) every 4 px, picked from `x_px & 4`: no state, and a halted man stands.
+A man killed - shot, bombed, shelled, run over or a failed chute - lies where he fell for two
+seconds (`UNIT_TILE_MAN_DOWN`, tile 76), drawn by `fx` rather than kept in the unit pool.
 The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
 channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
 
@@ -371,8 +373,10 @@ hindstrike's `gfx/sprites1.bmp` with its own 16 colours (OBJ palette 5, CGRAM 20
 loads straight after `heli`'s in the second name block, so its attribute carries `HELI_PAGE`.
 A bomb on the ground is a big blast; a lost airframe and a falling turret or bunker a big one
 with a smoke ring after it (`fx_burst`); a destroyed tank, van or launcher a small one with
-smoke. Eight slots, taken in turn, so a ninth replaces the oldest; the flip is from the frame
-count, never `rand()`. `main` calls `fx_update`/`fx_draw` only while `fx_live` is set - called
+smoke; a man killed, `FX_MAN` - not hindstrike's: `obj.bmp`'s man down held one 120-tick frame
+in his side's palette and facing (`fx_man`), each slot carrying its own tile and attribute
+(`fx_attr`). Eight slots, taken in turn, so a ninth replaces the oldest; an explosion's flip is
+from the frame count, never `rand()`. `main` calls `fx_update`/`fx_draw` only while `fx_live` is set - called
 idle every frame they cost `unit_budget` ten ticks.
 
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base

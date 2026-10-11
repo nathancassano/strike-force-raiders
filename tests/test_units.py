@@ -78,6 +78,20 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     assert v.units__x_px.u16[4] == 4941
 
 
+def test_a_man_killed_lies_where_he_fell(snes):
+    """A bomb on the quiet row's first infantryman leaves him down for two
+    seconds: an FX_MAN effect (fx.r65), tile 76 in the enemy palette and
+    mirrored, a hair east of where he stood (his centre, x + 5, less 8).
+    """
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    snes.write("airframes__x_px", snes.raw("units__x_px").u16[0] - 40, 2)
+    snes.wait(90).a(4).wait(30)
+    v = read_snapshot(snes)
+    assert v.fx_kind.u8[3] == 3
+    assert v.fx_attr.u16[3] == 0x724C          # hflip, priority 3, enemy palette, tile 76
+    assert v.fx_x.u16[3] == 7578
+
+
 def test_unit_budget(state):
     """Frame budget. The NMI counts real frames and the loop counts ticks it
     finished; a full field must still keep up.
