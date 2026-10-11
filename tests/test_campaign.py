@@ -34,24 +34,27 @@ def test_mission_first(snes):
 
 def test_power_on_plays_the_intro_then_the_title(snes):
     """A real power-on - no test flags - plays the BubbleZap intro
-    (intro.r65) after the sound driver's upload: its 640 frames, plus the
-    upload of the logo, before the title page goes up.
+    (intro.r65) straight away, the sound driver uploading meanwhile: its
+    640 frames, plus the upload of the logo, before the title page goes up.
     """
     snes.until("intro_show", max_frames=400)
     start = snes.frame
+    assert start < 30                     # no black screen for the upload first
     snes.until("screen_show", max_frames=800)
     assert 640 <= snes.frame - start < 680
 
 
 def test_start_skips_the_intro(snes):
-    """Start, once the intro has faded in, skips to its fade-out: the title
-    is up within its last 16 frames and a few more.
+    """Start, once the intro has faded in, skips to its fade-out. The sound
+    driver uploads while the logo is up (sound.r65's spc_upload_step), so
+    what is left of it - most of it, a second in - goes up after, before
+    the title: 222 frames from the intro's start, against its 640.
     """
     snes.until("intro_show", max_frames=400)
     start = snes.frame
     snes.wait(60).press("start", frames=4)
-    snes.until("screen_show", max_frames=100)
-    assert snes.frame - start < 120
+    snes.until("screen_show", max_frames=400)
+    assert snes.frame - start < 240
 
 
 def test_a_campaign_opens_on_the_title(snes):

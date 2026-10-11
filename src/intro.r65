@@ -1,8 +1,9 @@
 // intro - the BubbleZap logo at power-on: hindstrike's screen_bubblezap,
 // ported from ~/hindstrike.
 //
-// About ten seconds of Mode 7, run from boot_load after the sound driver's
-// upload and before video_load, which has to follow: the logo's map and
+// About ten seconds of Mode 7, run from boot_load while the sound driver
+// uploads - a slice of it each frame - and before video_load, which has to
+// follow: the logo's map and
 // tiles fill VRAM's first 16K words. The logo spins in from far away -
 // sixteen steps a turn, the scale falling by a step that shrinks as it
 // comes - flashes white as it fills the screen, then zooms back out to 1:1
@@ -42,6 +43,9 @@ const INTRO_MAP_COL: u16 = 49;            // the strip's place in the 128x128 ma
 const INTRO_MAP_ROW: u16 = 62;            // its logo centred on the plane's (512, 512)
 const INTRO_MAP_W:   u16 = 29;
 const INTRO_MAP_H:   u16 = 4;
+// The sound driver's bytes sent a frame while the logo is up: about a third
+// of a frame of handshakes, which has the 56K up in ~440 of its 640.
+const SPC_INTRO_BYTES: u16 = 128;
 
 // sin(k/16 turn) x 127, k = 0..15, as the signed byte M7B takes.
 static INTRO_SIN: [u8; 16] = [0, 49, 90, 117, 127, 117, 90, 49,
@@ -181,6 +185,10 @@ far fn intro_show() {
             angle = 0;
             if scale < 256 { scale = scale + 2; }
         }
+
+        // A slice of the sound driver's upload (sound.r65): the frame's
+        // other work is done, and the IPL waits between bytes.
+        let _: u8 = spc_upload_step(SPC_INTRO_BYTES);
 
         pad_read_ports();
         if frame > INTRO_FADE && frame < INTRO_FRAMES - INTRO_FADE {

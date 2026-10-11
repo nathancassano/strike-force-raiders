@@ -109,8 +109,8 @@ then `BOOT_SETTLE` (13) frames, which is where a mission boot stood when the sui
 (main at 17, inputs from 30). So the boot can cost what it likes - the sound driver's upload is
 ~156 frames - without moving a case. A boot of the campaign proper (no mission) also sets
 `BOOT_NO_INTRO` in `boot_pick`, skipping the power-on BubbleZap intro, which `test_campaign.py`
-covers on its own. `tools/mkmovie.py` cannot sync or skip, so its `BOOT_FRAMES` idle (843) has to
-cover the upload and the intro - main is at 834 - and must grow with them.
+covers on its own. `tools/mkmovie.py` cannot sync or skip, so its `BOOT_FRAMES` idle (686) has to
+cover the intro, the upload running under it - main is at 677 - and must grow with them.
 
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
 `mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
@@ -433,7 +433,8 @@ tests.
 **The power-on intro** (`src/intro.r65`, bank 2) is hindstrike's `screen_bubblezap`: the
 BubbleZap logo in Mode 7, spinning in from far away, flashing white, settling to 1:1, a shine
 sweeping across it, then a fade - 640 frames, Start skipping to the fade. It runs from
-`boot_load` after the sound upload and before `video_load` (its map and 8bpp tiles fill VRAM's
+`boot_load` while the sound driver uploads - `spc_upload_step`, 128 bytes a frame, the 56K up by
+~frame 440; what a skip leaves goes up after - and before `video_load` (its map and 8bpp tiles fill VRAM's
 first 16K words; `clear_vram` follows), only on a power-on into the campaign proper. The art is
 `assets/src/bubblezap.tilemap.bmp` - the logo's strip of the 1024x1024 plane, a blank column first
 so tile 0 is blank - converted `-m7` (bank 4). Two changes from the original: no DSP-1 here, so
@@ -651,9 +652,12 @@ SPC700 driver with every instrument and effect built in, `music_N.bin` one tune 
 `hindstrike.gsm` the GSS project they were exported from (`sounds.asm` lists the names, ported by
 hand into `SFX_*`/`MUS_*` - re-export and re-port them together).
 
-- `spc_init()` uploads the driver through the SPC700's boot loader (IPL) at boot, first thing in
-  `boot_load`: 56K a byte at a time is **~156 frames of black screen** at power-on (the IPL
-  handshake, not the CPU loop, is the limit; a faster custom loader would be the fix). A LoROM
+- `spc_init()` uploads the driver through the SPC700's boot loader (IPL), 56K a byte at a time,
+  ~156 frames (the IPL
+  handshake, not the CPU loop, is the limit). The IPL waits as long as it is left between bytes,
+  so the upload is in pieces (`spc_upload_begin`, `spc_upload_step(n)`, `spc_upload_finish`):
+  on a power-on into the campaign it goes up under the intro, a slice a frame, rather than on a
+  black screen first; a test boot, which skips the intro, sends it in one go. A LoROM
   bank is 32K, so the Makefile cuts `spc700.bin` into `build/sound/spc700_{1,2}.bin` for banks 5
   and 6, uploaded as two loads with `SCMD_LOAD` between, as hindstrike does.
 - `sfx_play(chn, sfx, vol, pan)` - an effect on a driver channel (0-7), volume 0-127, pan 0-255

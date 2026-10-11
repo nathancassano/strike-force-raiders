@@ -28,10 +28,10 @@ COLS = {n: i for i, n in enumerate(NAMES)}
 LETTER = 'ABXYLRSTUDLR'
 
 IDLE = '|..|' + '.' * 12
-BOOT_FRAMES = 843     # let snes_init and boot_load settle before any input: the
-                      # sound driver's upload and then the BubbleZap intro's 640
-                      # frames put main at frame 834, and a movie cannot sync on
-                      # it, or skip the intro, as tests/shared.py's boot() does
+BOOT_FRAMES = 686     # let snes_init and boot_load settle before any input: the
+                      # BubbleZap intro's 640 frames, the sound driver uploading
+                      # meanwhile, put main at frame 677, and a movie cannot sync
+                      # on it, or skip the intro, as tests/shared.py's boot() does
 TAIL_FRAMES = 60      # keep emulating past the last action
 
 

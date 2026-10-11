@@ -96,20 +96,20 @@ fn init_reset() -> ! {
 fn boot_load() {
     INIDISP = FORCE_BLANK;
 
-    // The sound driver first: its upload is most of a second, and the
-    // suite's boot() measures it from here to video_load and allows for it.
-    spc_init();
-    spc_global_volume(127, 255);
-    spc_stereo(1);              // effects are panned by where they are on screen
-
-    // The BubbleZap logo (intro.r65), before the game's VRAM goes up: it
-    // runs its own Mode 7 screen and leaves VRAM to be cleared. Only on a
-    // power-on into the campaign proper.
+    // The sound driver's upload is most of a second. On a power-on into the
+    // campaign proper the BubbleZap logo (intro.r65) is up meanwhile, a
+    // slice of the upload each frame; anything it leaves - Start skips it -
+    // and the whole upload otherwise go here. The logo runs its own Mode 7
+    // screen before the game's VRAM goes up, and leaves VRAM to be cleared.
+    spc_upload_begin();
     let pick: u8 = boot_pick;
     if (pick & (BOOT_DIRECT | BOOT_NO_INTRO)) == 0 && (pick & 0x3F) < MISSION_COUNT {
         intro_show();
         clear_vram();
     }
+    spc_upload_finish();
+    spc_global_volume(127, 255);
+    spc_stereo(1);              // effects are panned by where they are on screen
 
     video_load();
 

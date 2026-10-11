@@ -169,28 +169,106 @@ far fn spc_command(command: u16, param: u16) {
     }
 }
 
-// spc_init - upload the driver and start it. spc700.bin is its size (2
-// bytes) and then the code; a LoROM bank holds 32K, so the Makefile splits
-// the file there (SPC_DRIVER_1/2) and the code goes up in two loads, the
-// second after SCMD_LOAD - the first as far as the first half reaches, to
-// sound RAM $0200 on, the rest straight after it at $81FE - as hindstrike's
-// spc_init does. Boot-time: most of a second, in force blank, before the
-// NMI is on.
-far fn spc_init() {
-    let size: u16 = (SPC_DRIVER_1[0] as u16) | ((SPC_DRIVER_1[1] as u16) << 8);
-    spc_music_load_adr = (SPC_DRIVER_1[14] as u16) | ((SPC_DRIVER_1[15] as u16) << 8);
+// The driver's upload, in pieces. spc700.bin is its size (2 bytes) and
+// then the code; a LoROM bank holds 32K, so the Makefile splits the file
+// there (SPC_DRIVER_1/2) and the code goes up in two loads, the second
+// after SCMD_LOAD - the first as far as the first half reaches, to sound
+// RAM $0200 on, the rest straight after it at $81FE - as hindstrike's
+// spc_init does. The IPL takes a byte a handshake and waits as long as it
+// is left between them, so the upload can stop anywhere and go on later:
+// spc_upload_begin starts it, spc_upload_step sends some, and the intro
+// sends SPC_INTRO_BYTES a frame while the logo is up (intro.r65) instead
+// of the power-on spending ~156 frames on a black screen first.
+#[lowram] static mut spc_up_part: u8;    // 1 the first half, 2 the second, 0 done
+#[lowram] static mut spc_up_i:    u16;   // bytes of this half sent
+#[lowram] static mut spc_up_n:    u16;   // ... of how many
+#[lowram] static mut spc_up_size: u16;   // the whole driver's code
 
-    if size < SPC_PART1 {
-        spc_load_data(0x0200, size, &SPC_DRIVER_1[2] as far *u8);
+// spc_xfer_begin / spc_xfer_end - the IPL's handshakes either side of a
+// load's bytes: the destination, then the kick that runs the code at $0200
+// and the driver's all-clear.
+fn spc_xfer_begin(adr: u16) {
+    while APUIO0 != 0xAA {}
+    APUIO2 = adr as u8;
+    APUIO3 = (adr >> 8) as u8;
+    APUIO1 = 0x01;
+    APUIO0 = 0xCC;
+    while APUIO0 != 0xCC {}
+}
+
+fn spc_xfer_end(size: u16) {
+    let kick: u8 = (size as u8) + 1;    // the last counter, size - 1, plus 2
+    APUIO2 = 0x00;
+    APUIO3 = 0x02;                       // run from $0200
+    APUIO1 = 0x00;
+    APUIO0 = kick;
+    while APUIO0 != kick {}
+    while (APUIO0 | APUIO1 | APUIO2 | APUIO3) != 0 {}
+}
+
+far fn spc_upload_begin() {
+    spc_up_size = (SPC_DRIVER_1[0] as u16) | ((SPC_DRIVER_1[1] as u16) << 8);
+    spc_music_load_adr = (SPC_DRIVER_1[14] as u16) | ((SPC_DRIVER_1[15] as u16) << 8);
+    spc_up_n = spc_up_size;
+    if spc_up_n > SPC_PART1 { spc_up_n = SPC_PART1; }
+    spc_up_i = 0;
+    spc_up_part = 1;
+    spc_xfer_begin(0x0200);
+}
+
+// spc_upload_step - up to *budget* more bytes; at the end of a half, the
+// next half's start, or the driver's. 1 once the driver is running.
+far fn spc_upload_step(budget: u16) -> u8 {
+    if spc_up_part == 0 { return 1; }
+    let mut end: u16 = spc_up_n;
+    if spc_up_n - spc_up_i > budget { end = spc_up_i + budget; }
+    let mut i: u16 = spc_up_i;
+    if spc_up_part == 1 {
+        while i < end {
+            let k: u8 = i as u8;
+            APUIO1 = SPC_DRIVER_1[i + 2];   // the data first: port 0 is what it reads on
+            APUIO0 = k;
+            while APUIO0 != k {}
+            i = i + 1;
+        }
     } else {
-        spc_load_data(0x0200, SPC_PART1, &SPC_DRIVER_1[2] as far *u8);
+        while i < end {
+            let k: u8 = i as u8;
+            APUIO1 = SPC_DRIVER_2[i];
+            APUIO0 = k;
+            while APUIO0 != k {}
+            i = i + 1;
+        }
+    }
+    spc_up_i = i;
+    if i < spc_up_n { return 0; }
+
+    spc_xfer_end(spc_up_n);
+    if spc_up_part == 1 && spc_up_size > SPC_PART1 {
         spc_command(SCMD_LOAD as u16, 0);
-        spc_load_data(0x0200 + SPC_PART1, size - SPC_PART1, &SPC_DRIVER_2 as far *u8);
+        spc_xfer_begin(0x0200 + SPC_PART1);
+        spc_up_part = 2;
+        spc_up_n = spc_up_size - SPC_PART1;
+        spc_up_i = 0;
+        return 0;
     }
     spc_command(SCMD_INITIALIZE as u16, 0);
     music_now = MUS_NONE;
     sfx_mask = 0;
     sfx_next = 0;
+    spc_up_part = 0;
+    return 1;
+}
+
+// spc_upload_finish - the rest of the upload, all at once.
+far fn spc_upload_finish() {
+    while spc_upload_step(0xFFFF) == 0 {}
+}
+
+// spc_init - the whole upload, start to finish.
+far fn spc_init() {
+    spc_upload_begin();
+    spc_upload_finish();
 }
 
 // The code bytes the first half of spc700.bin holds: 32K less the header.
