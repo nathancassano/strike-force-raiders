@@ -374,7 +374,8 @@ player's last helicopter (`heli_lost`). Any other loss hides the airframe for `H
 (120) frames while `camera_pan` brings the view home at a pace sized at the loss
 (`camera_x / 72 + 1`, so the far end of the world arrives inside the delay) - after holding
 for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out. The wreck
-falls out of it in the crashing frame under dead-stick gravity, keeping half the airframe's way on
+falls out of it under dead-stick gravity, spinning through the crashing frame and the turn's
+drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe's way on
 (`wreck_half`) the whole way down - straight down instead when the two airframes went into each other
 (`wreck_collided`) - bursts again where it lands
 and lies there in the crashed frame until the next airframe rises (`wreck_draw`, drawing

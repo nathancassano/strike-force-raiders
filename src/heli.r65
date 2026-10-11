@@ -605,7 +605,7 @@ far fn heli_update(held: u16) {
 // leave a stale high bit and render the sprite 256 px away.
 far fn heli_draw() {
     if heli_dead > 0 {                    // lost: the wreck, until the next one rises
-        wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR);
+        wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, HELI_RESPAWN - heli_dead);
         return;
     }
 
@@ -664,23 +664,40 @@ far fn heli_draw() {
     }
 }
 
+// The wreck spins as it falls - the tail rotor gone - through the turn's
+// drawings: side, three-quarter, head-on, three-quarter and side the
+// other way, and round again, WRECK_SPIN_HOLD frames each (a turn's).
+// The side view is the crashing frame; the flip is against the facing it
+// was lost with.
+const WRECK_SPIN_HOLD: u8 = HELI_TURN_HOLD;
+static WRECK_SPIN_TILE: [u8; 8] = [
+    HELI_TILE_CRASHING, HELI_TILE_TURN_34, HELI_TILE_TURN_HEAD, HELI_TILE_TURN_34,
+    HELI_TILE_CRASHING, HELI_TILE_TURN_34, HELI_TILE_TURN_HEAD, HELI_TILE_TURN_34,
+];
+static WRECK_SPIN_FLIP: [u8; 8] = [0, 0, 0, 1, 1, 1, 1, 0];
+
 // wreck_draw - a lost airframe where it fell, either side's (foe_draw
-// passes the enemy's palette in *base*): the crashing frame while it
-// drops, the crashed one on the ground. *cx* is its centre, *y* its top
-// in 8.8. The camera leaves it behind, so it is culled off the screen -
-// the 9-bit X wrap would put a far one back on. Its own function, so the
-// live draws pay nothing for it.
-fn wreck_draw(cx: u16, y: u16, face: u8, base: u16) {
+// passes the enemy's palette in *base*): spinning while it drops, *t*
+// frames after the loss, the crashed frame on the ground. *cx* is its
+// centre, *y* its top in 8.8. The camera leaves it behind, so it is culled
+// off the screen - the 9-bit X wrap would put a far one back on. Its own
+// function, so the live draws pay nothing for it.
+fn wreck_draw(cx: u16, y: u16, face: u8, base: u16, t: u8) {
     let d: u16 = cx - (HELI_W >> 1) - camera_x;
     if d >= 256 && d < 0xFFE0 { return; }
     let mut tile: u8 = HELI_TILE_CRASHED;
-    if y < HELI_Y_MAX { tile = HELI_TILE_CRASHING; }
+    let mut f: u8 = face;
+    if y < HELI_Y_MAX {
+        let step: u16 = (div8(t, WRECK_SPIN_HOLD as u16) & 7) as u16;
+        tile = WRECK_SPIN_TILE[step];
+        f = face ^ WRECK_SPIN_FLIP[step];
+    }
     let sx: u16 = d & 0x01FF;
     let sy: u8 = (y >> 8) as u8;
     let mut attr: u16 = base;
     let mut near: u8 = tile;
     let mut far_: u8 = tile + 2;
-    if face != 0 {
+    if f != 0 {
         attr = base | 0x4000;             // OAM hflip, the cells swapped
         near = tile + 2;
         far_ = tile;

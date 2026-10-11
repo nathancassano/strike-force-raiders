@@ -980,7 +980,9 @@ far fn foe_update() {
 // foe_draw - the two OBJ cells in the enemy palette, right after the
 // player's in the OAM order. Tilt from speed along the nose, as heli_draw.
 far fn foe_draw() {
-    if foe_wreck_t > 0 { wreck_draw(foe_wreck_x, foe_wreck_y, foe_wreck_face, FOE_ATTR); }
+    if foe_wreck_t > 0 {
+        wreck_draw(foe_wreck_x, foe_wreck_y, foe_wreck_face, FOE_ATTR, FOE_WRECK_TIME - foe_wreck_t);
+    }
     if foe_dead > 0 { return; }
 
     let mut fwd: Q10 = foe_vx;
