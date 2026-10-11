@@ -54,7 +54,7 @@ def test_start_again_goes_into_the_battle(snes):
     v = read_snapshot(snes)
     assert v.game_state == GAME_PLAYING
     assert v.screen_kind == SCREEN_NONE
-    assert v.heli_x_px == 321
+    assert v.airframes__x_px.u16[0] == 321
 
 
 def test_title_text_drawn(snes, tmp_path):
@@ -122,7 +122,7 @@ def test_screen_after(state):
     v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_AFTER
-    assert v.heli_lives == 0
+    assert v.airframes__lives.u8[0] == 0
     assert v.after_salvage == 20
     assert v.after_carry == 32
     assert code_text(v) == "JKDG"

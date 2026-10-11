@@ -19,7 +19,7 @@ def test_game_lost(state):
     snes = state(five_passes)
     v = read_snapshot(snes)
     assert v.game_state == GAME_LOST
-    assert v.heli_lives == 0
+    assert v.airframes__lives.u8[0] == 0
 
 
 def test_game_reset(state):
@@ -30,8 +30,8 @@ def test_game_reset(state):
     snes.start().wait(10)
     v = read_snapshot(snes)
     assert v.game_state == GAME_PLAYING
-    assert v.heli_lives == 4
-    assert v.heli_x_px == 64
+    assert v.airframes__lives.u8[0] == 4
+    assert v.airframes__x_px.u16[0] == 64
     assert v.camera_x == 0
 
 
@@ -72,8 +72,8 @@ def test_the_hot_pilot_hunts_the_player(snes):
     """
     boot(snes, "MISSION_TEST_HUNTER").wait(20).right(600).wait(900)
     v = read_snapshot(snes)
-    assert v.heli_lives == 3
-    assert v.foe_lives == 4
+    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__lives.u8[1] == 4
 
 
 def test_the_pilot_steps_out_of_a_hover(snes):
@@ -85,8 +85,8 @@ def test_the_pilot_steps_out_of_a_hover(snes):
     """
     boot(snes, "MISSION_TEST_QUIET").right(175).wait(1500)
     v = read_snapshot(snes)
-    assert v.heli_lives == 4
-    assert v.foe_lives == 4
+    assert v.airframes__lives.u8[0] == 4
+    assert v.airframes__lives.u8[1] == 4
 
 
 def test_the_hot_pilot_bombs_a_tank(snes):
@@ -96,4 +96,4 @@ def test_the_hot_pilot_bombs_a_tank(snes):
     boot(snes, "MISSION_TEST_HUNTER").press("l", "a", frames=3).wait(3000)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
-    assert v.heli_lives == 4
+    assert v.airframes__lives.u8[0] == 4

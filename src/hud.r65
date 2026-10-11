@@ -145,36 +145,36 @@ far fn hud_update() {
         hud_put2(HUD_COL_FUNDS + 1, funds);
         hud_dirty = 1;
     }
-    if hud_lives != heli_lives {
-        hud_lives = heli_lives;
-        let mut n: u8 = heli_lives;
+    if hud_lives != airframes[HELI].lives {
+        hud_lives = airframes[HELI].lives;
+        let mut n: u8 = airframes[HELI].lives;
         if n > 9 { n = 9; }
         hud_row[HUD_COL_LIVES + 1] = hud_glyph(GLYPH_DIGIT + (n as u16));
         hud_dirty = 1;
     }
-    if hud_hp != heli_hp {
-        hud_hp = heli_hp;
-        hud_bar(32 + HUD_COL_HEALTH + 2, ((heli_hp as u16) * 2) + ((heli_hp as u16) >> 1));
+    if hud_hp != airframes[HELI].hp {
+        hud_hp = airframes[HELI].hp;
+        hud_bar(32 + HUD_COL_HEALTH + 2, ((airframes[HELI].hp as u16) * 2) + ((airframes[HELI].hp as u16) >> 1));
         hud_dirty = 1;
     }
-    if hud_fuel != heli_fuel {
-        hud_fuel = heli_fuel;
-        hud_bar(32 + HUD_COL_FUEL + 2, (heli_fuel as u16) >> 1);
+    if hud_fuel != airframes[HELI].fuel {
+        hud_fuel = airframes[HELI].fuel;
+        hud_bar(32 + HUD_COL_FUEL + 2, (airframes[HELI].fuel as u16) >> 1);
         hud_dirty = 1;
     }
-    if hud_gun != heli_gun {
-        hud_gun = heli_gun;
-        hud_put2(32 + HUD_COL_GUN + 2, heli_gun);
+    if hud_gun != airframes[HELI].gun {
+        hud_gun = airframes[HELI].gun;
+        hud_put2(32 + HUD_COL_GUN + 2, airframes[HELI].gun);
         hud_dirty = 1;
     }
-    if hud_bombs != heli_bombs {
-        hud_bombs = heli_bombs;
-        hud_put2(32 + HUD_COL_BOMBS + 2, heli_bombs);
+    if hud_bombs != airframes[HELI].bombs {
+        hud_bombs = airframes[HELI].bombs;
+        hud_put2(32 + HUD_COL_BOMBS + 2, airframes[HELI].bombs);
         hud_dirty = 1;
     }
-    if hud_men != heli_men {
-        hud_men = heli_men;
-        hud_row[HUD_COL_MEN + 1] = hud_glyph(GLYPH_DIGIT + (heli_men as u16));
+    if hud_men != player.men {
+        hud_men = player.men;
+        hud_row[HUD_COL_MEN + 1] = hud_glyph(GLYPH_DIGIT + (player.men as u16));
         hud_dirty = 1;
     }
 }

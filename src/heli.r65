@@ -1,5 +1,13 @@
-// heli - the player helicopter: 8.8 physics, cosmetic tilt, and camera-
-// relative rendering.
+// heli - the airframes, both sides': 8.8 physics, cosmetic tilt, camera-
+// relative rendering and the wreck (impl Airframe, over the #[soa] pool
+// airframes, HELI the player's and FOE the enemy's), and the player's own
+// stick, gun, airlift and losses (impl Player). The enemy's pilot is foe.r65.
+//
+// The shared methods take the element as `self`, in X. The per-frame ones
+// (fly, burn, turn_step, draw) are #[inline(always)]: every call names its
+// element with a constant, and R65's const_index pass folds the inlined
+// body's `POOL__f,X` to `POOL__f` - so one copy of the code compiles to
+// what two hand-written per-side copies did, with no call left.
 //
 // Types follow the plan's Position representation section:
 //   x   world pixel + 1/256 fraction, because a 4096 px world fits in no
@@ -77,7 +85,7 @@ const HELI_TURN_STEPS:       u8 = 5 * 3;  // the whole swing
 // the palette and the priority.
 const HELI_PAGE: u16 = 0x0100;
 const HELI_ATTR: u16 = 0x3000 | HELI_PAGE | OBJ_PAL_HELI;   // priority 3
-const HELI_ATTR_RISING: u16 = 0x2000 | HELI_PAGE | OBJ_PAL_HELI;   // 2: see heli_draw
+const HELI_ATTR_RISING: u16 = 0x2000 | HELI_PAGE | OBJ_PAL_HELI;   // 2: see Airframe::draw
 
 // The helicopter is the highest-priority object in the game, so it draws
 // first and takes the lowest slots from the shared allocator.
@@ -93,7 +101,7 @@ const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 // Where a round leaves the airframe: the nose when facing right, the tail
 // end of the same box when facing left, and level with the cabin.
 const HELI_MUZZLE_Y: u16 = 7;
-// Driving forward the nose drops (HELI_TILT_ON, the same test heli_draw
+// Driving forward the nose drops (HELI_TILT_ON, the same test Airframe::draw
 // uses to pick the frame) and the gun fires along it: 1 px down for every
 // 8 forward, about 7 degrees, so a strafing run walks rounds into the
 // ground ahead instead of over everything.
@@ -122,51 +130,61 @@ const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 // Dead-stick descent once the tank is dry.
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 
-// Touching the ground is a crash, deck or not, only flat out on both
-// axes: at the top descent rate (HELI_VY_MAX) and the top horizontal
-// speed (HELI_VX_MAX) either way. Anything slower is a landing. The
-// descent rate takes ~43 frames and ~88 px of dive to build, so a crash
-// has to start from above y 80 - from hover height it cannot reach it.
-// heli_crashes is the test; foe.r65 uses it too.
-far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
-    if vy < HELI_VY_MAX { return 0; }
-    if vx >= HELI_VX_MAX || vx <= Q10(0) - HELI_VX_MAX { return 1; }
-    return 0;
-}
 
 // ---------------------------------------------------------------- state ---
-#[lowram] static mut heli_x_px:  u16;     // world pixel, 0..WORLD_W-HELI_W
-#[lowram] static mut heli_x_sub: u8;      // 1/256 px
-#[lowram] static mut heli_y:     u16;     // 8.8 screen pixels
-#[lowram] static mut heli_vx:    Q10;
-#[lowram] static mut heli_vy:    Q10;
-#[lowram] static mut heli_gun:   u8;      // rounds remaining
-#[lowram] static mut heli_bombs: u8;
-#[lowram] static mut heli_gun_cd: u8;     // frames until the gun can fire
-#[lowram] static mut heli_face_left: u8;  // 0 nose right, 1 nose left
-#[lowram] static mut heli_turn: u8;       // progress through a turn, 0 = none
-#[lowram] static mut heli_fuel:   u8;     // 0..HELI_FUEL_MAX
-#[lowram] static mut heli_landed: u8;     // 1 while resting on the ground
-#[lowram] static mut heli_on_pad: u8;     // ... and that ground is a deck
-#[lowram] static mut heli_fuel_t: u8;     // countdown to the next fuel unit
-#[lowram] static mut heli_gun_t:  u8;     // ... and to the next round
-#[lowram] static mut heli_bomb_t: u8;
-#[lowram] static mut heli_hp_t:   u8;     // ... and to the next point repaired
-#[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
-#[lowram] static mut heli_dead:   u8;     // lost while > 0: frames of the pan home left; 0 = flying
-#[lowram] static mut heli_pause:  u8;     // frames left on the ground before the pan
-#[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
-#[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized when it starts
-#[lowram] static mut heli_wreck_x:  u16;  // where it was lost: the camera holds there
-#[lowram] static mut heli_wreck_y:  u16;  // the wreck's top, 8.8: falls to HELI_Y_MAX
-#[lowram] static mut heli_wreck_vy: Q10;
-#[lowram] static mut heli_wreck_vx: Q10;   // half the way on it had, kept all the way down
-#[lowram] static mut heli_wreck_sub: u8;   // 1/256 px of heli_wreck_x
-#[lowram] static mut heli_wreck_spin: u8;  // frames it has fallen: the spin's clock
-#[lowram] static mut heli_wreck_face: u8;
+// The two airframes, the player's and the enemy's, are one #[soa] pool:
+// what both have is an Airframe, element HELI or FOE. Each side's own code
+// names its element with the constant, which compiles to the plain
+// absolute address a separate static had; the shared routines are methods
+// taking the element as `self`, in X.
+const HELI: u16 = 0;                      // the player's airframe
+const FOE:  u16 = 1;                      // the enemy's (foe.r65)
+
+#[soa]
+struct Airframe {
+    x_px:       u16,    // world pixel, 0..WORLD_W-HELI_W
+    x_sub:      u8,     // 1/256 px
+    y:          u16,    // 8.8 screen pixels
+    vx:         Q10,
+    vy:         Q10,
+    face_left:  u8,     // 0 nose right, 1 nose left
+    turn:       u8,     // progress through a turn, 0 = none
+    hp:         u8,     // the plan's 20; a bomb ends it outright
+    hp_t:       u8,     // countdown to the next point repaired
+    fuel:       u8,     // 0..HELI_FUEL_MAX
+    fuel_t:     u8,     // countdown to the next fuel unit
+    gun:        u8,     // rounds remaining
+    gun_t:      u8,     // countdown to the next round
+    gun_cd:     u8,     // frames until the gun can fire
+    bombs:      u8,
+    bomb_t:     u8,
+    landed:     u8,     // 1 while resting on the ground
+    dead:       u8,     // lost while > 0 (the player's: frames of the pan home left)
+    rising:     u8,     // 1 while the next airframe climbs out of the ground
+    lives:      u8,     // the match's: init leaves them
+    wreck_x:    u16,    // where it was lost, its centre: the player's camera holds there
+    wreck_y:    u16,    // the wreck's top, 8.8: falls to HELI_Y_MAX
+    wreck_vx:   Q10,    // half the way on it had, kept all the way down
+    wreck_vy:   Q10,
+    wreck_sub:  u8,     // 1/256 px of wreck_x
+    wreck_face: u8,
+    wreck_spin: u8,     // frames it has fallen: the spin's clock
+    wreck_up:   u8,     // 1 while a wreck is falling; 0 none (down, or never)
+}
+#[lowram] static mut airframes: [Airframe; 2];
+
+// What only the player's airframe has.
+#[soa]
+struct Player {
+    on_pad:   u8,       // landed, and the ground is a deck
+    men:      u8,       // aboard (para.r65)
+    pause:    u8,       // frames left on the ground before the pan
+    cam_step: u16,      // the pan home, px/frame, sized when it starts
+}
+#[lowram] static mut player: Player;
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
-// airframe is lost - a life goes (order.r65's heli_lives) and it returns
+// airframe is lost - a life goes (airframes[HELI].lives) and it returns
 // to the start with a full load. The battle-over screen is phase 9's.
 const HELI_HP_MAX: u8 = 20;
 const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
@@ -192,201 +210,247 @@ const HELI_RISE:    u16 = 1 << 8;         // px/frame, 8.8
 // (45 px, `/ 3` does not fold): every height below the ceiling is ground-relative.
 const HELI_Y_BAIL:  u16 = HELI_Y_MAX - (45 << 8);
 
-// heli_init - place the airframe. Statics are declared bare because an
-// initializer on a mutable static trips the __init_start MVN/DBR bug.
-far fn heli_init() {
-    heli_x_px = 64;
-    heli_x_sub = 0;
-    heli_y = HELI_Y_HOVER;
-    heli_vx = Q10(0);
-    heli_vy = Q10(0);
-    heli_gun = HELI_GUN_MAX;
-    heli_bombs = HELI_BOMB_MAX;
-    heli_gun_cd = 0;
-    heli_face_left = 0;
-    heli_turn = 0;
-    heli_fuel = HELI_FUEL_MAX;
-    heli_landed = 0;
-    heli_on_pad = 0;
-    heli_fuel_t = HELI_FUEL_DRAIN;
-    heli_gun_t = HELI_GUN_RELOAD;
-    heli_bomb_t = HELI_BOMB_RELOAD;
-    heli_hp_t = HELI_HP_REPAIR;
-    heli_hp = HELI_HP_MAX;
-    heli_men = 0;                         // the men left aboard went with it
-    heli_dead = 0;
-    heli_pause = 0;
-    heli_rising = 0;
-    heli_cam_step = 0;
-}
-
-// heli_collide - enemy rounds against the airframe's box, and the
-// barrage balloons, which end it outright.
-far fn heli_collide() {
-    if heli_dead > 0 || heli_rising != 0 { return; }   // nothing there to hit
-    let hx: u16 = heli_x_px;
-    let hy: u16 = heli_y >> 8;
-    if struct_balloon_at(hx, hy) != 0 {
-        heli_lost();
-        return;
+// ------------------------------------------------------------ Player ---
+// The player's airframe: what only it does - the stick, the gun and
+// bombs, the airlift, its losses and the camera's pan home. Associated
+// functions, not methods: there is one, airframes[HELI] and player, and a
+// receiver would pin X that its loops want.
+impl Player {
+    // Player::init - place the airframe. Statics are declared bare because an
+    // initializer on a mutable static trips the __init_start MVN/DBR bug.
+    fn init() {
+        airframes[HELI].init(64, 0);
+        player.on_pad = 0;
+        player.men = 0;                         // the men left aboard went with it
+        player.pause = 0;
+        player.cam_step = 0;
     }
-    // Nothing of another side up - the usual frame - and the pool is not
-    // worth walking; muni_up counts the player's and everyone else's.
-    if muni_up[1] == 0 { return; }
-    for m in 0..MUNI_MAX {
-        let mk: u8 = muni_kind[m];
-        if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
-            // Anything not the player's own: the enemy's, or a
-            // hostile-neutral super bunker's.
-            if muni_owner[m] != SIDE_PLAYER {
-                let mx: u16 = muni_x_px[m];
-                let my: u16 = muni_y[m] >> 8;
-                if mx >= hx && mx < hx + HELI_W {
-                    if my >= hy && my < hy + HELI_H {
-                        muni_drop_bomb(m);
-                        muni_kind[m] = MUNI_FREE;
-                        if mk == MUNI_BOMB {
-                            heli_lost();          // a bomb ends it outright
-                            return;
-                        }
-                        let mut dmg: u8 = 1;
-                        if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
-                        if heli_hp > dmg {
-                            heli_hp = heli_hp - dmg;
-                        } else {
-                            heli_lost();
-                            return;
+
+    // Player::reset - a match's start: Player::init, and no wreck.
+    fn reset() {
+        Player::init();
+        airframes[HELI].wreck_up = 0;
+    }
+
+    // Player::collide - enemy rounds against the airframe's box, and the
+    // barrage balloons, which end it outright.
+    fn collide() {
+        if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { return; }   // nothing there to hit
+        let hx: u16 = airframes[HELI].x_px;
+        let hy: u16 = airframes[HELI].y >> 8;
+        if struct_balloon_at(hx, hy) != 0 {
+            Player::lost();
+            return;
+        }
+        // Nothing of another side up - the usual frame - and the pool is not
+        // worth walking; muni_up counts the player's and everyone else's.
+        if muni_up[1] == 0 { return; }
+        for m in 0..MUNI_MAX {
+            let mk: u8 = muni_kind[m];
+            if mk == MUNI_BULLET || mk == MUNI_MISSILE || mk == MUNI_BOMB {
+                // Anything not the player's own: the enemy's, or a
+                // hostile-neutral super bunker's.
+                if muni_owner[m] != SIDE_PLAYER {
+                    let mx: u16 = muni_x_px[m];
+                    let my: u16 = muni_y[m] >> 8;
+                    if mx >= hx && mx < hx + HELI_W {
+                        if my >= hy && my < hy + HELI_H {
+                            muni_drop_bomb(m);
+                            muni_kind[m] = MUNI_FREE;
+                            if mk == MUNI_BOMB {
+                                Player::lost();          // a bomb ends it outright
+                                return;
+                            }
+                            let mut dmg: u8 = 1;
+                            if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
+                            if airframes[HELI].hp > dmg {
+                                airframes[HELI].hp = airframes[HELI].hp - dmg;
+                            } else {
+                                Player::lost();
+                                return;
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 
-// heli_rearm - one tick on the deck. Fuel, rounds and bombs each refill on
-// their own countdown, so a short stop tops up fuel long before ammo.
-far fn heli_rearm() {
-    if heli_fuel_t > 0 {
-        heli_fuel_t = heli_fuel_t - 1;
-    } else {
-        heli_fuel_t = HELI_FUEL_FILL;
-        if heli_fuel < HELI_FUEL_MAX { heli_fuel = heli_fuel + 1; }
-    }
-
-    if heli_gun_t > 0 {
-        heli_gun_t = heli_gun_t - 1;
-    } else {
-        heli_gun_t = HELI_GUN_RELOAD;
-        if heli_gun < HELI_GUN_MAX - HELI_GUN_REFILL {
-            heli_gun = heli_gun + HELI_GUN_REFILL;
-        } else {
-            heli_gun = HELI_GUN_MAX;
+    // Player::fire - gunfire while B is held, one bomb per press of A.
+    //
+    // The gun points where the nose points. Facing follows the last commanded
+    // direction rather than the current velocity, so it does not flip back to
+    // neutral while the airframe coasts to a stop.
+    fn fire(held: u16, trig: u16) {
+        if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { return; }
+        if airframes[HELI].gun_cd > 0 {
+            airframes[HELI].gun_cd = airframes[HELI].gun_cd - 1;
         }
-    }
 
-    if heli_bomb_t > 0 {
-        heli_bomb_t = heli_bomb_t - 1;
-    } else {
-        heli_bomb_t = HELI_BOMB_RELOAD;
-        if heli_bombs < HELI_BOMB_MAX { heli_bombs = heli_bombs + 1; }
-    }
-
-    if heli_hp_t > 0 {
-        heli_hp_t = heli_hp_t - 1;
-    } else {
-        heli_hp_t = HELI_HP_REPAIR;
-        if heli_hp < HELI_HP_MAX { heli_hp = heli_hp + 1; }
-    }
-}
-
-// heli_burn - one tick aloft. Men are not restored by the pad, so nothing
-// else is on a timer up here.
-far fn heli_burn() {
-    if heli_fuel_t > 0 {
-        heli_fuel_t = heli_fuel_t - 1;
-    } else {
-        heli_fuel_t = HELI_FUEL_DRAIN;
-        if heli_fuel > 0 { heli_fuel = heli_fuel - 1; }
-    }
-}
-
-// heli_fire - gunfire while B is held, one bomb per press of A.
-//
-// The gun points where the nose points. Facing follows the last commanded
-// direction rather than the current velocity, so it does not flip back to
-// neutral while the airframe coasts to a stop.
-far fn heli_fire(held: u16, trig: u16) {
-    if heli_dead > 0 || heli_rising != 0 { return; }
-    if heli_gun_cd > 0 {
-        heli_gun_cd = heli_gun_cd - 1;
-    }
-
-    if (held & JOY_B) != 0 {
-        if heli_gun_cd == 0 {
-            if heli_gun > 0 {
-                heli_gun = heli_gun - 1;
-                heli_gun_cd = HELI_GUN_RATE;
-                let mut mx: u16 = heli_x_px + HELI_W;
-                let mut v: Q10 = BULLET_SPEED;
-                let mut fwd: Q10 = heli_vx;
-                if heli_face_left != 0 {
-                    mx = heli_x_px;
-                    v = Q10(0) - BULLET_SPEED;
-                    fwd = Q10(0) - heli_vx;
+        if (held & JOY_B) != 0 {
+            if airframes[HELI].gun_cd == 0 {
+                if airframes[HELI].gun > 0 {
+                    airframes[HELI].gun = airframes[HELI].gun - 1;
+                    airframes[HELI].gun_cd = HELI_GUN_RATE;
+                    let mut mx: u16 = airframes[HELI].x_px + HELI_W;
+                    let mut v: Q10 = BULLET_SPEED;
+                    let mut fwd: Q10 = airframes[HELI].vx;
+                    if airframes[HELI].face_left != 0 {
+                        mx = airframes[HELI].x_px;
+                        v = Q10(0) - BULLET_SPEED;
+                        fwd = Q10(0) - airframes[HELI].vx;
+                    }
+                    // Nose down: the round leaves at a slight downward angle.
+                    let mut vy: Q10 = 0;
+                    if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
+                    muni_spawn(MUNI_BULLET, mx, airframes[HELI].y + (HELI_MUZZLE_Y << 8),
+                               v, vy, BULLET_LIFE, SIDE_PLAYER);
+                    sfx_at(SFX_CHN_GUN, SFX_PLAYER_GUN1, mx);
                 }
-                // Nose down: the round leaves at a slight downward angle.
-                let mut vy: Q10 = 0;
-                if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
-                muni_spawn(MUNI_BULLET, mx, heli_y + (HELI_MUZZLE_Y << 8),
-                           v, vy, BULLET_LIFE, SIDE_PLAYER);
-                sfx_at(SFX_CHN_GUN, SFX_PLAYER_GUN1, mx);
+            }
+        }
+
+        // X: a man out of the door, airborne only - on the deck he would just
+        // walk back aboard.
+        if (trig & JOY_X) != 0 {
+            if player.men > 0 && airframes[HELI].landed == 0 {
+                player.men = player.men - 1;
+                para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER);
+            }
+        }
+
+        if (trig & JOY_A) != 0 {
+            if airframes[HELI].bombs > 0 {
+                airframes[HELI].bombs = airframes[HELI].bombs - 1;
+                // A bomb keeps the airframe's horizontal speed and starts at
+                // rest vertically, so a fast pass throws it forward.
+                // A bomb has no timer: it lives until it reaches the ground.
+                muni_spawn(MUNI_BOMB, airframes[HELI].x_px + (HELI_W >> 1),
+                           airframes[HELI].y + (HELI_H << 8), airframes[HELI].vx, Q10(0), 0, SIDE_PLAYER);
             }
         }
     }
 
-    // X: a man out of the door, airborne only - on the deck he would just
-    // walk back aboard.
-    if (trig & JOY_X) != 0 {
-        if heli_men > 0 && heli_landed == 0 {
-            heli_men = heli_men - 1;
-            para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
+    // Player::update - one tick of input, physics and world clamping.
+    fn update(held: u16) {
+        if airframes[HELI].dead > 0 {
+            Player::dead_tick();                 // lost: the stick does nothing
+            return;
         }
-    }
+        // Up, rising or on a deck: the rotor (checked here, not in sfx_rotor,
+        // so the three frames in four it is quiet cost no far call).
+        if (frames_loop & (ROTOR_EVERY - 1)) == 0 { sfx_rotor(airframes[HELI].x_px + (HELI_W >> 1), airframes[HELI].landed); }
+        if airframes[HELI].rising != 0 {
+            airframes[HELI].y = airframes[HELI].y - HELI_RISE;
+            if airframes[HELI].y <= HELI_Y_HOVER {
+                airframes[HELI].y = HELI_Y_HOVER;
+                airframes[HELI].rising = 0;
+            }
+            focus_x = airframes[HELI].x_px + (HELI_W >> 1);
+            return;
+        }
 
-    if (trig & JOY_A) != 0 {
-        if heli_bombs > 0 {
-            heli_bombs = heli_bombs - 1;
-            // A bomb keeps the airframe's horizontal speed and starts at
-            // rest vertically, so a fast pass throws it forward.
-            // A bomb has no timer: it lives until it reaches the ground.
-            muni_spawn(MUNI_BOMB, heli_x_px + (HELI_W >> 1),
-                       heli_y + (HELI_H << 8), heli_vx, Q10(0), 0, SIDE_PLAYER);
+        if airframes[HELI].landed != 0 {
+            // On the ground: no motion. A deck's timers do their work; open
+            // ground is only for picking men up. Up lifts off, but only with
+            // fuel to lift off on.
+            airframes[HELI].vx = Q10(0);
+            airframes[HELI].vy = Q10(0);
+            if player.on_pad != 0 { airframes[HELI].rearm(); }
+            para_pickup();
+            if (held & JOY_UP) != 0 {
+                if airframes[HELI].fuel > 0 { airframes[HELI].landed = 0; }
+            }
+        } else {
+            airframes[HELI].burn();
+
+            if airframes[HELI].fuel == 0 {
+                // Dead stick. The plan allows gravity in exactly two places -
+                // an empty tank and an ejection - and this is the first.
+                airframes[HELI].vx = approach(airframes[HELI].vx, Q10(0), HELI_ACC);
+                let v: Q10 = airframes[HELI].vy + HELI_GRAVITY;
+                if v > HELI_VY_MAX {
+                    airframes[HELI].vy = HELI_VY_MAX;
+                } else {
+                    airframes[HELI].vy = v;
+                }
+            } else {
+                let mut tx: Q10 = Q10(0);
+                // 2 = no direction held; the turn stalls on that.
+                let mut want: u8 = 2;
+                if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
+                if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
+                airframes[HELI].turn_step(want);
+
+                let mut ty: Q10 = Q10(0);
+                if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
+                if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
+
+                let mut ax: Q10 = HELI_THRUST_X;
+                if tx == Q10(0) { ax = HELI_DRAG_X; }
+                let mut ay: Q10 = HELI_THRUST_Y;
+                if ty == Q10(0) { ay = HELI_DRAG_Y; }
+                airframes[HELI].vx = approach(airframes[HELI].vx, tx, ax);
+                airframes[HELI].vy = approach(airframes[HELI].vy, ty, ay);
+            }
+
+            // Whether the airframe is descending, and how fast, has to be read
+            // before the move: fly zeroes vy the moment it touches the
+            // floor, so asking afterwards would always say no.
+            let mut descending: u8 = 0;
+            if airframes[HELI].vy > Q10(0) { descending = 1; }
+            let vy_in: Q10 = airframes[HELI].vy;
+
+            airframes[HELI].fly();
+
+            // "Land only while descending" - drifting sideways into the ground
+            // at zero vertical speed does not count, which is what stops the
+            // floor from catching an airframe that is merely skimming it. Open
+            // ground takes a powered landing anywhere - that is how men are
+            // picked up in the field - and a deck takes any landing; a dead
+            // stick that meets open ground is a crash landing. The crash test
+            // takes vx after the move (a copy before it cost the stress run 7
+            // ticks): at a world edge the move has stopped it, so a dive into
+            // the edge lands.
+            if airframes[HELI].y == HELI_Y_MAX {
+                if Airframe::crashes(airframes[HELI].vx, vy_in) != 0 {
+                    Player::lost();              // flat out: a crash, deck or not
+                    return;
+                }
+                if descending != 0 {
+                    player.on_pad = 0;
+                    if pad_at(airframes[HELI].x_px + (HELI_W >> 1)) < PAD_COUNT { player.on_pad = 1; }
+                    if player.on_pad != 0 || airframes[HELI].fuel > 0 {
+                        airframes[HELI].landed = 1;
+                    }
+                }
+                if airframes[HELI].fuel == 0 && airframes[HELI].landed == 0 {
+                    Player::lost();
+                    return;
+                }
+            }
         }
+
+        // The camera follows the airframe's centre, led by its velocity so
+        // the view opens up ahead of it: Armor Alley's lookahead of 0.4 of a
+        // half-screen at top speed, taken here as vx/8 - 40 px at 5 px/frame.
+        // `>>` is logical, so the sign is a branch. The deadzone in
+        // camera_update is what keeps a turn from snapping the view.
+        let mut f: u16 = airframes[HELI].x_px + (HELI_W >> 1);
+        if airframes[HELI].vx >= Q10(0) {
+            f = f + ((airframes[HELI].vx.0 as u16) >> 3);
+            if f > WORLD_W { f = WORLD_W; }
+        } else {
+            let back: u16 = ((0 - airframes[HELI].vx.0) as u16) >> 3;
+            if f > back { f = f - back; } else { f = 0; }
+        }
+        focus_x = f;
     }
 }
 
-// heli_turn_step - advance, wind back or stall the turn for this frame,
-// from the direction held: 0 right, 1 left, 2 none. A turn starts when
-// the held direction is not the one faced; it completes - and the
-// facing changes - when the swing has run its length, and it is called
-// off if it is wound all the way back.
-far fn heli_turn_step(want: u8) {
-    if heli_turn == 0 {
-        if want < 2 && want != heli_face_left { heli_turn = 1; }
-        return;
-    }
-    if want == 2 { return; }                 // stalled
-    if want != heli_face_left {
-        heli_turn = heli_turn + 1;
-        if heli_turn > HELI_TURN_STEPS {
-            heli_face_left = want;
-            heli_turn = 0;
-        }
-    } else {
-        heli_turn = heli_turn - 1;
-    }
-}
+
+
+
 
 // approach - step `cur` toward `target` by at most `step`.
 // Plain i16 compares; Q10 inherits them from its payload.
@@ -404,254 +468,296 @@ far fn approach(cur: Q10, target: Q10, step: Q10) -> Q10 {
     return cur;
 }
 
-// heli_move_x - advance the 16.8 world position by a Q10 velocity.
-//
-// The sign branch is not decoration. `>>` is a logical shift even on signed
-// types (docs/operators.md:438), so the high half of a negative delta cannot
-// be extracted by shifting - the same trap Q10::to_int documents. A single
-// u16 would be exempt, but this position spans two words.
-far fn heli_move_x(v: Q10) {
-    let d: i16 = v.0 << 2;                // 1/64 -> 1/256
-    if d >= 0 {
-        let m: u16 = d as u16;
-        let s: u16 = (heli_x_sub as u16) + (m & 0x00FF);
-        heli_x_sub = s as u8;
-        heli_x_px = heli_x_px + (m >> 8) + (s >> 8);
-        let limit: u16 = WORLD_W - HELI_W;
-        if heli_x_px > limit {
-            heli_x_px = limit;
-            heli_x_sub = 0;
-            heli_vx = Q10(0);
-        }
-    } else {
-        let m: u16 = (0 - d) as u16;
-        let mut whole: u16 = m >> 8;
-        let frac: u16 = m & 0x00FF;
-        if (heli_x_sub as u16) < frac {
-            whole = whole + 1;            // borrow into the pixel word
-        }
-        heli_x_sub = heli_x_sub - (frac as u8);
-        if heli_x_px <= whole {
-            heli_x_px = 0;
-            heli_x_sub = 0;
-            heli_vx = Q10(0);
+// ---------------------------------------------------------- Airframe ---
+// What both airframes do the same way. `self` is HELI or FOE, in X.
+impl Airframe {
+    // Touching the ground is a crash, deck or not, only flat out on both
+    // axes: at the top descent rate (HELI_VY_MAX) and the top horizontal
+    // speed (HELI_VX_MAX) either way. Anything slower is a landing. The
+    // descent rate takes ~43 frames and ~88 px of dive to build, so a crash
+    // has to start from above y 80 - from hover height it cannot reach it.
+    // Airframe::crashes is the test; foe.r65 uses it too.
+    fn crashes(vx: Q10, vy: Q10) -> u8 {
+        if vy < HELI_VY_MAX { return 0; }
+        if vx >= HELI_VX_MAX || vx <= Q10(0) - HELI_VX_MAX { return 1; }
+        return 0;
+    }
+
+    // init - a fresh airframe at *x* facing *face* (1 left), hovering,
+    // with a full load. The wreck and the lives are left alone: the wreck
+    // of the one just lost is still falling, and the lives are the match's.
+    fn init(self, x: u16, face: u8) {
+        self.x_px = x;
+        self.x_sub = 0;
+        self.y = HELI_Y_HOVER;
+        self.vx = Q10(0);
+        self.vy = Q10(0);
+        self.face_left = face;
+        self.turn = 0;
+        self.hp = HELI_HP_MAX;
+        self.hp_t = HELI_HP_REPAIR;
+        self.fuel = HELI_FUEL_MAX;
+        self.fuel_t = HELI_FUEL_DRAIN;
+        self.gun = HELI_GUN_MAX;
+        self.gun_t = HELI_GUN_RELOAD;
+        self.gun_cd = 0;
+        self.bombs = HELI_BOMB_MAX;
+        self.bomb_t = HELI_BOMB_RELOAD;
+        self.landed = 0;
+        self.dead = 0;
+        self.rising = 0;
+    }
+
+    // rearm - one tick on the deck. Fuel, rounds, bombs and health each
+    // refill on their own countdown, so a short stop tops up fuel long
+    // before ammo.
+    fn rearm(self) {
+        if self.fuel_t > 0 {
+            self.fuel_t = self.fuel_t - 1;
         } else {
-            heli_x_px = heli_x_px - whole;
+            self.fuel_t = HELI_FUEL_FILL;
+            if self.fuel < HELI_FUEL_MAX { self.fuel = self.fuel + 1; }
         }
-    }
-}
 
-// heli_move_y - advance the 8.8 screen position and clamp to the flyable box.
-// One u16 wide, so two's-complement wrap would handle either sign; the branch
-// is here so the clamp can tell a floor hit from a ceiling hit.
-far fn heli_move_y(v: Q10) {
-    let d: i16 = v.0 << 2;
-    if d >= 0 {
-        heli_y = heli_y + (d as u16);
-        if heli_y > HELI_Y_MAX {
-            heli_y = HELI_Y_MAX;
-            heli_vy = Q10(0);
-        }
-    } else {
-        let m: u16 = (0 - d) as u16;
-        if heli_y <= m {
-            heli_y = HELI_Y_MIN;
-            heli_vy = Q10(0);
+        if self.gun_t > 0 {
+            self.gun_t = self.gun_t - 1;
         } else {
-            heli_y = heli_y - m;
-            if heli_y < HELI_Y_MIN {
-                heli_y = HELI_Y_MIN;
-                heli_vy = Q10(0);
-            }
-        }
-    }
-}
-
-// heli_update - one tick of input, physics and world clamping.
-far fn heli_update(held: u16) {
-    if heli_dead > 0 {
-        heli_dead_tick();                 // lost: the stick does nothing
-        return;
-    }
-    // Up, rising or on a deck: the rotor (checked here, not in sfx_rotor,
-    // so the three frames in four it is quiet cost no far call).
-    if (frames_loop & (ROTOR_EVERY - 1)) == 0 { sfx_rotor(heli_x_px + (HELI_W >> 1), heli_landed); }
-    if heli_rising != 0 {
-        heli_y = heli_y - HELI_RISE;
-        if heli_y <= HELI_Y_HOVER {
-            heli_y = HELI_Y_HOVER;
-            heli_rising = 0;
-        }
-        focus_x = heli_x_px + (HELI_W >> 1);
-        return;
-    }
-
-    if heli_landed != 0 {
-        // On the ground: no motion. A deck's timers do their work; open
-        // ground is only for picking men up. Up lifts off, but only with
-        // fuel to lift off on.
-        heli_vx = Q10(0);
-        heli_vy = Q10(0);
-        if heli_on_pad != 0 { heli_rearm(); }
-        para_pickup();
-        if (held & JOY_UP) != 0 {
-            if heli_fuel > 0 { heli_landed = 0; }
-        }
-    } else {
-        heli_burn();
-
-        if heli_fuel == 0 {
-            // Dead stick. The plan allows gravity in exactly two places -
-            // an empty tank and an ejection - and this is the first.
-            heli_vx = approach(heli_vx, Q10(0), HELI_ACC);
-            let v: Q10 = heli_vy + HELI_GRAVITY;
-            if v > HELI_VY_MAX {
-                heli_vy = HELI_VY_MAX;
+            self.gun_t = HELI_GUN_RELOAD;
+            if self.gun < HELI_GUN_MAX - HELI_GUN_REFILL {
+                self.gun = self.gun + HELI_GUN_REFILL;
             } else {
-                heli_vy = v;
+                self.gun = HELI_GUN_MAX;
             }
-        } else {
-            let mut tx: Q10 = Q10(0);
-            // 2 = no direction held; the turn stalls on that.
-            let mut want: u8 = 2;
-            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
-            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
-            heli_turn_step(want);
-
-            let mut ty: Q10 = Q10(0);
-            if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
-            if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
-
-            let mut ax: Q10 = HELI_THRUST_X;
-            if tx == Q10(0) { ax = HELI_DRAG_X; }
-            let mut ay: Q10 = HELI_THRUST_Y;
-            if ty == Q10(0) { ay = HELI_DRAG_Y; }
-            heli_vx = approach(heli_vx, tx, ax);
-            heli_vy = approach(heli_vy, ty, ay);
         }
 
-        // Whether the airframe is descending, and how fast, has to be read
-        // before the move: heli_move_y zeroes vy the moment it touches the
-        // floor, so asking afterwards would always say no.
-        let mut descending: u8 = 0;
-        if heli_vy > Q10(0) { descending = 1; }
-        let vy_in: Q10 = heli_vy;
+        if self.bomb_t > 0 {
+            self.bomb_t = self.bomb_t - 1;
+        } else {
+            self.bomb_t = HELI_BOMB_RELOAD;
+            if self.bombs < HELI_BOMB_MAX { self.bombs = self.bombs + 1; }
+        }
 
-        heli_move_x(heli_vx);
-        heli_move_y(heli_vy);
+        if self.hp_t > 0 {
+            self.hp_t = self.hp_t - 1;
+        } else {
+            self.hp_t = HELI_HP_REPAIR;
+            if self.hp < HELI_HP_MAX { self.hp = self.hp + 1; }
+        }
+    }
 
-        // "Land only while descending" - drifting sideways into the ground
-        // at zero vertical speed does not count, which is what stops the
-        // floor from catching an airframe that is merely skimming it. Open
-        // ground takes a powered landing anywhere - that is how men are
-        // picked up in the field - and a deck takes any landing; a dead
-        // stick that meets open ground is a crash landing. The crash test
-        // takes vx after the move (a copy before it cost the stress run 7
-        // ticks): at a world edge the move has stopped it, so a dive into
-        // the edge lands.
-        if heli_y == HELI_Y_MAX {
-            if heli_crashes(heli_vx, vy_in) != 0 {
-                heli_lost();              // flat out: a crash, deck or not
-                return;
+    // burn - one tick aloft. Men are not restored by the pad, so nothing
+    // else is on a timer up here.
+    #[inline(always)]
+    fn burn(self) {
+        if self.fuel_t > 0 {
+            self.fuel_t = self.fuel_t - 1;
+        } else {
+            self.fuel_t = HELI_FUEL_DRAIN;
+            if self.fuel > 0 { self.fuel = self.fuel - 1; }
+        }
+    }
+
+    // turn_step - advance, wind back or stall the turn for this frame,
+    // from the direction held: 0 right, 1 left, 2 none. A turn starts when
+    // the held direction is not the one faced; it completes - and the
+    // facing changes - when the swing has run its length, and it is called
+    // off if it is wound all the way back. The gun keeps its old side
+    // until then.
+    #[inline(always)]
+    fn turn_step(self, want: u8) {
+        if self.turn == 0 {
+            if want < 2 && want != self.face_left { self.turn = 1; }
+            return;
+        }
+        if want == 2 { return; }                 // stalled
+        if want != self.face_left {
+            self.turn = self.turn + 1;
+            if self.turn > HELI_TURN_STEPS {
+                self.face_left = want;
+                self.turn = 0;
             }
-            if descending != 0 {
-                heli_on_pad = 0;
-                if pad_at(heli_x_px + (HELI_W >> 1)) < PAD_COUNT { heli_on_pad = 1; }
-                if heli_on_pad != 0 || heli_fuel > 0 {
-                    heli_landed = 1;
+        } else {
+            self.turn = self.turn - 1;
+        }
+    }
+
+    // fly - a frame of flight: the 16.8 world x by vx, then the 8.8 y by
+    // vy, clamped to the world and to the flyable box. A wall or the floor
+    // or ceiling stops the speed into it.
+    //
+    // x's sign branch is not decoration. `>>` is a logical shift even on
+    // signed types (docs/operators.md:438), so the high half of a negative
+    // delta cannot be extracted by shifting - the same trap Q10::to_int
+    // documents. y is one u16 wide, so two's-complement wrap would handle
+    // either sign; its branch is there so the clamp can tell a floor hit
+    // from a ceiling hit.
+    #[inline(always)]
+    fn fly(self) {
+        let dx: i16 = self.vx.0 << 2;        // 1/64 -> 1/256
+        if dx >= 0 {
+            let m: u16 = dx as u16;
+            let s: u16 = (self.x_sub as u16) + (m & 0x00FF);
+            self.x_sub = s as u8;
+            self.x_px = self.x_px + (m >> 8) + (s >> 8);
+            let limit: u16 = WORLD_W - HELI_W;
+            if self.x_px > limit {
+                self.x_px = limit;
+                self.x_sub = 0;
+                self.vx = Q10(0);
+            }
+        } else {
+            let m: u16 = (0 - dx) as u16;
+            let mut whole: u16 = m >> 8;
+            let frac: u16 = m & 0x00FF;
+            if (self.x_sub as u16) < frac {
+                whole = whole + 1;            // borrow into the pixel word
+            }
+            self.x_sub = self.x_sub - (frac as u8);
+            if self.x_px <= whole {
+                self.x_px = 0;
+                self.x_sub = 0;
+                self.vx = Q10(0);
+            } else {
+                self.x_px = self.x_px - whole;
+            }
+        }
+
+        let dy: i16 = self.vy.0 << 2;
+        if dy >= 0 {
+            self.y = self.y + (dy as u16);
+            if self.y > HELI_Y_MAX {
+                self.y = HELI_Y_MAX;
+                self.vy = Q10(0);
+            }
+        } else {
+            let m: u16 = (0 - dy) as u16;
+            if self.y <= m {
+                self.y = HELI_Y_MIN;
+                self.vy = Q10(0);
+            } else {
+                self.y = self.y - m;
+                if self.y < HELI_Y_MIN {
+                    self.y = HELI_Y_MIN;
+                    self.vy = Q10(0);
                 }
             }
-            if heli_fuel == 0 && heli_landed == 0 {
-                heli_lost();
-                return;
-            }
         }
     }
 
-    // The camera follows the airframe's centre, led by its velocity so
-    // the view opens up ahead of it: Armor Alley's lookahead of 0.4 of a
-    // half-screen at top speed, taken here as vx/8 - 40 px at 5 px/frame.
-    // `>>` is logical, so the sign is a branch. The deadzone in
-    // camera_update is what keeps a turn from snapping the view.
-    let mut f: u16 = heli_x_px + (HELI_W >> 1);
-    if heli_vx >= Q10(0) {
-        f = f + ((heli_vx.0 as u16) >> 3);
-        if f > WORLD_W { f = WORLD_W; }
-    } else {
-        let back: u16 = ((0 - heli_vx.0) as u16) >> 3;
-        if f > back { f = f - back; } else { f = 0; }
-    }
-    focus_x = f;
-}
+    // draw - place the two OBJ cells, camera-relative, in this side's
+    // palette; while a wreck is falling, it first (wreck_draw). Culled on
+    // the full 16-bit offset, as the units are: the 9-bit OAM field would
+    // alias a position screens away onto the window. Through set_full!,
+    // which writes the 9th X bit; set! would leave a stale high bit and
+    // render the sprite 256 px away.
+    #[inline(always)]
+    fn draw(self) {
+        if self.wreck_up != 0 { self.wreck_draw(); }
+        if self.dead > 0 { return; }
+        // Every field read once, the u16s together and then the u8s: each
+        // switch of width is an X reload, and the OAM writes below use X.
+        let x: u16 = self.x_px;
+        let y: u16 = self.y;
+        let vx: Q10 = self.vx;
+        let mut face: u8 = self.face_left;
+        let turn: u8 = self.turn;
+        let rising: u8 = self.rising;
 
-// heli_draw - place the two OBJ cells, camera-relative.
-//
-// Screen X can be negative or past 255 while the airframe straddles an edge,
-// so both cells go through set_full!, which writes the 9th X bit. set! would
-// leave a stale high bit and render the sprite 256 px away.
-far fn heli_draw() {
-    if heli_dead > 0 {                    // lost: the wreck, until the next one rises
-        // Only while it falls: it goes up where it hits (heli_wreck_tick).
-        if heli_wreck_y < HELI_Y_MAX {
-            wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, heli_wreck_spin);
+        let d: u16 = x - camera_x;
+        if d >= 256 && d < 0xFFE0 { return; }
+
+        // Tilt comes from speed along the nose, not from the sign of vx.
+        // Facing left sets the hflip bit, which already mirrors the lean,
+        // so feeding the signed velocity straight in would flip it a
+        // second time and pitch the nose UP under forward acceleration.
+        let mut fwd: Q10 = vx;
+        if face != 0 { fwd = Q10(0) - vx; }
+
+        let mut tile: u8 = HELI_TILE_LEVEL;
+        if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
+        if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
+
+        // Mid-turn the tilt frames give way to the swing: slight and
+        // three-quarter facing the way it still faces, head-on, then
+        // three-quarter and slight facing the way it is going.
+        if turn > 0 {
+            let step: u8 = div8(turn - 1, HELI_TURN_HOLD as u16);
+            if step == 0 { tile = HELI_TILE_TURN_SLIGHT; }
+            if step == 1 { tile = HELI_TILE_TURN_34; }
+            if step == 2 { tile = HELI_TILE_TURN_HEAD; }
+            if step == 3 { tile = HELI_TILE_TURN_34;     face = 1 - face; }
+            if step == 4 { tile = HELI_TILE_TURN_SLIGHT; face = 1 - face; }
         }
-        return;
+
+        let sx: u16 = d & 0x01FF;
+        let sy: u8 = (y >> 8) as u8;
+
+        // Facing left mirrors the airframe. Both cells take the hflip bit
+        // and swap places, otherwise the nose half would render on the
+        // tail side. Rising out of the ground it is drawn at OBJ priority
+        // 2 - behind the dirt, whose tiles carry the priority bit, but in
+        // front of the mountains behind it - until its box has cleared the
+        // ground line. The enemy's is the same but for its palette.
+        let mut base: u16 = HELI_ATTR;
+        if rising != 0 && y + (HELI_H << 8) > (GROUND_Y << 8) { base = HELI_ATTR_RISING; }
+        if self != HELI { base = (base & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY; }
+        let mut attr: u16 = base;
+        let mut near: u8 = tile;
+        let mut far_: u8 = tile + 2;
+        if face != 0 {
+            attr = base | 0x4000;             // OAM hflip
+            near = tile + 2;
+            far_ = tile;
+        }
+
+        let l: u16 = oam_take();
+        let r: u16 = oam_take();
+        if r < OAM_SLOTS {
+            oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
+            oam.set_size!(l as u8, 1);
+            oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
+            oam.set_size!(r as u8, 1);
+        }
     }
 
-    // Tilt comes from speed along the nose, not from the sign of vx.
-    // Facing left sets the hflip bit, which already mirrors the lean, so
-    // feeding the signed velocity straight in would flip it a second time
-    // and pitch the nose UP under forward acceleration.
-    let mut fwd: Q10 = heli_vx;
-    if heli_face_left != 0 { fwd = Q10(0) - heli_vx; }
-
-    let mut tile: u8 = HELI_TILE_LEVEL;
-    if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
-    if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
-
-    // Mid-turn the tilt frames give way to the swing: slight and
-    // three-quarter facing the way it still faces, head-on, then
-    // three-quarter and slight facing the way it is going.
-    let mut face: u8 = heli_face_left;
-    if heli_turn > 0 {
-        let step: u8 = div8(heli_turn - 1, HELI_TURN_HOLD as u16);
-        if step == 0 { tile = HELI_TILE_TURN_SLIGHT; }
-        if step == 1 { tile = HELI_TILE_TURN_34; }
-        if step == 2 { tile = HELI_TILE_TURN_HEAD; }
-        if step == 3 { tile = HELI_TILE_TURN_34;     face = 1 - face; }
-        if step == 4 { tile = HELI_TILE_TURN_SLIGHT; face = 1 - face; }
-    }
-
-    // Camera-relative, wrapped into the 9-bit OAM X field. A sprite left of
-    // the screen shows up at $1FF-ish, which OAM reads as off-screen.
-    let sx: u16 = (heli_x_px - camera_x) & 0x01FF;
-    let sy: u8 = (heli_y >> 8) as u8;
-
-    // Facing left mirrors the airframe. Both cells take the hflip bit and
-    // swap places, otherwise the nose half would render on the tail side.
-    // Rising out of the ground it is drawn at OBJ priority 2 - behind the
-    // dirt, whose tiles carry the priority bit, but in front of the
-    // mountains behind it - until its box has cleared the ground line.
-    let mut base: u16 = HELI_ATTR;
-    if heli_rising != 0 && heli_y + (HELI_H << 8) > (GROUND_Y << 8) { base = HELI_ATTR_RISING; }
-    let mut attr: u16 = base;
-    let mut near: u8 = tile;
-    let mut far_: u8 = tile + 2;
-    if face != 0 {
-        attr = base | 0x4000;             // OAM hflip
-        near = tile + 2;
-        far_ = tile;
-    }
-
-    let l: u16 = oam_take();
-    let r: u16 = oam_take();
-    if r < OAM_SLOTS {
-        oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
-        oam.set_size!(l as u8, 1);
-        oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
-        oam.set_size!(r as u8, 1);
+    // wreck_draw - the lost airframe falling, spinning through
+    // WRECK_SPIN_TILE by wreck_spin; where it hits it goes up and is gone
+    // (wreck_tick), so it is only drawn in the air. The camera leaves it
+    // behind, so it is culled off the screen - the 9-bit X wrap would put
+    // a far one back on. Its own function, so the live draw pays nothing
+    // for it.
+    fn wreck_draw(self) {
+        let wx: u16 = self.wreck_x;
+        let wy: u16 = self.wreck_y;
+        let spin: u8 = self.wreck_spin;
+        let wface: u8 = self.wreck_face;
+        let d: u16 = wx - (HELI_W >> 1) - camera_x;
+        if d >= 256 && d < 0xFFE0 { return; }
+        let step: u16 = (div8(spin, WRECK_SPIN_HOLD as u16) & 7) as u16;
+        let tile: u8 = WRECK_SPIN_TILE[step];
+        let mut base: u16 = HELI_ATTR;
+        if self != HELI { base = (HELI_ATTR & ~OBJ_PAL_HELI) | OBJ_PAL_HELI_ENEMY; }
+        let mut attr: u16 = base;
+        let mut near: u8 = tile;
+        let mut far_: u8 = tile + 2;
+        if (wface ^ WRECK_SPIN_FLIP[step]) != 0 {
+            attr = base | 0x4000;             // OAM hflip, the cells swapped
+            near = tile + 2;
+            far_ = tile;
+        }
+        let sx: u16 = d & 0x01FF;
+        let sy: u8 = (wy >> 8) as u8;
+        let l: u16 = oam_take();
+        let r: u16 = oam_take();
+        if r < OAM_SLOTS {
+            oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
+            oam.set_size!(l as u8, 1);
+            oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
+            oam.set_size!(r as u8, 1);
+        }
     }
 }
+
 
 // The wreck spins as it falls - the tail rotor gone - through the turn's
 // drawings: side, three-quarter, head-on, three-quarter and side the
@@ -665,144 +771,135 @@ static WRECK_SPIN_TILE: [u8; 8] = [
 ];
 static WRECK_SPIN_FLIP: [u8; 8] = [0, 0, 0, 1, 1, 1, 1, 0];
 
-// wreck_draw - a lost airframe where it fell, either side's (foe_draw
-// passes the enemy's palette in *base*): spinning while it drops, *t*
-// frames after the loss, the crashed frame on the ground. *cx* is its
-// centre, *y* its top in 8.8. The camera leaves it behind, so it is culled
-// off the screen - the 9-bit X wrap would put a far one back on. Its own
-// function, so the live draws pay nothing for it.
-fn wreck_draw(cx: u16, y: u16, face: u8, base: u16, t: u8) {
-    let d: u16 = cx - (HELI_W >> 1) - camera_x;
-    if d >= 256 && d < 0xFFE0 { return; }
-    let mut tile: u8 = HELI_TILE_CRASHED;
-    let mut f: u8 = face;
-    if y < HELI_Y_MAX {
-        let step: u16 = (div8(t, WRECK_SPIN_HOLD as u16) & 7) as u16;
-        tile = WRECK_SPIN_TILE[step];
-        f = face ^ WRECK_SPIN_FLIP[step];
-    }
-    let sx: u16 = d & 0x01FF;
-    let sy: u8 = (y >> 8) as u8;
-    let mut attr: u16 = base;
-    let mut near: u8 = tile;
-    let mut far_: u8 = tile + 2;
-    if f != 0 {
-        attr = base | 0x4000;             // OAM hflip, the cells swapped
-        near = tile + 2;
-        far_ = tile;
-    }
-    let l: u16 = oam_take();
-    let r: u16 = oam_take();
-    if r < OAM_SLOTS {
-        oam.set_full!(l as u8, sx, sy, (near as u16) | attr);
-        oam.set_size!(l as u8, 1);
-        oam.set_full!(r as u8, (sx + 16) & 0x01FF, sy, (far_ as u16) | attr);
-        oam.set_size!(r as u8, 1);
-    }
-}
-
 // Bank 3: the loss and the wreck's fall run a frame at a time at most,
 // and bank 0 is full.
 #[bank(3)]
 
-// heli_lost - the airframe is gone. The next one starts from the pad
-// with a full load; the last one is the match. High enough up, one of the
-// men aboard bails out as a paratrooper; the rest go with it.
-far fn heli_lost() {
-    heli_wreck_x = heli_x_px + (HELI_W >> 1);
-    heli_wreck_y = heli_y;
-    heli_wreck_vy = Q10(0);
-    if heli_vy > Q10(0) { heli_wreck_vy = heli_vy; }
-    heli_wreck_face = heli_face_left;
-    heli_wreck_vx = wreck_half(heli_vx);
-    heli_wreck_sub = 0;
-    sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, heli_wreck_x);
-    fx_burst(FX_BIG, heli_wreck_x, heli_y >> 8);
-    if heli_men > 0 && heli_y <= HELI_Y_BAIL {
-        para_drop(heli_x_px + (HELI_W >> 2), heli_y, SIDE_PLAYER);
-    }
-    heli_lives = heli_lives - 1;
-    if heli_lives == 0 {
-        game_over(GAME_LOST);
-    } else {
-        heli_init();
-        heli_dead = HELI_PAN;
-        heli_pause = HELI_GROUND_PAUSE;
-        heli_wreck_spin = 0;
-    }
-}
-
-// wreck_half - half a speed, for a wreck: *v* / 2 toward zero. `>>` is
-// logical, so the sign is a branch.
-far fn wreck_half(v: Q10) -> Q10 {
-    if v >= Q10(0) { return Q10(((v.0 as u16) >> 1) as i16); }
-    return Q10(0) - Q10((((0 - v.0) as u16) >> 1) as i16);
-}
-
-// heli_dead_tick - a frame of a lost airframe, in three steps: the wreck
-// falls with the camera on it (camera_update follows the focus, so the
-// focus stays there), a second on the ground once it has gone up, then
-// the pan home, at the end of which the next airframe rises. heli_init
-// has already put it on the start.
-far fn heli_dead_tick() {
-    if heli_wreck_y < HELI_Y_MAX {
-        heli_wreck_tick();
-        focus_x = heli_wreck_x;
-        return;
-    }
-    if heli_pause > 0 {
-        heli_pause = heli_pause - 1;
-        if heli_pause == 0 { heli_cam_step = div16(camera_x, HELI_PAN) + 1; }
-        focus_x = heli_wreck_x;
-        return;
-    }
-    heli_dead = heli_dead - 1;
-    if heli_dead == 0 {
-        heli_rising = 1;
-        heli_y = GROUND_Y << 8;
-    }
-    focus_x = heli_x_px + (HELI_W >> 1);
-    camera_pan(heli_cam_step);
-}
-
-// heli_wreck_tick - a frame of the wreck's fall, while it is in the air:
-// dead-stick gravity down, and where it hits it goes up and is gone.
-far fn heli_wreck_tick() {
-    heli_wreck_spin = heli_wreck_spin + 1;
-    if heli_wreck_vy < HELI_VY_MAX { heli_wreck_vy = heli_wreck_vy + HELI_GRAVITY; }
-    heli_wreck_y = heli_wreck_y + ((heli_wreck_vy.0 as u16) << 2);
-    // Half the airframe's way on carries it the whole way down, stopping
-    // only at the world's edges and on the ground.
-    let d: i16 = heli_wreck_vx.0 << 2;      // 1/64 -> 1/256
-    if d >= 0 {
-        let m: u16 = d as u16;
-        let s: u16 = (heli_wreck_sub as u16) + (m & 0x00FF);
-        heli_wreck_sub = s as u8;
-        heli_wreck_x = heli_wreck_x + (m >> 8) + (s >> 8);
-        if heli_wreck_x > WORLD_W - (HELI_W >> 1) {
-            heli_wreck_x = WORLD_W - (HELI_W >> 1);
-            heli_wreck_vx = Q10(0);
+impl Player {
+    // Player::lost - the airframe is gone. The next one starts from the pad
+    // with a full load; the last one is the match. High enough up, one of the
+    // men aboard bails out as a paratrooper; the rest go with it.
+    fn lost() {
+        let cx: u16 = airframes[HELI].x_px + (HELI_W >> 1);
+        sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, cx);
+        fx_burst(FX_BIG, cx, airframes[HELI].y >> 8);
+        if player.men > 0 && airframes[HELI].y <= HELI_Y_BAIL {
+            para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER);
         }
-    } else {
-        let m: u16 = (0 - d) as u16;
-        let mut whole: u16 = m >> 8;
-        let frac: u16 = m & 0x00FF;
-        if (heli_wreck_sub as u16) < frac { whole = whole + 1; }
-        heli_wreck_sub = heli_wreck_sub - (frac as u8);
-        if heli_wreck_x <= whole + (HELI_W >> 1) {
-            heli_wreck_x = HELI_W >> 1;
-            heli_wreck_vx = Q10(0);
+        airframes[HELI].lives = airframes[HELI].lives - 1;
+        if airframes[HELI].lives == 0 {
+            game_over(GAME_LOST);                 // the field freezes as it stands: no wreck
         } else {
-            heli_wreck_x = heli_wreck_x - whole;
+            airframes[HELI].wreck_start();
+            Player::init();
+            airframes[HELI].dead = HELI_PAN;
+            player.pause = HELI_GROUND_PAUSE;
         }
     }
-    if heli_wreck_y >= HELI_Y_MAX {
-        heli_wreck_y = HELI_Y_MAX;
-        heli_wreck_vx = Q10(0);
-        // It goes up where it hits: a second big explosion, and the wreck
-        // is gone (heli_draw draws it only in the air).
-        sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, heli_wreck_x);
-        fx_spawn(FX_BIG, heli_wreck_x, GROUND_Y - 16);
+
+    // Player::dead_tick - a frame of a lost airframe, in three steps: the wreck
+    // falls with the camera on it (camera_update follows the focus, so the
+    // focus stays there), a second on the ground once it has gone up, then
+    // the pan home, at the end of which the next airframe rises. Player::init
+    // has already put it on the start.
+    fn dead_tick() {
+        if airframes[HELI].wreck_up != 0 {
+            airframes[HELI].wreck_tick();
+            focus_x = airframes[HELI].wreck_x;
+            return;
+        }
+        if player.pause > 0 {
+            player.pause = player.pause - 1;
+            if player.pause == 0 { player.cam_step = div16(camera_x, HELI_PAN) + 1; }
+            focus_x = airframes[HELI].wreck_x;
+            return;
+        }
+        airframes[HELI].dead = airframes[HELI].dead - 1;
+        if airframes[HELI].dead == 0 {
+            airframes[HELI].rising = 1;
+            airframes[HELI].y = GROUND_Y << 8;
+        }
+        focus_x = airframes[HELI].x_px + (HELI_W >> 1);
+        camera_pan(player.cam_step);
+    }
+}
+
+
+
+
+// What a lost airframe's wreck does, either side's: drawing only - the
+// loss is counted at once - and once a frame at most, so in bank 3.
+impl Airframe {
+    // Airframe::half - half a speed, for a wreck: *v* / 2 toward zero. `>>` is
+    // logical, so the sign is a branch.
+    fn half(v: Q10) -> Q10 {
+        if v >= Q10(0) { return Q10(((v.0 as u16) >> 1) as i16); }
+        return Q10(0) - Q10((((0 - v.0) as u16) >> 1) as i16);
+    }
+
+    // wreck_start - the airframe is lost: its wreck starts where it was,
+    // falling at what downward speed it had and keeping half its way on
+    // (Airframe::half). One lost on the ground (y at HELI_Y_MAX) has none:
+    // it is gone in its explosion.
+    fn wreck_start(self) {
+        self.wreck_x = self.x_px + (HELI_W >> 1);
+        self.wreck_y = self.y;
+        self.wreck_vy = Q10(0);
+        if self.vy > Q10(0) { self.wreck_vy = self.vy; }
+        self.wreck_vx = Airframe::half(self.vx);
+        self.wreck_sub = 0;
+        self.wreck_face = self.face_left;
+        self.wreck_spin = 0;
+        self.wreck_up = 0;
+        if self.y < HELI_Y_MAX { self.wreck_up = 1; }
+    }
+
+    // wreck_tick - a frame of the wreck's fall, while it is in the air:
+    // dead-stick gravity down, half the airframe's way on carrying it the
+    // whole way (stopping only at the world's edges), and where it hits it
+    // goes up in a big explosion and is gone - wreck_y at HELI_Y_MAX is
+    // "no wreck".
+    fn wreck_tick(self) {
+        self.wreck_spin = self.wreck_spin + 1;
+        if self.wreck_vy < HELI_VY_MAX { self.wreck_vy = self.wreck_vy + HELI_GRAVITY; }
+        self.wreck_y = self.wreck_y + ((self.wreck_vy.0 as u16) << 2);
+        let d: i16 = self.wreck_vx.0 << 2;      // 1/64 -> 1/256
+        if d >= 0 {
+            let m: u16 = d as u16;
+            let s: u16 = (self.wreck_sub as u16) + (m & 0x00FF);
+            self.wreck_sub = s as u8;
+            self.wreck_x = self.wreck_x + (m >> 8) + (s >> 8);
+            if self.wreck_x > WORLD_W - (HELI_W >> 1) {
+                self.wreck_x = WORLD_W - (HELI_W >> 1);
+                self.wreck_vx = Q10(0);
+            }
+        } else {
+            let m: u16 = (0 - d) as u16;
+            let mut whole: u16 = m >> 8;
+            let frac: u16 = m & 0x00FF;
+            if (self.wreck_sub as u16) < frac { whole = whole + 1; }
+            self.wreck_sub = self.wreck_sub - (frac as u8);
+            if self.wreck_x <= whole + (HELI_W >> 1) {
+                self.wreck_x = HELI_W >> 1;
+                self.wreck_vx = Q10(0);
+            } else {
+                self.wreck_x = self.wreck_x - whole;
+            }
+        }
+        if self.wreck_y >= HELI_Y_MAX {
+            self.wreck_y = HELI_Y_MAX;
+            self.wreck_up = 0;
+            self.wreck_vx = Q10(0);
+            sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, self.wreck_x);
+            fx_spawn(FX_BIG, self.wreck_x, GROUND_Y - 16);
+        }
+    }
+
+    // Airframe::collided - the two airframes went into each other: neither wreck
+    // keeps its way on, they fall straight down where they met.
+    fn collided() {
+        airframes[HELI].wreck_vx = Q10(0);
+        airframes[FOE].wreck_vx = Q10(0);
     }
 }
 

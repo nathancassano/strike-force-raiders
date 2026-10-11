@@ -44,7 +44,7 @@ A single horizontal lane, no vertical scroll. Left to right from the player's si
 | World width | 8192 px | **8192 px** (32 screens) | Matches the original exactly. Decided in phase 6, overriding the earlier 4096. Our sprites are smaller, so this is a *larger* field in helicopter-lengths (~256 vs AA's ~164) and a traverse takes ~27 s against AA's ~11 s. Sets the radar scale at 32 world px per HUD px. |
 | World height | 380 px | **200 px play + 24 px HUD** | Fits one 224-line screen. No vertical scroll — this is why the game suits the SNES. |
 | Traverse time | ~11 s | **~27 s** at 5 px/frame | Follows from matching the original width at smaller sprite sizes. |
-| Camera | Centered, leads by velocity | Same + deadzone | AA's `halfWidth * 0.4 * (vX/vXMax)` lookahead, taken as `vx / 8` - 40 px at top speed - plus kungfu's 8 px deadzone so a turn pans rather than snaps. *Decided: the lookahead is in; `heli_update` sets `focus_x`.* |
+| Camera | Centered, leads by velocity | Same + deadzone | AA's `halfWidth * 0.4 * (vX/vXMax)` lookahead, taken as `vx / 8` - 40 px at top speed - plus kungfu's 8 px deadzone so a turn pans rather than snaps. *Decided: the lookahead is in; `Player::update` sets `focus_x`.* |
 | Match timer | None | None | Matches end on a win condition only. |
 
 ## Sprite sizes
@@ -143,7 +143,7 @@ man's pace that put five in a heap.)*
   goes with the airframe.
 - **Zero fuel is a crash landing**: the dead-stick descent ends on ground contact with the
   airframe lost, a life gone. So is **touching down flat out on both axes** - the top descent
-  rate and the top horizontal speed (`heli_crashes`) - deck or not; anything slower lands.
+  rate and the top horizontal speed (`Airframe::crashes`) - deck or not; anything slower lands.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
 - Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
   slice (d)) and then removed from the game, for both airframes.

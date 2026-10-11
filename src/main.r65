@@ -104,7 +104,7 @@ fn boot_load() {
     screen_font();
 
     pad_init();
-    heli_init();
+    Player::reset();
     muni_init();
     fx_init();
     unit_init();
@@ -118,7 +118,7 @@ fn boot_load() {
     econ_init();
     order_init();
     cpu_init();
-    foe_reset();
+    Pilot::reset();
     hud_init();
     radar_init();
     game_init();
@@ -185,9 +185,9 @@ fn main() -> ! {
                 fly_held = held & ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT);
                 fly_trig = trig & ~JOY_A;
             }
-            heli_update(fly_held);
-            heli_fire(fly_held, fly_trig);
-            foe_update();
+            Player::update(fly_held);
+            Player::fire(fly_held, fly_trig);
+            Pilot::update();
             econ_tick();
             order_input(held, trig);
             order_tick();
@@ -205,8 +205,8 @@ fn main() -> ! {
             // unit_collide, and the building under it must see it first.
             struct_collide();
             unit_collide();
-            heli_collide();
-            foe_collide();
+            Player::collide();
+            Pilot::collide();
             camera_update();
             radar_update();
         } else {
@@ -225,8 +225,8 @@ fn main() -> ! {
         // buildings, then ground units from the camera centre outward.
         if game_state != GAME_SCREEN {
             oam_begin();
-            heli_draw();
-            foe_draw();
+            airframes[HELI].draw();
+            airframes[FOE].draw();
             radar_draw();
             muni_draw();
             if fx_live != 0 { fx_draw(); }

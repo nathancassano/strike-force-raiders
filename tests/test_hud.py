@@ -62,7 +62,7 @@ def test_the_overlay_shows_while_l_is_held(snes):
     v = read_snapshot(snes, "l")
     assert v.hud_ov_shown == 1
     assert v.order_sel == 3
-    assert v.heli_x_px == 64
+    assert v.airframes__x_px.u16[0] == 64
 
 
 def test_letting_go_of_l_hides_the_overlay(snes):
@@ -70,7 +70,7 @@ def test_letting_go_of_l_hides_the_overlay(snes):
     v = read_snapshot(snes)
     assert v.hud_ov_shown == 0
     assert v.order_sel == 3
-    assert v.heli_x_px == 64
+    assert v.airframes__x_px.u16[0] == 64
 
 
 def test_a_bombed_van_stops_jamming_the_radar(snes):
@@ -85,13 +85,14 @@ def test_a_bombed_van_stops_jamming_the_radar(snes):
     boot(snes, "MISSION_TEST_HUNTER").wait(9000)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[8] == VAN
-    assert v.radar_jam == 14
-    snes.write("heli_x_px", v.units__x_px.u16[8] - 20, 2)
-    snes.write("heli_vx", 0, 2)
+    # radar_jam is rebuilt across a redraw's first frames; radar_blank is
+    # where it is final.
+    snes.until("radar_blank")
+    assert snes.u16("radar_jam") == 14
+    snes.write("airframes__x_px", v.units__x_px.u16[8] - 20, 2)
+    snes.write("airframes__vx", 0, 2)
     snes.a(1).wait(60)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[8] == FREE
-    # radar_jam is rebuilt across a redraw's first frames; radar_blank is
-    # where it is final.
     snes.until("radar_blank")
     assert snes.u16("radar_jam") == 27

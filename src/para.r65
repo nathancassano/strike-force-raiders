@@ -45,7 +45,6 @@ const PARA_GROUND_Y:  u16 = (GROUND_Y - UNIT_H) << 8;   // feet on the line
 #[lowram] static mut para_cursor: u16;
 #[lowram] static mut para_live:  u8;          // slots in use: both loops skip at zero,
                                               // which is most frames (measured 1.7%)
-#[lowram] static mut heli_men:   u8;          // aboard the player's airframe
 
 const PARA_FREE:    u8 = 0;
 const PARA_CHUTE:   u8 = 1;
@@ -58,7 +57,7 @@ far fn para_init() {
     }
     para_cursor = 0;
     para_live = 0;
-    heli_men = 0;
+    player.men = 0;
 }
 
 // para_drop - a man out of the door at (x, y), for *owner*. The chute
@@ -87,8 +86,8 @@ far fn para_drop(x: u16, y: u16, owner: u8) {
 // middle of the airframe whatever its facing; a man is centred on it when
 // his left edge is (HELI_W - UNIT_MAN_W) / 2 past the airframe's.
 far fn para_pickup() {
-    if heli_men >= PARA_ABOARD { return; }
-    let lo: u16 = heli_x_px + (HELI_W - UNIT_MAN_W) / 2 - PARA_PICKUP;
+    if player.men >= PARA_ABOARD { return; }
+    let lo: u16 = airframes[HELI].x_px + (HELI_W - UNIT_MAN_W) / 2 - PARA_PICKUP;
     let hi: u16 = lo + PARA_PICKUP * 2;
     for j in 0..UNIT_MAX {
         if units[j].kind as u8 == UnitType::Infantry as u8 {
@@ -96,7 +95,7 @@ far fn para_pickup() {
                 let ux: u16 = units[j].x_px;
                 if ux >= lo && ux <= hi {
                     unit_free(j);
-                    heli_men = heli_men + 1;
+                    player.men = player.men + 1;
                     return;
                 }
             }

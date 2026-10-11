@@ -306,7 +306,7 @@ far fn sfx_missile(owner: u8, x: u16) {
 }
 
 // sfx_rotor - the player's airframe's rotor, called every ROTOR_EVERY
-// frames while it is up (heli_update): the next of SFX_HELI_1..4, a little
+// frames while it is up (Player::update): the next of SFX_HELI_1..4, a little
 // louder or softer each time (from the frame count, not rand(), whose
 // sequence the parachutes own) so the loop does not drone. It runs all
 // match long, so it writes its queue slot itself rather than through

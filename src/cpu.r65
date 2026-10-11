@@ -246,7 +246,7 @@ fn cpu_delay(letters: u8) -> u16 {
 far fn cpu_tick() {
     // Income, as the player's: its airframe's distance into the other
     // half against the same threshold.
-    cpu_acc = cpu_acc + ((WORLD_W - foe_x_px) >> ECON_SHIFT);
+    cpu_acc = cpu_acc + ((WORLD_W - airframes[FOE].x_px) >> ECON_SHIFT);
     if cpu_acc >= econ_thresh {
         cpu_acc = cpu_acc - econ_thresh;
         if cpu_funds < ECON_MAX { cpu_funds = cpu_funds + 1; }

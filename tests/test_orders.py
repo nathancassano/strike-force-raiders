@@ -23,7 +23,7 @@ def test_the_opening_purse_and_selection(snes):
     v = read_snapshot(snes)
     assert v.funds == 32
     assert v.order_sel == 2
-    assert v.heli_lives == 4
+    assert v.airframes__lives.u8[0] == 4
 
 
 def test_one_press_buys_one_tank(snes):
@@ -79,5 +79,5 @@ def test_buying_a_helicopter_adds_a_life(snes):
     snes.press("l", "a", frames=3).wait(10)
     v = read_snapshot(snes)
     assert v.funds == 12
-    assert v.heli_lives == 5
+    assert v.airframes__lives.u8[0] == 5
     assert v.order_sel == 5

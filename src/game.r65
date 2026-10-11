@@ -59,7 +59,7 @@ far fn game_continue() {
 // choosing one is mission_set's business, not this one's.
 far fn game_reset() {
     pad_init();
-    heli_init();
+    Player::reset();
     muni_init();
     fx_init();
     unit_init();
@@ -68,7 +68,7 @@ far fn game_reset() {
     econ_init();
     order_init();
     cpu_init();
-    foe_reset();
+    Pilot::reset();
     hud_init();
     radar_init();
     hud_message(&MSG_WON as *u8, 0);

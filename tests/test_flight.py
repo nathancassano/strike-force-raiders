@@ -65,14 +65,14 @@ def test_airframe_spawns_at_rest(snes):
     """heli_init's spawn, untouched by a frame of no input."""
     boot(snes, "MISSION_CAKE_WALK")
     v = read_snapshot(snes)
-    assert v.heli_x_px == 64
-    assert v.heli_y == 112 * 256
+    assert v.airframes__x_px.u16[0] == 64
+    assert v.airframes__y.u16[0] == 112 * 256
 
 
 def test_airframe_flies_right(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(20).right(30)
     v = read_snapshot(snes)
-    assert v.heli_x_px == 171
+    assert v.airframes__x_px.u16[0] == 171
 
 
 def test_airframe_flies_back_left(snes):
@@ -83,7 +83,7 @@ def test_airframe_flies_back_left(snes):
     """
     boot(snes, "MISSION_CAKE_WALK").wait(20).right(240).left(60)
     v = read_snapshot(snes)
-    assert v.heli_x_px == 1106
+    assert v.airframes__x_px.u16[0] == 1106
 
 
 # All four clamps: the world edge, and the flyable box between the HUD strip
@@ -92,19 +92,19 @@ def test_airframe_flies_back_left(snes):
 def test_airframe_stops_at_the_west_edge(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(20).left(60)
     v = read_snapshot(snes)
-    assert v.heli_x_px == 0
+    assert v.airframes__x_px.u16[0] == 0
 
 
 def test_airframe_stops_under_the_hud(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(20).up(60)
     v = read_snapshot(snes)
-    assert v.heli_y == 16 * 256
+    assert v.airframes__y.u16[0] == 16 * 256
 
 
 def test_airframe_stops_on_the_ground(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(20).down(30).wait(40)
     v = read_snapshot(snes)
-    assert v.heli_y == 168 * 256
+    assert v.airframes__y.u16[0] == 168 * 256
 
 
 # Tilt is cosmetic, from velocity ALONG THE NOSE: OAM sprite 0's tile picks
@@ -177,35 +177,35 @@ FREE, BULLET, BOMB = 0, 1, 2
 def test_loadout_is_64_rounds_and_10_bombs(snes):
     boot(snes, "MISSION_CAKE_WALK")
     v = read_snapshot(snes)
-    assert v.heli_gun == 64
-    assert v.heli_bombs == 10
+    assert v.airframes__gun.u8[0] == 64
+    assert v.airframes__bombs.u8[0] == 10
 
 
 def test_30_frames_of_fire_is_5_rounds(snes):
     """HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds."""
     boot(snes, "MISSION_TEST_QUIET").wait(10).b(30)
     v = read_snapshot(snes)
-    assert v.heli_gun == 59
+    assert v.airframes__gun.u8[0] == 59
 
 
 def test_holding_a_drops_one_bomb(snes):
     """Bombs are edge-triggered: holding A must not empty the rack."""
     boot(snes, "MISSION_CAKE_WALK").wait(10).a(1)
     v = read_snapshot(snes)
-    assert v.heli_bombs == 9
+    assert v.airframes__bombs.u8[0] == 9
 
 
 def test_two_presses_drop_two_bombs(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(10).a(1).wait(5).a(1)
     v = read_snapshot(snes)
-    assert v.heli_bombs == 8
+    assert v.airframes__bombs.u8[0] == 8
 
 
 def test_firing_past_empty_stops_at_zero(snes):
     """Firing past empty must stop at zero, not wrap to 255."""
     boot(snes, "MISSION_TEST_QUIET").wait(10).b(400)
     v = read_snapshot(snes)
-    assert v.heli_gun == 0
+    assert v.airframes__gun.u8[0] == 0
 
 
 def test_the_nose_follows_the_stick(snes):
@@ -214,7 +214,7 @@ def test_the_nose_follows_the_stick(snes):
     """
     boot(snes, "MISSION_CAKE_WALK").wait(10).left(20)
     v = read_snapshot(snes)
-    assert v.heli_face_left == 1
+    assert v.airframes__face_left.u8[0] == 1
 
 
 # Pool lifecycle. A bomb falls to the ground in ~25 frames and retires on

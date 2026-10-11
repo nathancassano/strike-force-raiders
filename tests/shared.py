@@ -5,7 +5,7 @@ with the mission picked by writing the ROM's boot_pick at boot_load's entry
 (main.r65). `read_snapshot` is the moment every case
 reads its values at: Select pressed, which calls the ROM's snapshot_point
 from the main loop. It returns the session's memory by name, so a case
-reads `v = read_snapshot(snes)` and asserts on `v.heli_x_px`. The colour
+reads `v = read_snapshot(snes)` and asserts on `v.airframes__x_px.u16[0]`. The colour
 checks are the old shell suite's.
 
 The states several cases share are `@rom_state` builders, at the bottom:
@@ -47,11 +47,28 @@ def boot(s, mission=None):
     return s.wait(BOOT_SETTLE)
 
 
+class Snapshot:
+    """`s.var`, but an #[soa] plane - any name with `__` in it - always reads
+    as an array (`s.raw`), whatever its size. `s.var` reads anything of one
+    to three bytes as a number, and the two airframes' planes are two
+    elements: `airframes__gun` is two bytes, one per side, not a u16. So a
+    plane is always read with its width and index, `v.airframes__gun.u8[1]`,
+    a one-element pool's (`player`, `pilot`) included."""
+
+    def __init__(self, s):
+        object.__setattr__(self, "_s", s)
+
+    def __getattr__(self, name):
+        if "__" in name:
+            return self._s.raw(name)
+        return getattr(self._s.var, name)
+
+
 def read_snapshot(s, *holding):
     """Press Select (with *holding*, if any), stop at snapshot_point, and
-    return the memory there by name (`s.var`)."""
+    return the memory there by name (a Snapshot of `s.var`)."""
     s.until("snapshot_point", max_frames=s.tap_down + s.tap_up, holding=("select", *holding))
-    return s.var
+    return Snapshot(s)
 
 
 def snes8(v):

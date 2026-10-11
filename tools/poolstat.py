@@ -67,36 +67,36 @@ def report(path, d, brief):
                       f"{OWNER[u8('structs__owner', i)]}{u8('structs__hp', i)}"
                       f"{'m' + str(u8('structs__men', i)) if u8("structs__kind", i) == 2 else ''}")
         foe = ""
-        if "foe_x_px" in d:
-            foe = (f" foe@{u16('foe_x_px')},{u16('foe_y') >> 8} hp{u8('foe_hp')} "
-                   f"f{u8('foe_fuel')} g{u8('foe_gun')} b{u8('foe_bombs')} "
-                   f"L{u8('foe_lives')} "
-                   f"{FOE.get(u8('foe_state'), '?')}")
-        print(f"{path}: f{u16('frames_loop')} heli@{u16('heli_x_px')} hp{u8('heli_hp')} "
-              f"L{u8('heli_lives')} ${u8('funds')} cpu${u8('cpu_funds')} muni{ms}{foe}")
+        if "airframes__x_px" in d:
+            foe = (f" foe@{u16('airframes__x_px', 1)},{u16('airframes__y', 1) >> 8} hp{u8('airframes__hp', 1)} "
+                   f"f{u8('airframes__fuel', 1)} g{u8('airframes__gun', 1)} b{u8('airframes__bombs', 1)} "
+                   f"L{u8('airframes__lives', 1)} "
+                   f"{FOE.get(u8('pilot__state'), '?')}")
+        print(f"{path}: f{u16('frames_loop')} heli@{u16('airframes__x_px', 0)} hp{u8('airframes__hp', 0)} "
+              f"L{u8('airframes__lives', 0)} ${u8('funds')} cpu${u8('cpu_funds')} muni{ms}{foe}")
         print("   " + " ".join(us))
         print("   " + " ".join(ss))
         return
     m = f" mission={u8('mission')}" if "mission" in d else ""
     print(f"frame {u16('frames_loop')} (nmi {u16('frames_nmi')}){m}")
-    print(f"heli x={u16('heli_x_px')} y={u16('heli_y') >> 8} hp={u8('heli_hp')} "
-          f"gun={u8('heli_gun')} bombs={u8('heli_bombs')} "
-          f"lives={u8('heli_lives')} funds={u8('funds')}")
+    print(f"heli x={u16('airframes__x_px', 0)} y={u16('airframes__y', 0) >> 8} hp={u8('airframes__hp', 0)} "
+          f"gun={u8('airframes__gun', 0)} bombs={u8('airframes__bombs', 0)} "
+          f"lives={u8('airframes__lives', 0)} funds={u8('funds')}")
     if "cpu_funds" in d:
         q = [ORDERS.get(u8("cpu_q", i), "?") for i in range(u8("cpu_head"), u8("cpu_tail"))]
         print(f"cpu  funds={u8('cpu_funds')} acc={u16('cpu_acc')} "
               f"queue={''.join(q) or '-'} letter={ORDERS.get(u8('cpu_kind'))}x{u8('cpu_men')} "
               f"gap={u8('cpu_gap')} t={u8('cpu_t')}")
 
-    if "foe_x_px" in d:
+    if "airframes__x_px" in d:
         extra = ""
-        if "foe_tx" in d:
-            extra = (f" -> {u16('foe_tx')},{u16('foe_ty') >> 8} attack={u8('foe_attack')} "
-                     f"hunt={u8('foe_hunt')} tgt={u8('foe_tgt')} bombed={u8('foe_bombed')}x{u8('foe_bombed_n')}")
-        print(f"foe  x={u16('foe_x_px')} y={u16('foe_y') >> 8} vx={u16('foe_vx')} hp={u8('foe_hp')} "
-              f"fuel={u8('foe_fuel')} gun={u8('foe_gun')} bombs={u8('foe_bombs')} "
-              f"lives={u8('foe_lives')} state={FOE.get(u8('foe_state'), '?')} landed={u8('foe_landed')} "
-              f"dead={u8('foe_dead')} rising={u8('foe_rising')}{extra}")
+        if "pilot__tx" in d:
+            extra = (f" -> {u16('pilot__tx', 0)},{u16('pilot__ty', 0) >> 8} attack={u8('pilot__attack', 0)} "
+                     f"hunt={u8('pilot__hunt', 0)} tgt={u8('pilot__tgt', 0)} bombed={u8('pilot__bombed', 0)}x{u8('pilot__bombed_n', 0)}")
+        print(f"foe  x={u16('airframes__x_px', 1)} y={u16('airframes__y', 1) >> 8} vx={u16('airframes__vx', 1)} hp={u8('airframes__hp', 1)} "
+              f"fuel={u8('airframes__fuel', 1)} gun={u8('airframes__gun', 1)} bombs={u8('airframes__bombs', 1)} "
+              f"lives={u8('airframes__lives', 1)} state={FOE.get(u8('pilot__state'), '?')} landed={u8('airframes__landed', 1)} "
+              f"dead={u8('airframes__dead', 1)} rising={u8('airframes__rising', 1)}{extra}")
     heads = [u8("unit_head", 0), u8("unit_head", 1)]
     tails = [u8("unit_tail", 0), u8("unit_tail", 1)]
     print(f"units: lead P={heads[0]} E={heads[1]}  rear P={tails[0]} E={tails[1]}")

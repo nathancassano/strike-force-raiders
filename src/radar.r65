@@ -228,13 +228,13 @@ far fn radar_update() {
     if step == 2 { radar_units(UNIT_MAX >> 1, UNIT_MAX); return; }
     if step != 3 { return; }
 
-    if heli_dead == 0 {
-        let h: u16 = (heli_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
+    if airframes[HELI].dead == 0 {
+        let h: u16 = (airframes[HELI].x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
         radar_blue2(h, 1);
         if h < 255 { radar_blue2(h + 1, 1); }
     }
-    if foe_dead == 0 {
-        let f: u16 = (foe_x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
+    if airframes[FOE].dead == 0 {
+        let f: u16 = (airframes[FOE].x_px + (HELI_W >> 1)) >> RADAR_SHIFT;
         radar_red2(f, 1);
         if f < 255 { radar_red2(f + 1, 1); }
     }

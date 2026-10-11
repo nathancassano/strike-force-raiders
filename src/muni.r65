@@ -174,15 +174,15 @@ far fn muni_update() {
             if kind == MUNI_MISSILE {
                 // Steer: full speed toward the other side's airframe on
                 // each axis. With none up it flies on straight.
-                let mut tx: u16 = heli_x_px + (HELI_W >> 1);
-                let mut ty: u16 = heli_y + ((HELI_H >> 1) << 8);
+                let mut tx: u16 = airframes[HELI].x_px + (HELI_W >> 1);
+                let mut ty: u16 = airframes[HELI].y + ((HELI_H >> 1) << 8);
                 let mut up: u8 = 1;
                 if muni_owner[i] == SIDE_PLAYER {
-                    tx = foe_x_px + (HELI_W >> 1);
-                    ty = foe_y + ((HELI_H >> 1) << 8);
-                    if foe_dead > 0 || foe_rising != 0 { up = 0; }
+                    tx = airframes[FOE].x_px + (HELI_W >> 1);
+                    ty = airframes[FOE].y + ((HELI_H >> 1) << 8);
+                    if airframes[FOE].dead > 0 || airframes[FOE].rising != 0 { up = 0; }
                 } else {
-                    if heli_dead > 0 || heli_rising != 0 { up = 0; }
+                    if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { up = 0; }
                     lock = up;
                 }
                 if up != 0 {

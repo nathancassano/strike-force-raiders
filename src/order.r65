@@ -37,7 +37,7 @@ far fn econ_init() {
 }
 
 far fn econ_tick() {
-    econ_acc = econ_acc + (heli_x_px >> ECON_SHIFT);
+    econ_acc = econ_acc + (airframes[HELI].x_px >> ECON_SHIFT);
     if econ_acc >= econ_thresh {
         econ_acc = econ_acc - econ_thresh;
         if funds < ECON_MAX { funds = funds + 1; }
@@ -82,7 +82,6 @@ const ORDER_GAP:   u8 = 10;               // frames between men leaving
 #[lowram] static mut order_men:  u8;      // still to leave for the current order
 #[lowram] static mut order_kind: u8;      // ... and what they are
 #[lowram] static mut order_t:    u8;      // frames until the next one
-#[lowram] static mut heli_lives: u8;
 
 far fn order_init() {
     order_sel = Order::Tank as u8;        // the main line; what you want first
@@ -91,7 +90,7 @@ far fn order_init() {
     order_men = 0;
     order_kind = 0;
     order_t = 0;
-    heli_lives = start_lives;
+    airframes[HELI].lives = start_lives;
 }
 
 // order_queued - men of a kind bought but not yet on the field. They count
@@ -117,7 +116,7 @@ far fn order_place() -> u8 {
 
     if order_sel == Order::Heli as u8 {
         funds = funds - cost;
-        heli_lives = heli_lives + 1;
+        airframes[HELI].lives = airframes[HELI].lives + 1;
         return 1;
     }
 
@@ -126,8 +125,8 @@ far fn order_place() -> u8 {
     let kind: Order = order_sel as Order;
     // Men aboard the airframe are men too.
     let mut have: u8 = unit_count(kind, SIDE_PLAYER) + order_queued(kind);
-    if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer) + heli_men; }
-    if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry) + heli_men; }
+    if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer) + player.men; }
+    if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry) + player.men; }
     if have + order_stats[k].men > order_stats[k].cap { return 0; }
 
     if order_tail - order_head >= ORDER_QUEUE { return 0; }

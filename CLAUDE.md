@@ -51,7 +51,7 @@ screen (the sky's stops at its split; run to 224 it cost `unit_budget` 29 ticks)
 follows it - the ROM header and vectors at the top of bank 0 - with an `Overwrite at` line and
 exit status 0, and the ROM crashes on its first frame. The Makefile fails the link on that line
 (`build/link.log`). Code that does not have to be in bank 0 (anything not calling `oam_take` or
-another near bank-0 routine) goes to bank 3 as a `far fn`, as `fx.r65` and `foe_lost` do.
+another near bank-0 routine) goes to bank 3 as a `far fn`, as `fx.r65` and `Pilot::lost` do.
 
 **`src/lib/` is a vendored copy of `/home/nathan/R65/stdlib/`.** It currently matches upstream
 except for the `rand.r65` change above. Check before copying code from another project - the
@@ -87,7 +87,10 @@ in words, its explanation as the docstring - no parametrize tables, no lambdas:
         assert v.camera_x == 90
 
 Names are exactly as the `.sym`/`.dbg` spell them, with an array's width stated
-(`v.units__kind__tag.u8[3]`); values are decimal (8.8 heights as `96 * 256`), hex only for bit
+(`v.units__kind__tag.u8[3]`); an `#[soa]` plane is always read that way, even a two-element one -
+`v.airframes__x_px.u16[0]` the player's, `[1]` the enemy's, `v.player__men.u8[0]` - since
+`read_snapshot` returns a `Snapshot` (`tests/shared.py`) that gives any name with `__` as an
+array (plain `s.var` reads anything of one to three bytes as a number); values are decimal (8.8 heights as `96 * 256`), hex only for bit
 patterns. `boot` takes a mission by its ROM constant's name - a test row,
 `boot(snes, "MISSION_TEST_QUIET")` (also `MISSION_TEST_HUNTER`, `MISSION_TEST_CONVOY`), or a
 campaign mission, `MISSION_` and its briefing name, `boot(snes, "MISSION_CAKE_WALK")`
@@ -156,7 +159,8 @@ rotor_raiders/
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
 │   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the test rows
 │   ├── screen.r65            # The front end: title, briefing and after-action pages on BG3
-│   ├── foe.r65               # The enemy airframe: its state, pad, patrol, and the world against it
+│   ├── heli.r65              # The airframes: the #[soa] pool (Airframe, both sides' methods) and the player's (Player)
+│   ├── foe.r65               # The enemy's pilot (Pilot): its decisions, and the world against its airframe
 │   ├── fx.r65                # Explosions and smoke: hindstrike's particle animations (bank 3, draw in 0)
 │   ├── hud.r65               # BG3 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
 │   ├── radar.r65             # BG3 strip row 2: the radar, a 256x8 bitmap the game draws
@@ -370,31 +374,29 @@ idle every frame they cost `unit_budget` ten ticks.
 
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base
 (`struct_base_van`, scanned every 32 frames - a van is in the window ~75 frames) or the
-player's last helicopter (`heli_lost`). Any other loss runs in three steps (`heli_dead_tick`):
-the camera stays on the wreck (`heli_wreck_x`) while it falls, and for `HELI_GROUND_PAUSE` (a
+player's last helicopter (`Player::lost`). Any other loss runs in three steps (`Player::dead_tick`):
+the camera stays on the wreck (`airframes[HELI].wreck_x`) while it falls, and for `HELI_GROUND_PAUSE` (a
 second) after it goes up on the ground - from the loss itself, when that was on the ground -
 then `camera_pan` brings the view home in `HELI_PAN` (72) frames at a pace sized as it starts
-(`camera_x / 72 + 1`, so the far end of the world arrives inside it). `heli_dead` counts the
-pan, and is non-zero throughout. The wreck
+(`camera_x / 72 + 1`, so the far end of the world arrives inside it). `airframes[HELI].dead`
+counts the pan, and is non-zero throughout. The wreck
 falls out of it under dead-stick gravity, spinning through the crashing frame and the turn's
 drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe's way on
-(`wreck_half`) the whole way down - straight down instead when the two airframes went into each other
-(`wreck_collided`) - and goes up where it hits: a second big explosion, and it is gone
-(`wreck_draw`, drawing only - the loss is counted at once, and it is a separate function so the
-live draw pays nothing: folded into `heli_draw` it cost `unit_budget` 3 ticks). One lost on the
-ground leaves no wreck. The enemy airframe's falls the same way on a timer of its own
-(`foe_wreck_t`, 120 frames, since a row with no `regen_time` puts the next one up at once),
-through the same `wreck_draw` in its palette, and goes up and is gone where it hits just the
-same. Nothing draws the crashed frame (`HELI_TILE_CRASHED`, tile 44) now; `wreck_draw` keeps
-the case. Both sides' falls
-and `heli_lost`/`foe_lost` are in bank 3. The last airframe of either side leaves no wreck: the field freezes
+(`Airframe::half`) the whole way down - straight down instead when the two airframes went into
+each other (`Airframe::collided`) - and goes up where it hits: a second big explosion, and it is
+gone (`Airframe::wreck_start`/`wreck_tick`/`wreck_draw`, drawing only - the loss is counted at
+once; `wreck_up` says one is falling). One lost on the ground leaves no wreck. The enemy's is the
+same code on `airframes[FOE]`, ticked by `Pilot::update` whether or not its next airframe is up
+(a row with no `regen_time` puts it up at once), in its palette. Nothing draws the crashed frame
+(`HELI_TILE_CRASHED`, tile 44) now. Both sides' falls and `Player::lost`/`Pilot::lost` are in
+bank 3. The last airframe of either side leaves no wreck: the field freezes
 as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
 are off until it is up. A dead stick touching open ground is a crash landing and a loss too;
 only a deck saves it - and a touchdown flat out on both axes, at `HELI_VY_MAX` down and
-`HELI_VX_MAX` either way, is a crash, deck or not (`heli_crashes`, the enemy airframe's rule too).
+`HELI_VX_MAX` either way, is a crash, deck or not (`Airframe::crashes`, the enemy airframe's rule too).
 Anything slower lands: the descent rate takes ~88 px of dive to build, so from hover height every
 descent lands, and a crash has to start from above y 80 with Down and a direction held. `game_state` gates the whole simulation; the draw
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
@@ -474,21 +476,39 @@ can reach, and any change to `foe.r65` re-deals the whole army. That is what `cp
 for: a test mission names the convoy to buy (the tier gate does not apply to a forced pick,
 the purse still does), so the dozen cases calibrated to a column stay put.
 
-**The enemy airframe** (`src/foe.r65`) is a second helicopter on its own `foe_*` statics with
-copies of the player's physics, loadout, fuel, pad and loss rules (a second copy of a few
-routines beats routing both airframes through a pointer, and leaves the tuned code alone). It
-starts hovering at the far edge, facing the player. It is lost to a bomb outright, to 20 points
+**The two airframes are one `#[soa]` pool**, `airframes: [Airframe; 2]` (`src/heli.r65`):
+element `HELI` (0) the player's, `FOE` (1) the enemy's. What both have - position, speed,
+facing, turn, ammo, fuel, hp, the landed/dead/rising flags, lives, the wreck - is an `Airframe`
+field, and what both do the same way is an `impl Airframe` method taking the element as `self`
+in X: `init`, `fly`, `burn`, `turn_step`, `rearm`, `draw`, the wreck's start/tick/draw, and
+`crashes`. What only the player's has is the one-element pool `player: Player` (on a deck, men
+aboard, the pan home), with its routines as associated functions in `impl Player`
+(`Player::update`, `fire`, `collide`, `lost`, ...); the enemy's pilot is `pilot: Pilot` and
+`impl Pilot` (`src/foe.r65`). Associated functions, not methods: there is one of each, and a
+receiver would pin X, which their loops want. **The per-frame methods are
+`#[inline(always)]`**, and every call names its element with a constant
+(`airframes[HELI].fly()`), so the inlined body's `airframes__f,X` folds to the absolute
+`airframes__f` (R65's `optimize/const_index.py`): one copy of the code compiles to what two
+hand-written per-side copies did, with no call left - the stress run got 21 ticks a minute
+faster for it. Not inlined, an index method reloads X at every switch between a u8 and a u16
+field and builds a stack frame: the shared draw alone cost 14 ticks that way. Keep a new
+per-frame `Airframe` method `#[inline(always)]`, and call it on `HELI` or `FOE`, not a variable.
+The pilot's decisions (`Pilot::think`, `choose` and the target pickers, every 8 frames) are in
+bank 3 to keep room in bank 0, with a bank-3 copy of `unit_apart` (`Pilot::apart`).
+
+**The enemy airframe** is `airframes[FOE]` with the player's physics, loadout, fuel, pad and
+loss rules - the same methods. It starts hovering at the far edge, facing the player. It is lost to a bomb outright, to 20 points
 of gunfire or two missiles, to a balloon, and to contact with the player's airframe (both go);
 the next one comes after the row's `regen_time`, rising out of the ground at the far edge, and
 the last one is the player's win.
 
-**The pilot** (`foe_think`, every 8 frames; `foe_fire` every frame) is an adaptation of Armor
+**The pilot** (`Pilot::think`, every 8 frames; `Pilot::fire` every frame) is an adaptation of Armor
 Alley's `Helicopter-AI.js` - its priority list, not its steering-force model. In order: **refit**
 (fuel under 10 plus a unit per 256 px of the trip home, or two of gun < 6 / no bombs / hp < 5 -
 one on the first two rows) → the pad; **dodge** the nearest opposing round within 192 px and
 two heights - a round from the ground gets the jink (`foe_jink`, four heights every 16 frames),
 one from the air a step over or under, and the spot flown to stays what it was; **hunt** the
-player's airframe when `foe_hunt` and it is within 512 px and not landed - a standoff off it,
+player's airframe when `pilot.hunt` and it is within 512 px and not landed - a standoff off it,
 level, for the gun, or two heights above it for a bomb once the gun is dry; **bomb** the nearest
 player unit the row's `kill_*` flags allow within 512 px (from a hover over it), then the
 nearest player turret or bunker on a **pass** - `FOE_PASS` (192 px) beyond it, since a bomb
@@ -498,21 +518,21 @@ plus vx × the fall, `mul16` on the height) is over the target, one bomb per tar
 tank, any number per turret, 40 frames apart; else **wander** toward the player's end on the
 weave (`foe_weave`, four heights every 64 frames), turning at `FOE_WEST` (900, short of the
 base's missiles) and 128 px from the far edge. `FOE_WEST` bounds every mode, not just the
-wander: `foe_think` clamps the chosen spot to it (a hunt that follows the player home stops
+wander: `Pilot::think` clamps the chosen spot to it (a hunt that follows the player home stops
 at the edge), and the bomb pickers skip a unit west of it or a building whose pass would end
-west of it. After every decision `foe_under_balloons` pins
-the height to hover within 224 px of a balloon, and every frame `foe_evade` overrides the
+west of it. After every decision `Pilot::under_balloons` pins
+the height to hover within 224 px of a balloon, and every frame `Pilot::evade` overrides the
 height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames,
 asking full vertical speed - on the player's thrust and drag, like every other move: the two
 airframes carry the same inertia on both axes), one from the air a step over or under, and the
-player's airframe about to overlap gets a climb or dive out of its plane (`foe_avoid_due`: within a
+player's airframe about to overlap gets a climb or dive out of its plane (`Pilot::avoid_due`: within a
 standoff, or closing - both airframes' speed, the pilot's own not counted in a hunt - fast enough to
 cover the gap in 16 frames, a shift of the speed). It is deliberately imperfect: it looks every
 fourth frame, and one encounter in four it is blind for `FOE_BLIND` frames, chosen from the frame
 count rather than `cpu_rand` so the purchases stay put; a head-on charge gets through about one
 time in sixteen. The gun fires at
 the player's airframe within 320 px, more than a width off, within 1.5 heights and faced. Modes
-as the original's: every ~34 s `foe_attack` (7 in 8) and `foe_hunt` (attack and
+as the original's: every ~34 s `pilot.attack` (7 in 8) and `pilot.hunt` (attack and
 `kill_copter`); a point of gunfire with the player's airframe in view tosses a coin, at most
 once a second, to start hunting. Not adapted: clouds, paratroopers, the kamikaze run, and the
 smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
@@ -559,8 +579,8 @@ the edge follows the van. It costs ~2.5% of a frame on average; `unit_budget`'s
 pinned figure dropped more than that because that movie sits on the budget line and a frame
 over it by a hair drops whole.
 
-The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`heli_landed`;
-`heli_on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
+The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`airframes[HELI].landed`;
+`player.on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
 airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
 from an 8-slot pool of its own - units have no y - who sinks at 0.75 px/frame under a canopy
 cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
@@ -579,7 +599,7 @@ cursor move, with an all-transparent twin DMA'd on hide; its border and cursor t
 on map row 30 by `tools/hud_glyphs.py`, the names come from the letter row. `game_over` hides
 it before writing the battle-over line on row 10, from when they shared that row.
 
-Funds (`src/order.r65`) accumulate `heli_x_px >> 4` per frame against `ECON_THRESH`; that
+Funds (`src/order.r65`) accumulate `airframes[HELI].x_px >> 4` per frame against `ECON_THRESH`; that
 threshold is the pace knob. Orders go
 through an eight-deep queue that lets the next man out once the last has cleared the gate by a
 convoy space (`unit_spawn`'s spacing test), holding him when the pool is full rather than dropping him. Caps count men on the field plus men queued, and
@@ -632,7 +652,7 @@ airframe of either side or a turret or bunker falling (`SFX_EXPLODE_2`), a missi
 or `SFX_ENEMY_MISSILE` by its side), the missile alarm (`SFX_MISSILE_WARNING`, centred, every 32
 frames while a missile homes on the player's airframe - `muni_update`, on the loss channel as
 `SFX_CHN_WARN`, so a hit cuts it), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
-every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `heli_update`; 19 in the
+every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `Player::update`; 19 in the
 air, 11 idling on a deck - a fifth of where it started, which ran over everything - jittered by 1
 from the frame count, never `rand()`). Its four effects are pitched down a fourth, B-4 to F#4, by
 `tools/sfx_transpose.py SEMITONES SFX...`: the GSS tool has no command-line export, so the tool

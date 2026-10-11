@@ -22,8 +22,8 @@ def test_board(state):
     """All five men aboard, and their pool slots free again."""
     snes = state(boarded)
     v = read_snapshot(snes)
-    assert v.heli_men == 5
-    assert v.heli_landed == 1
+    assert v.player__men.u8[0] == 5
+    assert v.airframes__landed.u8[0] == 1
     assert v.units__kind__tag.u8[0] == FREE
     assert v.units__kind__tag.u8[4] == FREE
 
@@ -37,9 +37,9 @@ def test_field(snes):
     snes.press("l", "a", frames=3).wait(20)
     snes.right(120).wait(60).down(30).wait(40).wait(1600)
     v = read_snapshot(snes)
-    assert v.heli_men == 5
-    assert v.heli_landed == 1
-    assert v.heli_on_pad == 0
+    assert v.player__men.u8[0] == 5
+    assert v.airframes__landed.u8[0] == 1
+    assert v.player__on_pad.u8[0] == 0
 
 
 def test_lost(state):
@@ -49,8 +49,8 @@ def test_lost(state):
     snes = state(boarded)
     snes.upright(36).right(220)
     v = read_snapshot(snes)
-    assert v.heli_men == 0
-    assert v.heli_lives == 3
+    assert v.player__men.u8[0] == 0
+    assert v.airframes__lives.u8[0] == 3
 
 
 def test_bail(state):
@@ -62,8 +62,8 @@ def test_bail(state):
     snes.upright(36).right(220).wait(10)
     v = read_snapshot(snes)
     assert v.para_live == 1
-    assert v.heli_men == 0
-    assert v.heli_lives == 3
+    assert v.player__men.u8[0] == 0
+    assert v.airframes__lives.u8[0] == 3
 
 
 def test_crash(state):
@@ -72,8 +72,8 @@ def test_crash(state):
     snes.up(60).downright(100).wait(5)
     v = read_snapshot(snes)
     assert v.para_live == 0
-    assert v.heli_men == 0
-    assert v.heli_lives == 3
+    assert v.player__men.u8[0] == 0
+    assert v.airframes__lives.u8[0] == 3
 
 
 def test_drop(state):
@@ -84,7 +84,7 @@ def test_drop(state):
         snes.x(3).wait(40 if i < 4 else 0)
     snes.wait(140)
     v = read_snapshot(snes)
-    assert v.heli_men == 0
+    assert v.player__men.u8[0] == 0
     assert v.units__kind__tag.u8[21] == INFANTRY
     assert v.units__kind__tag.u8[22] == INFANTRY
     assert v.units__kind__tag.u8[23] == INFANTRY

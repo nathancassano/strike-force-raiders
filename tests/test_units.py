@@ -106,9 +106,12 @@ def test_unit_budget(state):
     it lands - two more (3662/2949). The wrecks' drift as they fall
     gives one back (3662/2950): it keeps half the airframe's speed rather
     than decaying it, which was a far call to approach() each frame of a
-    fall.
+    fall. Then 21 ticks faster (3663/2971): the two airframes became one
+    #[soa] pool whose per-frame methods are inlined at their constant
+    element and folded to absolute addressing (R65's const_index pass),
+    leaving no call at all where each side used to call its own copy.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3662
-    assert v.frames_loop == 2950
+    assert v.frames_nmi == 3663
+    assert v.frames_loop == 2971

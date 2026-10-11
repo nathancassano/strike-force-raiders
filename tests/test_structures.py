@@ -26,9 +26,9 @@ CANOPY = (14, 22, 28)          # the airframe's canopy, BGR555 components
 def test_balloon_kill(state):
     snes = state(balloon_hit)
     v = read_snapshot(snes)
-    assert v.heli_lives == 3
-    assert v.heli_x_px == 64
-    assert v.heli_dead == 72              # HELI_PAN: the pan home is all still to come
+    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__x_px.u16[0] == 64
+    assert v.airframes__dead.u8[0] == 72              # HELI_PAN: the pan home is all still to come
     assert v.camera_x == 1945
 
 
@@ -42,9 +42,9 @@ def test_balloon_pan(state, tmp_path):
     snes = state(balloon_hit)
     snes.wait(60)
     v = read_snapshot(snes)
-    assert v.heli_x_px == 64
-    assert v.heli_dead == 72
-    assert v.heli_pause == 35
+    assert v.airframes__x_px.u16[0] == 64
+    assert v.airframes__dead.u8[0] == 72
+    assert v.player__pause.u8[0] == 35
     assert v.camera_x == 1991
     assert screen_colour(snes, tmp_path, CANOPY, snes_colour=True) == 0, "the canopy is nowhere on screen"
 
@@ -56,10 +56,10 @@ def test_balloon_rise(state):
     snes = state(balloon_hit)
     snes.wait(167).right(10)
     v = read_snapshot(snes)
-    assert v.heli_x_px == 64
-    assert v.heli_dead == 0
-    assert v.heli_rising == 1
-    assert v.heli_y == 174 * 256
+    assert v.airframes__x_px.u16[0] == 64
+    assert v.airframes__dead.u8[0] == 0
+    assert v.airframes__rising.u8[0] == 1
+    assert v.airframes__y.u16[0] == 174 * 256
     assert v.camera_x == 0
 
 
@@ -104,8 +104,8 @@ def test_the_enemy_bases_missiles_down_an_airframe(snes):
     """
     boot(snes, "MISSION_TEST_QUIET").wait(20).right(1520).wait(300)
     v = read_snapshot(snes)
-    assert v.heli_lives == 3
-    assert v.heli_hp == 20
+    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__hp.u8[0] == 20
 
 
 def test_a_launcher_fires_its_one_missile(snes):
@@ -120,8 +120,8 @@ def test_a_launcher_fires_its_one_missile(snes):
     boot(snes, "MISSION_TEST_CONVOY").wait(20).up(40).right(1400).wait(120)
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
-    assert v.heli_hp == 10
-    assert v.heli_lives == 4
+    assert v.airframes__hp.u8[0] == 10
+    assert v.airframes__lives.u8[0] == 4
 
 
 def test_the_enemy_mans_the_super_bunker(snes):
