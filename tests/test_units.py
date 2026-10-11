@@ -98,9 +98,11 @@ def test_unit_budget(state):
     cycles a frame on average, and on the budget line that drops 21 ticks
     a minute; without it the run gives 2976. The explosions and smoke
     (src/fx.r65) cost one more (2954): their pool is skipped from main
-    while empty - called idle every frame it cost ten.
+    while empty - called idle every frame it cost ten. A bomb landing on a
+    vehicle now goes off rather than vanishing on its roof, which is a
+    different battle at the same ratio (3662/2953, from 3663/2954).
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3663
-    assert v.frames_loop == 2954
+    assert v.frames_nmi == 3662
+    assert v.frames_loop == 2953

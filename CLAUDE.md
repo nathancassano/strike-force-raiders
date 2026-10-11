@@ -295,7 +295,9 @@ neighbours (that is the base's gate: men leave one at a time), and `unit_free` u
 **Traffic control is then one question of the unit ahead** (`unit_traffic`: halted, and within
 width + gap?) and only the two leads scan the pool for the nearest of the other side; flags are
 refreshed every frame in march order, lead first. Liveness is the tag plane (`Free` is 0).
-Collision rejects a munition against the whole pool with one scanline-band test. **The sprite
+Collision rejects a munition against the whole pool with one scanline-band test - all but a bomb,
+which falls through a unit's box and goes off on the ground, so its blast is what hits the vehicle it
+lands on (caught in the band it was spent on the roof for nothing). **The sprite
 budget holds by spacing**: at width + gap a window carries at most eight vehicles, 24 sprites /
 24 tiles on the line against the PPU's 32 / 34, leaving room for a building on the same line.
 

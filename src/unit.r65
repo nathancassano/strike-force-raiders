@@ -886,8 +886,11 @@ far fn unit_collide() {
                 // of the airframe's fire is above it - so test the band once
                 // per munition rather than once per unit. Measured: this is
                 // the difference between 0.77 and 1.00 ticks/frame under
-                // sustained fire.
-                if muni_kind[m] != MUNI_FREE
+                // sustained fire. A bomb is not tested: it falls through to
+                // the ground and goes off there, and the blast is what hits
+                // (25, everything within BLAST_R) - caught here it would be
+                // spent on the roof for unit_damage_for's 0.
+                if muni_kind[m] != MUNI_FREE && mk != MUNI_BOMB
                    && my >= UNIT_BAND_TOP && my < UNIT_BAND_BOT {
                     for i in 0..UNIT_MAX {
                         match units[i].kind {

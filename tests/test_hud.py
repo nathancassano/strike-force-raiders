@@ -12,6 +12,8 @@ sprite over the row, in the slot after the airframe's two: at boot x 0, y 8
 
 from shared import boot, read_snapshot, screen_colour
 
+FREE, VAN = 0, 2
+
 
 def radar_row(v, row):
     """Radar tile 0's two plane bytes for one pixel row."""
@@ -69,3 +71,27 @@ def test_letting_go_of_l_hides_the_overlay(snes):
     assert v.hud_ov_shown == 0
     assert v.order_sel == 3
     assert v.heli_x_px == 64
+
+
+def test_a_bombed_van_stops_jamming_the_radar(snes):
+    """A bomb dropped straight onto a van goes off on the ground under it and
+    kills it, and the next redraw moves the jam to the van behind.
+
+    The hunter's column has its first van (slot 8) at x 3626 by frame 9186,
+    jamming from radar tile 14, and the next at 6984. The airframe is planted
+    20 px ahead of the van at hover height - flying there would meet the
+    column's missile truck - and drops one bomb.
+    """
+    boot(snes, "MISSION_TEST_HUNTER").wait(9000)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[8] == VAN
+    assert v.radar_jam == 14
+    snes.write("heli_x_px", v.units__x_px.u16[8] - 20, 2)
+    snes.write("heli_vx", 0, 2)
+    snes.a(1).wait(60)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[8] == FREE
+    # radar_jam is rebuilt across a redraw's first frames; radar_blank is
+    # where it is final.
+    snes.until("radar_blank")
+    assert snes.u16("radar_jam") == 27
