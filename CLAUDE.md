@@ -370,10 +370,12 @@ idle every frame they cost `unit_budget` ten ticks.
 
 The match (`src/game.r65`) ends two ways only: a van of either side inside the other's base
 (`struct_base_van`, scanned every 32 frames - a van is in the window ~75 frames) or the
-player's last helicopter (`heli_lost`). Any other loss hides the airframe for `HELI_RESPAWN`
-(120) frames while `camera_pan` brings the view home at a pace sized at the loss
-(`camera_x / 72 + 1`, so the far end of the world arrives inside the delay) - after holding
-for `HELI_LOSS_HOLD` (48) on the wreck (`heli_wreck_x`), so its explosion plays out. The wreck
+player's last helicopter (`heli_lost`). Any other loss runs in three steps (`heli_dead_tick`):
+the camera stays on the wreck (`heli_wreck_x`) while it falls, and for `HELI_GROUND_PAUSE` (a
+second) after it goes up on the ground - from the loss itself, when that was on the ground -
+then `camera_pan` brings the view home in `HELI_PAN` (72) frames at a pace sized as it starts
+(`camera_x / 72 + 1`, so the far end of the world arrives inside it). `heli_dead` counts the
+pan, and is non-zero throughout. The wreck
 falls out of it under dead-stick gravity, spinning through the crashing frame and the turn's
 drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe's way on
 (`wreck_half`) the whole way down - straight down instead when the two airframes went into each other

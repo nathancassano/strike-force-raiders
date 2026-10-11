@@ -153,14 +153,16 @@ far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
 #[lowram] static mut heli_bomb_t: u8;
 #[lowram] static mut heli_hp_t:   u8;     // ... and to the next point repaired
 #[lowram] static mut heli_hp:     u8;     // the plan's 20; a bomb ends it outright
-#[lowram] static mut heli_dead:   u8;     // frames until the next airframe; 0 = flying
+#[lowram] static mut heli_dead:   u8;     // lost while > 0: frames of the pan home left; 0 = flying
+#[lowram] static mut heli_pause:  u8;     // frames left on the ground before the pan
 #[lowram] static mut heli_rising: u8;     // 1 while the next airframe climbs out of the ground
-#[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized at the loss
+#[lowram] static mut heli_cam_step: u16;  // the pan home, px/frame, sized when it starts
 #[lowram] static mut heli_wreck_x:  u16;  // where it was lost: the camera holds there
 #[lowram] static mut heli_wreck_y:  u16;  // the wreck's top, 8.8: falls to HELI_Y_MAX
 #[lowram] static mut heli_wreck_vy: Q10;
 #[lowram] static mut heli_wreck_vx: Q10;   // half the way on it had, kept all the way down
 #[lowram] static mut heli_wreck_sub: u8;   // 1/256 px of heli_wreck_x
+#[lowram] static mut heli_wreck_spin: u8;  // frames it has fallen: the spin's clock
 #[lowram] static mut heli_wreck_face: u8;
 
 // Enemy fire against the airframe. Gunfire takes a point; at zero the
@@ -169,15 +171,15 @@ far fn heli_crashes(vx: Q10, vy: Q10) -> u8 {
 const HELI_HP_MAX: u8 = 20;
 const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
 
-// Losing an airframe is not instant. The sprite goes, the view pans back
-// to the start, and the next airframe appears there once the pan is done.
-// The pan is paced to land inside the delay from wherever the loss was:
-// distance over the delay, rounded up, so the far end of the world takes
-// the whole delay and anywhere nearer arrives with frames to spare.
-const HELI_RESPAWN: u8 = 120;             // frames hidden; the pan's budget
-// The camera holds on the loss this long - the big explosion's eight
-// frames of six (fx.r65) - before it pans home in the rest of the delay.
-const HELI_LOSS_HOLD: u8 = 48;
+// Losing an airframe is not instant. The camera stays on the wreck while
+// it falls and goes up on the ground, holds there HELI_GROUND_PAUSE (a
+// second) more, then pans back to the start in HELI_PAN, and the next
+// airframe appears there once the pan is done. The pan is paced from
+// where the camera stands when it starts: distance over HELI_PAN, rounded
+// up, so the far end of the world takes all of it and anywhere nearer
+// arrives with frames to spare.
+const HELI_GROUND_PAUSE: u8 = 60;
+const HELI_PAN:          u8 = 72;
 // Then it rises out of the ground at the start: from the ground line up
 // to hover height at a pixel a frame, drawn behind the ground band until
 // it has cleared it, and under nobody's control.
@@ -213,6 +215,7 @@ far fn heli_init() {
     heli_hp = HELI_HP_MAX;
     heli_men = 0;                         // the men left aboard went with it
     heli_dead = 0;
+    heli_pause = 0;
     heli_rising = 0;
     heli_cam_step = 0;
 }
@@ -467,24 +470,7 @@ far fn heli_move_y(v: Q10) {
 // heli_update - one tick of input, physics and world clamping.
 far fn heli_update(held: u16) {
     if heli_dead > 0 {
-        // Lost: the stick does nothing, and the view goes home ahead of
-        // the next airframe. heli_init has already put it on the start.
-        heli_dead = heli_dead - 1;
-        if heli_dead == 0 {
-            heli_rising = 1;
-            heli_y = GROUND_Y << 8;
-        }
-        // The wreck falls (heli_wreck_tick). Drawing only: the loss has
-        // already been counted.
-        if heli_wreck_y < HELI_Y_MAX { heli_wreck_tick(); }
-        // Held on the wreck while it goes up (camera_update follows the
-        // focus too, so the focus stays there), then home in what is left.
-        if heli_dead >= HELI_RESPAWN - HELI_LOSS_HOLD {
-            focus_x = heli_wreck_x;
-        } else {
-            focus_x = heli_x_px + (HELI_W >> 1);
-            camera_pan(heli_cam_step);
-        }
+        heli_dead_tick();                 // lost: the stick does nothing
         return;
     }
     // Up, rising or on a deck: the rotor (checked here, not in sfx_rotor,
@@ -607,7 +593,7 @@ far fn heli_draw() {
     if heli_dead > 0 {                    // lost: the wreck, until the next one rises
         // Only while it falls: it goes up where it hits (heli_wreck_tick).
         if heli_wreck_y < HELI_Y_MAX {
-            wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, HELI_RESPAWN - heli_dead);
+            wreck_draw(heli_wreck_x, heli_wreck_y, heli_wreck_face, HELI_ATTR, heli_wreck_spin);
         }
         return;
     }
@@ -740,8 +726,9 @@ far fn heli_lost() {
         game_over(GAME_LOST);
     } else {
         heli_init();
-        heli_dead = HELI_RESPAWN;
-        heli_cam_step = div16(camera_x, HELI_RESPAWN - HELI_LOSS_HOLD) + 1;
+        heli_dead = HELI_PAN;
+        heli_pause = HELI_GROUND_PAUSE;
+        heli_wreck_spin = 0;
     }
 }
 
@@ -752,9 +739,36 @@ far fn wreck_half(v: Q10) -> Q10 {
     return Q10(0) - Q10((((0 - v.0) as u16) >> 1) as i16);
 }
 
+// heli_dead_tick - a frame of a lost airframe, in three steps: the wreck
+// falls with the camera on it (camera_update follows the focus, so the
+// focus stays there), a second on the ground once it has gone up, then
+// the pan home, at the end of which the next airframe rises. heli_init
+// has already put it on the start.
+far fn heli_dead_tick() {
+    if heli_wreck_y < HELI_Y_MAX {
+        heli_wreck_tick();
+        focus_x = heli_wreck_x;
+        return;
+    }
+    if heli_pause > 0 {
+        heli_pause = heli_pause - 1;
+        if heli_pause == 0 { heli_cam_step = div16(camera_x, HELI_PAN) + 1; }
+        focus_x = heli_wreck_x;
+        return;
+    }
+    heli_dead = heli_dead - 1;
+    if heli_dead == 0 {
+        heli_rising = 1;
+        heli_y = GROUND_Y << 8;
+    }
+    focus_x = heli_x_px + (HELI_W >> 1);
+    camera_pan(heli_cam_step);
+}
+
 // heli_wreck_tick - a frame of the wreck's fall, while it is in the air:
 // dead-stick gravity down, and where it hits it goes up and is gone.
 far fn heli_wreck_tick() {
+    heli_wreck_spin = heli_wreck_spin + 1;
     if heli_wreck_vy < HELI_VY_MAX { heli_wreck_vy = heli_wreck_vy + HELI_GRAVITY; }
     heli_wreck_y = heli_wreck_y + ((heli_wreck_vy.0 as u16) << 2);
     // Half the airframe's way on carries it the whole way down, stopping

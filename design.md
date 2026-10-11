@@ -153,7 +153,8 @@ man's pace that put five in a heap.)*
   **within 5 px of a landed airframe's middle** boards it, five aboard at most. **X drops them as
   paratroopers** (parachute sprite, the ~10 % failure below), one per press; a man who lands
   walks on as ordered infantry would.
-- **Losing an airframe**: the sprite goes, the view pans home inside 120 frames, and the next
+- **Losing an airframe**: the wreck falls and goes up, the view holds a second on it and then pans
+  home inside 72 frames, and the next
   airframe **rises out of the ground** at the start with a full load.
 - AA's mouse-seeking control becomes d-pad acceleration toward a target velocity.
 

@@ -134,7 +134,7 @@ const FOE_TGT_NONE:   u8 = 0xFF;
 // The wreck, as the player's (heli.r65): it falls and lies where it was
 // lost for FOE_WRECK_TIME, on a timer of its own, since a row with no
 // regen_time puts the next airframe up at once.
-const FOE_WRECK_TIME: u8 = HELI_RESPAWN;
+const FOE_WRECK_TIME: u8 = 120;
 #[lowram] static mut foe_wreck_t:    u8;     // frames left to show it; 0 = none
 #[lowram] static mut foe_wreck_x:    u16;    // centre
 #[lowram] static mut foe_wreck_y:    u16;    // top, 8.8
