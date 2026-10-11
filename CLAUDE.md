@@ -534,7 +534,15 @@ time in sixteen. The gun fires at
 the player's airframe within 320 px, more than a width off, within 1.5 heights and faced. Modes
 as the original's: every ~34 s `pilot.attack` (7 in 8) and `pilot.hunt` (attack and
 `kill_copter`); a point of gunfire with the player's airframe in view tosses a coin, at most
-once a second, to start hunting. Not adapted: clouds, paratroopers, the kamikaze run, and the
+once a second, to start hunting. **Paratroopers**, the original's (campaign missions only,
+`cpu_paras` - the test missions' battles would re-deal): five aboard each airframe, no pickup;
+on a decision (`Pilot::maybe_drop`) over a bunker or the super bunker not its side's, or coming
+up on a player turret from the east within 64 px, it drops one - all of them on the super bunker
+or under half its health or bombs - unless its own men in view are already heading there; one
+drop per 30 s, the men 12 frames apart, their chutes failing on the frame count rather than
+`rand()` (the player's sequence) or `cpu_rand` (the purchases). It drops on what its flying
+takes it over; the original's steering to a bunker for it, and its bank raid, are not here
+(`FOE_WEST` keeps it out of the base's missiles). Not adapted: clouds, the kamikaze run, and the
 smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
 per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
 `struct_collide` runs before `unit_collide`, which spends the blast, and the blast is snapped
@@ -582,7 +590,8 @@ over it by a hair drops whole.
 The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`airframes[HELI].landed`;
 `player.on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
 airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
-from an 8-slot pool of its own - units have no y - who sinks at 0.75 px/frame under a canopy
+from an 8-slot pool both sides drop into - units have no y; when it is full (`para_drop` returns
+0) the man stays aboard, and sixteen slots cost the frame enough to move `test_drop` - who sinks at 0.75 px/frame under a canopy
 cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
 the frame the unit pool has room. An airframe lost a third of its flight band up or higher

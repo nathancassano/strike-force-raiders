@@ -97,3 +97,19 @@ def test_the_hot_pilot_bombs_a_tank(snes):
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == FREE
     assert v.airframes__lives.u8[0] == 4
+
+
+def test_the_enemy_drops_paratroopers_into_the_super_bunker(snes):
+    """On a campaign mission the enemy airframe carries five men
+    (foe.r65's Pilot::maybe_drop): wandering west over the super bunker
+    at x 4076 it drops all of them - the super bunker gets the whole load -
+    around frame 1000, and they take it, one man inside, by 1400, long
+    before its ground column (still past x 7000) could. The test missions
+    leave this out, so the cases above keep their battles.
+    """
+    boot(snes, "MISSION_CAKE_WALK").wait(1400)
+    v = read_snapshot(snes)
+    assert v.pilot__men.u8[0] == 0
+    assert v.structs__kind.u8[4] == 2         # the super bunker
+    assert v.structs__owner.u8[4] == 1        # the enemy's
+    assert v.structs__men.u8[4] == 1

@@ -18,9 +18,10 @@
 // same decisions set a target for Pilot::steer, which does the flying, and
 // the reactions are the original's too: a mode roll every half minute
 // (attack seven times in eight), a coin toss to start hunting when its
-// gunfire hits, a bomb limit per target. Clouds, paratroopers, kamikaze
-// runs, the smart missile (`useMissile`) and the missile counter-measures
-// are not here.
+// gunfire hits, a bomb limit per target, and paratroopers dropped on the
+// bunkers and turrets it passes (campaign missions; Pilot::maybe_drop).
+// Clouds, kamikaze runs, the smart missile (`useMissile`) and the missile
+// counter-measures are not here.
 //
 // The airframe itself is airframes[FOE] (heli.r65): its flying, rearming,
 // drawing and wreck are Airframe's methods, shared with the player's. What
@@ -94,6 +95,14 @@ const FOE_PASS:     u16 = 192;            // a bombing pass over a building runs
 const FOE_BOMB_CD:  u8  = 40;             // frames between bombs
 const FOE_BOMB_TANK: u8 = 3;              // bombs per tank; one for anything else
 const FOE_RESPOND:  u8  = 60;             // frames between coin tosses on being hit
+// Paratroopers, the original's: five aboard every airframe (no pickup),
+// one drop at most every 30 s, the men 200 ms apart (its classic
+// parachutingDelayFlying), and a turret dropped on from within 64 px of
+// its near side, coming up on it.
+const FOE_MEN:        u8  = 5;
+const FOE_PARA_EVERY: u16 = 1800;
+const FOE_PARA_GAP:   u8  = 12;
+const FOE_PARA_TURRET: u16 = 64;
 // The weave: the wander's height cycles through these, one every 64
 // frames - the original's sine wave, biased upward. Under fire from the
 // ground it is the second, twice as tall and four times as quick: the
@@ -133,6 +142,10 @@ struct Pilot {
     blind:    u8,       // frames left of not seeing it
     tx:       u16,      // where it is flying to, decided
     ty:       u16,      // ... every FOE_THINK frames
+    men:      u8,       // paratroopers aboard: FOE_MEN each airframe
+    drop:     u8,       // men still to go out of the door in this drop
+    gap:      u8,       // frames to the next of them
+    para_t:   u16,      // frames until another drop may start
 }
 #[lowram] static mut pilot: Pilot;
 
@@ -148,6 +161,9 @@ impl Pilot {
     // match's, so Pilot::lost keeps them across a re-init.
     fn init() {
         airframes[FOE].init(FOE_START_X, 1);
+        pilot.men = FOE_MEN;                // a new airframe's men; the last one's went with it
+        pilot.drop = 0;
+        pilot.gap = 0;
         pilot.state = FOE_WANDER;
         pilot.low = 0;
         pilot.avoid = 0;
@@ -166,6 +182,7 @@ impl Pilot {
 
     fn reset() {
         Pilot::init();
+        pilot.para_t = 0;
         airframes[FOE].wreck_up = 0;           // no wreck
         airframes[FOE].lives = FOE_LIVES;
         // The mode roll's opening values: attacking, but not yet hunting -
@@ -531,6 +548,7 @@ impl Pilot {
 
         airframes[FOE].burn();
         if pilot.respond > 0 { pilot.respond = pilot.respond - 1; }
+        if pilot.drop > 0 { Pilot::drop_tick(); }    // men going out of the door
 
         if airframes[FOE].fuel == 0 {
             // Dead stick: gravity, and the ground ends it.
@@ -698,6 +716,100 @@ impl Pilot {
     fn think() {
         Pilot::choose();
         if pilot.tx < FOE_WEST { pilot.tx = FOE_WEST; }
+        Pilot::maybe_drop();
+    }
+
+    // Pilot::maybe_drop - the original's maybeDropParatroopersNearTarget,
+    // with the decisions: men out over a bunker or the super bunker that is
+    // not its side's, for them to take, or coming up on a player turret
+    // from the east, for them to shoot at. At most one drop every
+    // FOE_PARA_EVERY; none where its own men are already on the way to the
+    // building (the super bunker is dropped on regardless). Campaign
+    // missions only (cpu_paras): not the frozen test missions. All of them on
+    // the super bunker or when the airframe is under half its health or its
+    // bombs, otherwise one. It drops on what its flying takes it over: the
+    // original's steering toward a bunker to drop on is not here.
+    fn maybe_drop() {
+        if pilot.para_t > 0 {
+            if pilot.para_t > FOE_THINK { pilot.para_t = pilot.para_t - FOE_THINK; } else { pilot.para_t = 0; }
+            return;
+        }
+        if cpu_paras == 0 || pilot.men == 0 || pilot.drop > 0 || airframes[FOE].landed != 0 { return; }
+        let fx: u16 = airframes[FOE].x_px;
+        let mut tgt: u16 = STRUCT_MAX;
+        let mut all: u8 = 0;
+        for i in 0..struct_count {
+            let k: u8 = structs[i].kind;
+            let sx: u16 = structs[i].x;
+            let sw: u16 = structs[i].w;
+            if k == StructKind::Bunker as u8 || k == StructKind::Super as u8 {
+                if structs[i].owner != SIDE_ENEMY && fx + HELI_W > sx && fx < sx + sw {
+                    tgt = i;
+                    all = 0;
+                    if k == StructKind::Super as u8 { all = 1; }
+                }
+            }
+            if k == StructKind::Turret as u8 && structs[i].owner == SIDE_PLAYER && structs[i].hp > 0 {
+                if fx >= sx + sw && fx - sx <= FOE_PARA_TURRET {
+                    tgt = i;
+                    all = 0;
+                }
+            }
+        }
+        if tgt == STRUCT_MAX { return; }
+        if all == 0 && Pilot::men_on_the_way(tgt) != 0 { return; }
+        pilot.para_t = FOE_PARA_EVERY;
+        let mut n: u8 = 1;
+        if all != 0 || airframes[FOE].hp < (HELI_HP_MAX >> 1) || airframes[FOE].bombs < (HELI_BOMB_MAX >> 1) {
+            n = pilot.men;
+        }
+        pilot.drop = n;
+        pilot.gap = 0;
+    }
+
+    // Pilot::men_on_the_way - are its infantry or paratroopers in view
+    // still east of building *i*'s middle, walking (or coming down) toward
+    // it? The original's "nearby friends" check.
+    fn men_on_the_way(i: u16) -> u8 {
+        let mid: u16 = structs[i].x + (structs[i].w >> 1);
+        let cx: u16 = airframes[FOE].x_px + (HELI_W >> 1);
+        let mut j: u8 = unit_head[SIDE_ENEMY as u16];
+        while j != UNIT_NONE {
+            let u: u16 = j as u16;
+            if units[u].kind as u8 >= UnitType::Infantry as u8 {
+                let ux: u16 = units[u].x_px;
+                if ux > mid && Pilot::apart(ux, cx) < FOE_VIEW { return 1; }
+            }
+            j = units[u].behind;
+        }
+        for p in 0..PARA_MAX {
+            if para_state[p] != PARA_FREE && para_owner[p] == SIDE_ENEMY {
+                if para_x[p] > mid && Pilot::apart(para_x[p], cx) < FOE_VIEW { return 1; }
+            }
+        }
+        return 0;
+    }
+
+    // Pilot::drop_tick - a frame of a drop under way: a man out of the door
+    // every FOE_PARA_GAP frames from the airframe's middle, until the drop
+    // or the men run out. Called off by a landing, or by a full paratrooper
+    // pool (the men stay aboard for the next).
+    fn drop_tick() {
+        if airframes[FOE].landed != 0 || pilot.men == 0 {
+            pilot.drop = 0;
+            return;
+        }
+        if pilot.gap > 0 {
+            pilot.gap = pilot.gap - 1;
+            return;
+        }
+        if para_drop(airframes[FOE].x_px + (HELI_W >> 1), airframes[FOE].y, SIDE_ENEMY) == 0 {
+            pilot.drop = 0;                 // nowhere to put him: called off, the men kept
+            return;
+        }
+        pilot.men = pilot.men - 1;
+        pilot.drop = pilot.drop - 1;
+        pilot.gap = FOE_PARA_GAP;
     }
 
     // Pilot::choose - what to do and where to fly, in priority order.

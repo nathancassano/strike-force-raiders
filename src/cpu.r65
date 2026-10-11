@@ -142,6 +142,10 @@ static convoys: [Convoy; 25] = [
 // reached for cpu_rand() before the first purchase - so any change in
 // foe.r65 would re-deal the opponent's whole army.
 #[lowram] static mut cpu_forced: u8;
+// 1 when the pilot drops paratroopers (foe.r65's Pilot::maybe_drop): every
+// campaign mission, as in the original, but not the test missions, whose
+// battles the suite is calibrated to - a man out of the door re-deals them.
+#[lowram] static mut cpu_paras:  u8;
 #[lowram] static mut cpu_funds:  u8;
 #[lowram] static mut cpu_acc:    u16;
 #[lowram] static mut cpu_seed:   u16;     // its own xorshift, see cpu_rand

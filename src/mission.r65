@@ -149,6 +149,9 @@ far fn mission_set(n: u8) {
     cpu_forced = 0;
     if m == MISSION_TEST_HUNTER { cpu_forced = CONVOY_TEST_HUNTER + 1; }
     if m == MISSION_TEST_CONVOY { cpu_forced = CONVOY_TEST_CONVOY + 1; }
+    // The enemy airframe's paratroopers: the campaign's, not the test rows'.
+    cpu_paras = 0;
+    if m < MISSION_COUNT { cpu_paras = 1; }
     mission_layout();
 }
 

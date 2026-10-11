@@ -10,8 +10,13 @@
 //
 // A paratrooper is the one thing on the field with a height that is not
 // the airframe's, so he gets his own small pool rather than a unit slot:
-// units have no y. Eight covers five men out of one door plus an enemy
-// airframe's later.
+// units have no y. Eight: five men out of one door and a few of the
+// other's. Both sides drop into it - the enemy airframe's men (foe.r65's
+// Pilot::maybe_drop) come down the same way and land as the enemy's
+// infantry - and a landed man waits in his slot for his side's units to
+// have room, so it can be full: para_drop says so, and the man stays
+// aboard. (Sixteen slots cost the frame budget enough, while men were in
+// the air, to move the suite's airlift case.)
 
 #[bank(0)]
 
@@ -60,9 +65,13 @@ far fn para_init() {
     player.men = 0;
 }
 
-// para_drop - a man out of the door at (x, y), for *owner*. The chute
-// is decided at the door: one in ten fails.
-far fn para_drop(x: u16, y: u16, owner: u8) {
+// para_drop - a man out of the door at (x, y), for *owner*: 1, or 0 with
+// nobody dropped when every slot is taken. The chute is decided at the
+// door: one in ten fails. The player's on rand(), whose
+// sequence the suite's airlift cases are pinned to; the enemy's on the
+// frame count and the spot, so its drops neither move that sequence nor
+// take a draw from cpu_rand, which deals the CPU's purchases.
+far fn para_drop(x: u16, y: u16, owner: u8) -> u8 {
     let mut i: u16 = para_cursor;
     let mut n: u16 = 0;
     while n < PARA_MAX {
@@ -71,14 +80,21 @@ far fn para_drop(x: u16, y: u16, owner: u8) {
             para_y[i] = y;
             para_owner[i] = owner;
             para_state[i] = PARA_CHUTE;
-            if (rand() & 0x00FF) < PARA_FAIL { para_state[i] = PARA_FALLING; }
+            let mut roll: u16 = 0;
+            if owner == SIDE_PLAYER {
+                roll = rand() & 0x00FF;
+            } else {
+                roll = (frames_loop ^ (frames_loop >> 3) ^ (x >> 2)) & 0x00FF;
+            }
+            if roll < PARA_FAIL { para_state[i] = PARA_FALLING; }
             para_cursor = (i + 1) & PARA_MASK;
             para_live = para_live + 1;
-            return;
+            return 1;
         }
         i = (i + 1) & PARA_MASK;
         n = n + 1;
     }
+    return 0;                             // full: the man stays aboard
 }
 
 // para_pickup - one tick on the deck: a friendly infantryman centred
