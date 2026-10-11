@@ -358,7 +358,7 @@ along the ground at units of any other side outside its box; the base fires homi
 on the rails when ready, empty for the `BASE_RATE` countdown after a shot (tiles 236/238, drawn
 inline in `struct_draw` behind the bunker test, since the stress movie sits on the budget line
 and even a per-building compare cost it frames); the bank's gun falls silent after two shells and an enemy
-infantryman at the player's bank halves the purse. Per-unit scans (capture, claim, entry, robbery)
+infantryman at the player's bank - or a paratrooper landing in its doorway - halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
 `tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp`; the airframe's
 own sheet is drawn by `tools/heli_art.py`, and both write their 4-bit BMP through
@@ -485,8 +485,8 @@ the player's half, and - the original's rule, from the remake's `Inventory.js` -
 convoy has left the gate and the row's `order_delay` (22 s, shorter past tier 5, plus up to a
 quarter at random, halved after a single unit) has run, buys one convoy it can afford at
 random with its own xorshift, so `rand()`'s parachute sequence stays put; broke, it waits a
-whole pause. `fund_min`/`fund_max` are the player's purse at which it will raid the bank (not a
-reserve; the original has none). The convoy drains through `cpu_tick`'s emitter under the same
+whole pause. `fund_min`/`fund_max` are the player's purse at which its airframe raids the bank
+(see the pilot below; not a reserve - the original has none). The convoy drains through `cpu_tick`'s emitter under the same
 gate rules as the player's orders. Its purchase sequence from a cold boot is fixed by
 `cpu_seed` and the airframe's flight - but *only* by those: the pilot draws the same
 `cpu_rand`, so how often it has tossed a coin before the first purchase decides what the purse
@@ -535,7 +535,7 @@ from a hover falls straight down the turret's own stream of rounds; a turret onl
 plus vx × the fall, `mul16` on the height) is over the target, one bomb per target, three per
 tank, any number per turret, 40 frames apart; else **wander** toward the player's end on the
 weave (`foe_weave`, four heights every 64 frames), turning at `FOE_WEST` (900, short of the
-base's missiles) and 128 px from the far edge. `FOE_WEST` bounds every mode, not just the
+base's missiles) and 128 px from the far edge. `FOE_WEST` bounds every mode but the bank raid, not just the
 wander: `Pilot::think` clamps the chosen spot to it (a hunt that follows the player home stops
 at the edge), and the bomb pickers skip a unit west of it or a building whose pass would end
 west of it. After every decision `Pilot::under_balloons` pins
@@ -562,8 +562,18 @@ drop per 30 s, the men 12 frames apart, their chutes failing on the frame count 
 allowed it flies to the nearest bunker or super bunker in view that is not its own
 (`Pilot::para_target`, the `FOE_PARA` mode, after refit, dodge and hunt, before bombing) and
 hovers over it - under the balloon - until they go: not the original's, whose steering leaves
-buildings alone, but carrying men is for that. Its bank raid is not here (`FOE_WEST` keeps it
-out of the base's missiles). Not adapted: clouds, the kamikaze run, and the
+buildings alone, but carrying men is for that. **The bank raid** (`FOE_RAID`, campaign missions
+only) is the original's maybeTakeOutEndBunker: with men aboard, in its 1-in-4 steal window
+(`pilot.steal`, rolled with the mode roll on the frame count, not `cpu_rand`), and the player's
+purse over `fund_min` on a `CPU_ROB_BANK` row (the last three missions, the original's easy
+`killEndB`) or over `fund_max` on any - the original's `fund_max` never fires on its own - and a
+purse paying for the distance (each unit 64 px: `Pilot::raid_wanted`), it flies first after
+refit, through the base's missiles (`think` lifts `FOE_WEST` for it), to the player's bank, and
+within 16 px puts every man out. At hover height, not the original's high flight: climbing back
+up between the field's balloons carried it into the next one. A man who lands in a bank's
+doorway robs it as he touches down (`struct_bank_rob_at`, from `para_update`), so a raid works
+with the enemy's units at their cap; the raider usually goes down to the missiles on the way out.
+Not adapted: clouds, the kamikaze run, and the
 smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
 per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
 `struct_collide` runs before `unit_collide`, which spends the blast, and the blast is snapped
@@ -581,7 +591,7 @@ Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating f
 anti-air missile, which steers at the other side's airframe and does 10 of its 20 points.
 **Neither airframe carries a missile**: the smart missile (Y, `MUNI_SMART`, kind 6) was built
 and then removed - Y does nothing in battle, kind 6 is unused, and bit 0x40 of the CPU rows'
-flags (the original's `useMissile`) is read by nothing. OAM order follows the plan's importance rule: the helicopter takes slots 0-1
+flags (the original's `useMissile`) is now `CPU_ROB_BANK`, the bank raid's. OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px
 culled rather than parked off-screen.
 

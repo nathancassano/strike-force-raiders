@@ -822,7 +822,8 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
     every 8 frames set one spot for `foe_steer` instead of summed forces; the balloon and
     chain whiskers are a height clamp near balloons; the wander turns at the player's base
     zone rather than the world's edge, since the base's missiles would take a life every
-    pass. Dropped: clouds (none here), paratroopers, kamikaze, missile decoys - and the
+    pass. Dropped: clouds (none here), paratroopers and the bank raid (both added since, foe.r65),
+    kamikaze, missile decoys - and the
     purchasing rule in `cpu.r65` was corrected to the original's on the way (no reserve;
     a random affordable convoy after each pause). Found on the way: a bomb's blast never
     reached a building (`unit_collide` spent it first, and the ground line was excluded).

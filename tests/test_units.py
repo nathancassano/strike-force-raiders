@@ -111,9 +111,10 @@ def test_unit_budget(state):
     element and folded to absolute addressing (R65's const_index pass),
     leaving no call at all where each side used to call its own copy.
     The enemy's paratrooper steering - off on this test mission - moved
-    the layout a tick (3662/2970).
+    the layout a tick (3662/2970), and the bank raid's checks in the
+    pilot's decisions - off here too - four more (3662/2966).
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 2970
+    assert v.frames_loop == 2966

@@ -118,6 +118,15 @@ const FOE_HUNT:    u8 = 3;
 const FOE_BOMB:    u8 = 4;                // a ground unit
 const FOE_STRUCT:  u8 = 5;                // a turret or bunker
 const FOE_PARA:    u8 = 6;                // to a bunker to drop men on it
+const FOE_RAID:    u8 = 7;                // to the player's bank, to rob it
+// The raid's flight, at hover height and the men out once the airframe's
+// middle is this near the bank's. The original flies it high (`y =
+// min(96, y)`), steering round balloons with its whiskers; here a balloon is
+// only ducked under, and climbing back up between the field's balloons
+// carried the airframe into the next one - hover height is under them all,
+// and the base's missiles home in at any height.
+const FOE_RAID_Y:    u16 = HELI_Y_HOVER;
+const FOE_RAID_NEAR: u16 = 16;
 // A bomb target: a unit slot, or a structure index with the top bit set.
 const FOE_TGT_STRUCT: u8 = 0x80;
 const FOE_TGT_NONE:   u8 = 0xFF;
@@ -147,6 +156,8 @@ struct Pilot {
     drop:     u8,       // men still to go out of the door in this drop
     gap:      u8,       // frames to the next of them
     para_t:   u16,      // frames until another drop may start
+    steal:    u8,       // the 1-in-4 window in which a raid may start (the original's stealB)
+    raid:     u8,       // a raid under way: held until its men are out
 }
 #[lowram] static mut pilot: Pilot;
 
@@ -162,6 +173,7 @@ impl Pilot {
     // match's, so Pilot::lost keeps them across a re-init.
     fn init() {
         airframes[FOE].init(FOE_START_X, 1);
+        pilot.raid = 0;                     // a lost airframe's raid goes with it
         pilot.men = FOE_MEN;                // a new airframe's men; the last one's went with it
         pilot.drop = 0;
         pilot.gap = 0;
@@ -184,6 +196,7 @@ impl Pilot {
     fn reset() {
         Pilot::init();
         pilot.para_t = 0;
+        pilot.steal = 0;
         airframes[FOE].wreck_up = 0;           // no wreck
         airframes[FOE].lives = FOE_LIVES;
         // The mode roll's opening values: attacking, but not yet hunting -
@@ -716,8 +729,42 @@ impl Pilot {
     // that follows the player home stops at the edge of it.
     fn think() {
         Pilot::choose();
-        if pilot.tx < FOE_WEST { pilot.tx = FOE_WEST; }
+        // Kept out of the player base's missiles - but for a raid, which
+        // flies through them to the bank, as the original's does.
+        if pilot.state != FOE_RAID && pilot.tx < FOE_WEST { pilot.tx = FOE_WEST; }
         Pilot::maybe_drop();
+    }
+
+    // Pilot::raid_wanted - may it raid the player's bank now? The
+    // original's maybeTakeOutEndBunker: men aboard, its 1-in-4 steal window,
+    // the purse over fund_min on a CPU_ROB_BANK row or over fund_max on any
+    // (cpu.r65), and a purse that pays for the distance - each unit of it
+    // 64 px, so a rich purse is raided from further off. Campaign missions
+    // only (cpu_paras), as the paratroopers are. The bank's index, or
+    // STRUCT_MAX.
+    fn raid_wanted() -> u16 {
+        if cpu_paras == 0 || pilot.men == 0 || pilot.steal == 0 { return STRUCT_MAX; }
+        let row: u16 = cpu_level as u16;
+        let rich: u8 = funds;
+        let mut want: u8 = 0;
+        if (cpu_stats[row].flags & CPU_ROB_BANK) != 0 && rich > cpu_stats[row].fund_min { want = 1; }
+        if rich > cpu_stats[row].fund_max { want = 1; }
+        if want == 0 { return STRUCT_MAX; }
+        let b: u16 = Pilot::player_bank();
+        if b == STRUCT_MAX { return STRUCT_MAX; }
+        let mid: u16 = structs[b].x + (structs[b].w >> 1);
+        let cx: u16 = airframes[FOE].x_px + (HELI_W >> 1);
+        if (Pilot::apart(cx, mid) >> 6) >= (rich as u16) { return STRUCT_MAX; }
+        return b;
+    }
+
+    // Pilot::player_bank - the player's bank in the structure pool, or
+    // STRUCT_MAX (a layout always has one; it is looked up, not assumed).
+    fn player_bank() -> u16 {
+        for i in 0..struct_count {
+            if structs[i].kind == StructKind::Bank as u8 && structs[i].owner == SIDE_PLAYER { return i; }
+        }
+        return STRUCT_MAX;
     }
 
     // Pilot::maybe_drop - the original's maybeDropParatroopersNearTarget,
@@ -849,6 +896,11 @@ impl Pilot {
             if (cpu_rand() & 7) != 0 { pilot.attack = 1; }
             pilot.hunt = 0;
             if pilot.attack != 0 && (cpu_stats[cpu_level as u16].flags & CPU_KILL_COPTER) != 0 { pilot.hunt = 1; }
+            // The original's stealB, a 1-in-4 roll at its targeting tick: on
+            // the frame count rather than cpu_rand, whose draws deal the
+            // purchases.
+            pilot.steal = 0;
+            if ((frames_loop >> 11) & 3) == 0 { pilot.steal = 1; }
         }
 
         pilot.tgt = FOE_TGT_NONE;
@@ -875,6 +927,34 @@ impl Pilot {
             // Over the deck and slow: come down.
             if Pilot::apart(airframes[FOE].x_px, tx) <= FOE_NEAR && airframes[FOE].vx < FOE_WALK && airframes[FOE].vx > Q10(0) - FOE_WALK {
                 pilot.ty = HELI_Y_MAX;
+            }
+            return;
+        }
+
+        // Raid: high over to the player's bank and every man out over it,
+        // through the base's missiles (think lifts FOE_WEST for it). First
+        // after refit, as the original's maybeTakeOutEndBunker; held once
+        // begun until the men are out, or the airframe is lost.
+        // (cpu_paras and the steal window are tested here, not in a call:
+        // the test missions never raid, and the stress run is on its line.)
+        let mut bank: u16 = STRUCT_MAX;
+        if pilot.raid != 0 && pilot.men > 0 && pilot.drop == 0 {
+            bank = Pilot::player_bank();
+        } else {
+            pilot.raid = 0;
+            if cpu_paras != 0 && pilot.steal != 0 && pilot.drop == 0 { bank = Pilot::raid_wanted(); }
+        }
+        if bank < STRUCT_MAX {
+            pilot.raid = 1;
+            pilot.state = FOE_RAID;
+            let mid: u16 = structs[bank].x + (structs[bank].w >> 1);
+            if mid > (HELI_W >> 1) { pilot.tx = mid - (HELI_W >> 1); } else { pilot.tx = 0; }
+            pilot.ty = FOE_RAID_Y;
+            if Pilot::apart(cx, mid) < FOE_RAID_NEAR {
+                pilot.drop = pilot.men;         // all of them, as the original
+                pilot.gap = 0;
+                pilot.para_t = FOE_PARA_EVERY;
+                pilot.raid = 0;
             }
             return;
         }

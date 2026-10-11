@@ -15,19 +15,23 @@
 // One row per mission. `convoy_level` gates the table below and
 // `order_delay` is the pause between convoys (the original's 22 s, shorter
 // past tier 5); `fund_min` and `fund_max` are the player's purse at which
-// the airframe will raid the bank, when that comes (they gate nothing in
-// the purchasing - the original buys whatever it can afford); `clip_speed`
+// the airframe raids the bank (foe.r65's Pilot::raid_wanted): over
+// `fund_min` on a CPU_ROB_BANK row, over `fund_max` on any - the original
+// gates both behind its killEndB, so its fund_max never fires on its own;
+// here it is the "too rich to ignore" it reads as. They gate nothing in
+// the purchasing - the original buys whatever it can afford. `clip_speed`
 // and `regen_time` are for the airframe (Q10 top speed, frames to the
 // next one). The flags follow the original's ramp: mission 1 hunts tanks
-// and nothing else, mission 8 has everything on. Bit 0x40 is the original's
-// `useMissile`; the rows still carry it, but the smart missile is out of the
-// game and nothing reads it.
+// and nothing else, mission 8 has everything on.
 const CPU_BUILD_TRUCK:     u8 = 0x01;     // may buy launchers (else M -> I)
 const CPU_BUILD_ENGINEERS: u8 = 0x02;     // may buy engineers (else E -> I)
 const CPU_KILL_COPTER:     u8 = 0x04;
 const CPU_KILL_TANK:       u8 = 0x08;
 const CPU_KILL_VAN:        u8 = 0x10;
 const CPU_KILL_MEN:        u8 = 0x20;
+const CPU_ROB_BANK:        u8 = 0x40;     // the original's killEndB: raids the player's bank
+                                          // over fund_min - its easy campaign's last three
+                                          // battles (the bit was useMissile's, which nothing read)
 const CPU_SCATTER_BOMB:    u8 = 0x80;     // the airframe drops bombs at all (the original's
                                           // scatterBombB, on from mission 8; the kill_* flags
                                           // say at what)
@@ -50,7 +54,7 @@ static cpu_stats: [CpuStat; 11] = [
     CpuStat { convoy_level: 4,  order_delay: 1320, fund_min: 45, fund_max: 80, clip_speed: 224, regen_time: 150, flags: 0x1D },
     CpuStat { convoy_level: 5,  order_delay: 1320, fund_min: 40, fund_max: 70, clip_speed: 240, regen_time: 120, flags: 0x3D },
     CpuStat { convoy_level: 6,  order_delay: 1100, fund_min: 35, fund_max: 60, clip_speed: 256, regen_time: 90,  flags: 0x3F },
-    CpuStat { convoy_level: 7,  order_delay: 943,  fund_min: 30, fund_max: 50, clip_speed: 272, regen_time: 60,  flags: 0x7F },
+    CpuStat { convoy_level: 7,  order_delay: 943,  fund_min: 30, fund_max: 50, clip_speed: 272, regen_time: 60,  flags: 0x3F },
     CpuStat { convoy_level: 8,  order_delay: 825,  fund_min: 25, fund_max: 50, clip_speed: 288, regen_time: 30,  flags: 0xFF },
     CpuStat { convoy_level: 9,  order_delay: 733,  fund_min: 20, fund_max: 50, clip_speed: 304, regen_time: 0,   flags: 0xFF },
     CpuStat { convoy_level: 10, order_delay: 660,  fund_min: 20, fund_max: 50, clip_speed: 320, regen_time: 0,   flags: 0xFF },

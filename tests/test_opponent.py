@@ -114,3 +114,37 @@ def test_the_enemy_drops_paratroopers_into_the_super_bunker(snes):
     assert v.structs__kind.u8[4] == 2         # the super bunker
     assert v.structs__owner.u8[4] == 1        # the enemy's
     assert v.structs__men.u8[4] == 2
+
+
+def test_the_enemy_raids_the_bank(snes):
+    """Blind Spot is a CPU_ROB_BANK mission (cpu.r65): with the player's
+    purse over its fund_min and the pilot's 1-in-4 steal window open (both
+    planted), the pilot raids - from ~x 6350, where 99 of purse pays for the
+    distance, through the base's missiles at hover height, under the
+    balloons - and over the bank (~frame 1820) puts its men out. Two land in
+    the doorway and rob it as they touch down (struct_bank_rob_at): 99 ->
+    49 -> 24. The raider is shot down on its way out.
+    """
+    boot(snes, "MISSION_BLIND_SPOT")
+    snes.write("funds", 99, 1)
+    snes.write("pilot__steal", 1, 1)
+    snes.wait(2000)
+    v = read_snapshot(snes)
+    assert v.funds == 24
+
+
+def test_a_purse_under_fund_max_is_not_raided(snes):
+    """Cake Walk carries no CPU_ROB_BANK and its fund_max is 99, which the
+    purse cannot pass: with the same plant the pilot never crosses
+    FOE_WEST and the purse is untouched.
+    """
+    boot(snes, "MISSION_CAKE_WALK")
+    snes.write("funds", 99, 1)
+    snes.write("pilot__steal", 1, 1)
+    west = 9999
+    for _ in range(20):
+        snes.wait(100)
+        west = min(west, snes.raw("airframes__x_px").u16[1])
+    v = read_snapshot(snes)
+    assert v.funds == 99
+    assert west >= 900

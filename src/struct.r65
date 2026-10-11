@@ -993,3 +993,22 @@ far fn struct_palettes() {
                            Color::rgb!(12, 5, 4), Color::rgb!(22, 9, 6),
                            Color::rgb!(10, 4, 3), Color::rgb!(17, 7, 5));
 }
+
+// struct_bank_rob_at - a paratrooper of *side* landing at world x *x*: in
+// the doorway of the other side's bank (struct_bank_rob's window) he robs
+// it there and then, halving its purse, and is spent - 1; else 0 and he
+// lands as infantry. A raid's men (foe.r65's FOE_RAID) come down on a bank
+// whose side's units may be at UNIT_SIDE_MAX, where a man waiting to
+// become infantry would never reach the door. Bank 2, called from para.r65.
+far fn struct_bank_rob_at(x: u16, side: u8) -> u8 {
+    for i in 0..struct_count {
+        if structs[i].kind == StructKind::Bank as u8 && structs[i].owner != side {
+            let bx: u16 = structs[i].x;
+            if x + UNIT_MAN_W > bx + 8 && x < bx + BANK_W - 8 {
+                if structs[i].owner == SIDE_PLAYER { funds = funds >> 1; } else { cpu_funds = cpu_funds >> 1; }
+                return 1;
+            }
+        }
+    }
+    return 0;
+}

@@ -135,7 +135,12 @@ far fn para_update() {
                     para_state[i] = PARA_FREE;      // splat
                     para_live = para_live - 1;
                 } else {
-                    para_state[i] = PARA_DOWN;
+                    if struct_bank_rob_at(para_x[i], para_owner[i]) != 0 {
+                        para_state[i] = PARA_FREE;  // landed in a bank's door: robbed it
+                        para_live = para_live - 1;
+                    } else {
+                        para_state[i] = PARA_DOWN;
+                    }
                 }
             } else {
                 para_y[i] = y;
