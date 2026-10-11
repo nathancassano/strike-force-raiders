@@ -89,13 +89,20 @@ def test_title_text_drawn(snes, tmp_path):
     assert screen_colour(snes, tmp_path, (255, 255, 255)) > 0.3, "the title text is drawn"
 
 
-# The continue code. The d-pad types four letters over the title: Right moves
-# the cursor, Up and Down run a letter through A..P (a tap steps once). Down
-# from A wraps to P, which is letter 15. NKCH is mission 5 carrying 32: eleven
-# bits of payload and five of check, scrambled and cut into four nibbles.
-# Start takes what the page says, so the row's starting funds give way to the
-# code's. One letter out (NKCG) is not a near miss: the check digits reject it
-# and Start begins a new campaign.
+# The continue code. The title opens on a menu - NEW GAME, then ENTER CODE -
+# and ENTER CODE brings up the code field, where the d-pad types four letters:
+# Right moves the cursor, Up and Down run a letter through A..P (a tap steps
+# once). Down from A wraps to P, which is letter 15. NKCH is mission 5
+# carrying 32: eleven bits of payload and five of check, scrambled and cut
+# into four nibbles. Start takes what the page says, so the row's starting
+# funds give way to the code's. One letter out (NKCG) is not a near miss: the
+# check digits reject it, and Start does nothing with it.
+TITLE_MENU, TITLE_CODE = 0, 1
+
+
+def enter_code(s):
+    """From the title's menu to its code field: Down to ENTER CODE, Start."""
+    return s.down().start().wait(10)
 
 def type_code(s, code):
     """Type *code* over the title: each letter is Up taps from A, then Right."""
@@ -112,26 +119,44 @@ def code_text(v):
     return "".join(chr(ord("A") + v.code_letters.u8[i]) for i in range(4))
 
 
+def test_the_title_opens_on_its_menu(snes):
+    """NEW GAME picked; Down picks ENTER CODE, and Start on it brings up
+    the code field rather than a briefing."""
+    boot(snes).wait(20)
+    v = read_snapshot(snes)
+    assert v.title_mode == TITLE_MENU
+    assert v.title_sel == 0
+    enter_code(snes)
+    v = read_snapshot(snes)
+    assert v.title_mode == TITLE_CODE
+    assert v.screen_kind == SCREEN_TITLE
+
+
 def test_down_from_a_wraps_to_p(snes):
-    boot(snes).wait(20).down().right().wait(10)
+    enter_code(boot(snes).wait(20)).down().right().wait(10)
     v = read_snapshot(snes)
     assert v.code_letters.u8[0] == 15
     assert v.code_cursor == 1
 
 
 def test_a_continue_code_resumes_its_mission(snes):
-    type_code(boot(snes).wait(20), "NKCH").start().wait(20)
+    type_code(enter_code(boot(snes).wait(20)), "NKCH").start().wait(20)
     v = read_snapshot(snes)
     assert v.mission == 4
     assert v.start_funds == 32
     assert v.screen_kind == SCREEN_BRIEF
 
 
-def test_a_bad_code_starts_a_new_campaign(snes):
-    type_code(boot(snes).wait(20), "NKCG").start().wait(20)
+def test_a_bad_code_is_refused(snes):
+    """Start on a code that names nothing stays on the title, and B goes
+    back to the menu."""
+    type_code(enter_code(boot(snes).wait(20)), "NKCG").start().wait(20)
     v = read_snapshot(snes)
-    assert v.mission == 0
-    assert v.screen_kind == SCREEN_BRIEF
+    assert v.screen_kind == SCREEN_TITLE
+    assert v.title_mode == TITLE_CODE
+    snes.b().wait(10)
+    v = read_snapshot(snes)
+    assert v.title_mode == TITLE_MENU
 
 
 def test_screen_after(state):

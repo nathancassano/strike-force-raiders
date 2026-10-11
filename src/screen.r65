@@ -65,6 +65,18 @@ const SCREEN_CODE_COL:  u16 = 16;         // the first letter; two columns apart
 const SCREEN_LABEL_COL: u16 = 10;         // and the word CODE, to their left
 const SCREEN_READ_ROW:  u16 = 17;
 
+// The title opens on a menu - NEW GAME, then ENTER CODE - in the same rows
+// as the code field, which it gives way to when ENTER CODE is picked: one
+// block, one flush, whichever is up.
+const TITLE_MENU: u8 = 0;                 // title_mode: the menu ...
+const TITLE_CODE: u8 = 1;                 // ... or the code field
+const TITLE_NEW:  u8 = 0;                 // title_sel: NEW GAME ...
+const TITLE_ENTER: u8 = 1;                // ... or ENTER CODE
+const SCREEN_MENU_COL:    u16 = 12;       // the options, left-aligned ...
+const SCREEN_MENU_CURSOR: u16 = 10;       // ... and the > picking one
+#[lowram] static mut title_mode: u8;
+#[lowram] static mut title_sel:  u8;
+
 // One shadow of the visible map, composed on a transition and flushed in
 // force blank. It is 1792 bytes of lowram, which is affordable because
 // nothing else here is: the pages have no per-frame state at all.
@@ -291,20 +303,28 @@ fn screen_code(row: u16) {
     }
 }
 
-// screen_code_block - the title's code field and what it reads as, into
-// the page. Only the inside of the frame is cleared: the border columns
-// live on these rows too, and this block is redrawn on every keypress.
+// screen_code_block - the title's block, into the page: the menu, or the
+// code field and what it reads as. Only the inside of the frame is
+// cleared: the border columns live on these rows too, and this block is
+// redrawn on every keypress.
 fn screen_code_block() {
     for r in 0..SCREEN_CODE_ROWS {
         screen_con.clear_row((SCREEN_CODE_ROW + r) as u8);
     }
+    if title_mode == TITLE_MENU {
+        screen_at(SCREEN_CODE_ROW, SCREEN_MENU_COL, "NEW GAME\0");
+        screen_at(SCREEN_CODE_ROW + 2, SCREEN_MENU_COL, "ENTER CODE\0");
+        screen_at(SCREEN_CODE_ROW + ((title_sel as u16) << 1), SCREEN_MENU_CURSOR, ">\0");
+        return;
+    }
     screen_code(SCREEN_CODE_ROW);
     screen_put(SCREEN_CODE_ROW + 1, SCREEN_CODE_COL + ((code_cursor as u16) << 1),
                hud_box(BOX_CURSOR));
-    // What it means, live: the mission it opens, or a new campaign.
+    // What it means, live: the mission it opens - and Start takes it - or
+    // nothing, and Start does not.
     let m: u8 = code_mission();
     if m == CODE_BAD {
-        screen_centre(SCREEN_READ_ROW, "NEW GAME\0");
+        screen_centre(SCREEN_READ_ROW, "INVALID CODE\0");
     } else {
         screen_mission(SCREEN_READ_ROW, m);
         screen_name(SCREEN_READ_ROW + 1, m);
@@ -387,7 +407,11 @@ far fn screen_show(kind: u8) {
     screen_kind = kind;
     screen_clear();
     screen_frame();
-    if kind == SCREEN_TITLE { screen_title(); }
+    if kind == SCREEN_TITLE {
+        title_mode = TITLE_MENU;          // the menu each time, NEW GAME picked
+        title_sel = TITLE_NEW;
+        screen_title();
+    }
     if kind == SCREEN_BRIEF { screen_brief(); }
     if kind == SCREEN_AFTER { screen_after(); }
     if kind == SCREEN_END   { screen_end(); }
@@ -499,25 +523,55 @@ fn screen_type(held: u16, trig: u16) {
     }
 }
 
-// screen_tick - one frame with a page up. On the title the d-pad types a
-// continue code and Start takes what it says - the mission it names with
-// the purse it carries, or a new campaign if it names nothing. Elsewhere
-// Start is the only control: briefing into the battle, after-action back
-// to the title (slice (d) makes that the next mission instead).
-far fn screen_tick(held: u16, trig: u16) {
-    if screen_kind == SCREEN_TITLE { screen_type(held, trig); }
-    if (trig & JOY_START) == 0 { return; }
-    if screen_kind == SCREEN_TITLE {
-        let m: u8 = code_mission();
-        if m == CODE_BAD {
-            mission_set(MISSION_START);
-        } else {
-            mission_set(m);
-            start_funds = code_purse();   // mission_set wrote the row's
+// screen_title_tick - the title. On the menu Up and Down pick NEW GAME
+// or ENTER CODE and Start (or A) takes it: a new campaign's briefing, or
+// the code field. There the d-pad types the code, B goes back to the menu,
+// and Start takes the code - the mission it names with the purse it
+// carries - or, if it names nothing, does nothing.
+fn screen_title_tick(held: u16, trig: u16) {
+    if title_mode == TITLE_MENU {
+        if (trig & (JOY_UP | JOY_DOWN)) != 0 {
+            title_sel = title_sel ^ 1;
+            screen_code_block();
+            screen_dirty = 1;
         }
-        screen_show(SCREEN_BRIEF);
+        if (trig & (JOY_START | JOY_A)) == 0 { return; }
+        if title_sel == TITLE_NEW {
+            mission_set(MISSION_START);
+            screen_show(SCREEN_BRIEF);
+            return;
+        }
+        title_mode = TITLE_CODE;
+        code_rep = 0;
+        screen_code_block();
+        screen_dirty = 1;
         return;
     }
+    if (trig & JOY_B) != 0 {
+        title_mode = TITLE_MENU;
+        screen_code_block();
+        screen_dirty = 1;
+        return;
+    }
+    screen_type(held, trig);
+    if (trig & JOY_START) == 0 { return; }
+    let m: u8 = code_mission();
+    if m == CODE_BAD { return; }
+    mission_set(m);
+    start_funds = code_purse();           // mission_set wrote the row's
+    screen_show(SCREEN_BRIEF);
+}
+
+// screen_tick - one frame with a page up: the title's menu and code field
+// (screen_title_tick); elsewhere Start is the only control - briefing into
+// the battle, after-action on to the next mission or the end, the end back
+// to the title.
+far fn screen_tick(held: u16, trig: u16) {
+    if screen_kind == SCREEN_TITLE {
+        screen_title_tick(held, trig);
+        return;
+    }
+    if (trig & JOY_START) == 0 { return; }
     if screen_kind == SCREEN_BRIEF {
         screen_hide();
         game_reset();

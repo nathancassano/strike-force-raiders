@@ -453,9 +453,12 @@ like the two battle-over ones, so `main` runs neither the tick nor the draw whil
 carrying eleven bits of payload - four of mission, seven of purse - and five of check,
 scrambled and cut into nibbles, each a letter A..P, so 1000 of the 65536 spellings mean
 anything and a mistyped one is rejected rather than silently starting the wrong mission. The
-d-pad types it over the title (a held direction repeats), the line under it says live what the
-code reads as - the mission it opens, or NEW GAME - and Start takes exactly that, the code's
-purse displacing the row's `start_funds`. The after-action page settles the mission and spells the code for the next
+title opens on a menu, NEW GAME then ENTER CODE (`title_mode`/`title_sel`; Up/Down pick, Start
+or A takes it, and the menu comes back each time the title goes up); ENTER CODE swaps the
+same rows for the code field, where the d-pad types it (a held direction repeats), the line under
+it says live what the code reads as - the mission it opens, or INVALID CODE - and Start takes
+the code, the code's purse displacing the row's `start_funds`, or does nothing on an invalid
+one; B goes back to the menu. The after-action page settles the mission and spells the code for the next
 run, leaving it typed in so continuing is one press: **a won mission carries its purse plus
 what survived it** (`campaign_salvage` - a ground unit at what order.r65 charged for it, a held
 building at the design's value, the base 20), a lost one is fought again with the purse its row
@@ -615,7 +618,8 @@ cell drawn over the standing man's, or at 3 px/frame with none when the chute fa
 the frame the unit pool has room. An airframe lost a third of its flight band up or higher
 (`HELI_Y_BAIL`) with men aboard drops one of them first; the rest go with it. Draw order: after the munitions.
 
-Controls: on the title, the d-pad types the continue code and Start takes what the page says;
+Controls: on the title, Up/Down and Start (or A) pick NEW GAME or ENTER CODE; in the code
+field the d-pad types the continue code, Start takes it and B goes back to the menu;
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
 dialog - Left/Right move the highlight, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck;
