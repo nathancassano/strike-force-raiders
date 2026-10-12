@@ -36,9 +36,7 @@ far fn pad_poll_trigger() -> u16 {
     return PAD_TRIG;
 }
 
-// pad_init - zero the pad state. Zero-page statics are declared bare (an
-// initializer on a mutable static trips the __init_start MVN/DBR bug), so
-// they hold power-on garbage until this runs.
+// pad_init - zero the pad state, which holds power-on garbage until this runs.
 far fn pad_init() {
     PAD_STATE = 0;
     PAD_PREV = 0;

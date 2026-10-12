@@ -105,7 +105,7 @@ const ROTOR_VOL_IDLE: u8 = 11;   // ran over everything else; 56 idling
 const ROTOR_JITTER:  u16 = 1;    // how much quieter it may be, from 0
 
 // Where the driver wants music data in sound RAM, from spc700.bin's header
-// (spc_init). Bare: no initialiser on a mutable static (CLAUDE.md).
+// (spc_init).
 #[lowram] static mut spc_music_load_adr: u16;
 // The tune playing (MUS_*), or MUS_NONE: music_start does not reload it.
 #[lowram] static mut music_now: u8;

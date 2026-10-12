@@ -15,11 +15,8 @@
 //   // Get a random u16 via function call
 //   let r @ A = rand();
 
-// NOTE: diverges from stdlib/rand.r65, which initialises this to 0xDEAD.
-// An initialiser on a mutable static goes through __init_start, which has an
-// open MVN/DBR bug. Declared bare here and seeded in boot_load() instead.
 #[lowram]
-static mut __rand_seed: u16;
+static mut __rand_seed: u16 = 0xDEAD;
 
 // Inline xorshift16 LFSR update with a mix value.
 // XORs the provided value into the seed before advancing.

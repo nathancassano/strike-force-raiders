@@ -216,8 +216,7 @@ const HELI_Y_BAIL:  u16 = HELI_Y_MAX - (45 << 8);
 // functions, not methods: there is one, airframes[HELI] and player, and a
 // receiver would pin X that its loops want.
 impl Player {
-    // Player::init - place the airframe. Statics are declared bare because an
-    // initializer on a mutable static trips the __init_start MVN/DBR bug.
+    // Player::init - place the airframe.
     fn init() {
         airframes[HELI].init(64, 0);
         player.on_pad = 0;

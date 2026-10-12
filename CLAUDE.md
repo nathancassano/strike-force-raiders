@@ -8,10 +8,6 @@ The design and phase plan live in [design.md](design.md).
 
 ## Project-specific rules
 
-**Never add an initialiser to a mutable static.** `static mut X: u16 = 5;` routes through
-`__init_start`, which has an open MVN/DBR bug that can hang the ROM. Declare bare and
-initialise in `boot_load()`. This is why `src/lib/rand.r65` diverges from `stdlib/rand.r65`.
-
 **Always use `OamBuffer.set_full!`, never `set!`.** `set!` writes only an 8-bit X and leaves
 a stale extended-X high bit, which renders a sprite 256px off - invisible but still active.
 In a side-scroller every entity crosses a screen edge, so this applies everywhere.
@@ -50,8 +46,8 @@ exit status 0, and the ROM crashes on its first frame. The Makefile fails the li
 (`build/link.log`). Code that does not have to be in bank 0 (anything not calling `oam_take` or
 another near bank-0 routine) goes to bank 3 as a `far fn`, as `fx.r65` and `Pilot::lost` do.
 
-**`src/lib/` is a vendored copy of `/home/nathan/R65/stdlib/`.** It currently matches upstream
-except for the `rand.r65` change above. Check before copying code from another project - the
+**`src/lib/` is a vendored copy of `/home/nathan/R65/stdlib/`.** It currently matches upstream.
+Check before copying code from another project - the
 other projects' copies have drifted by 50-170 lines.
 
 ## Build Commands
