@@ -676,8 +676,9 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    - **The pool is 16, not 32.** That is the size that holds 1.00 ticks/frame to a full field.
      Raising it means finding the cycles first.
 
-   *Open: `fastrom` would buy those cycles back but hangs this ROM at boot - execution moves to
-   the $80-$BF mirror and never reaches the game loop. Not diagnosed; deferred after phase 9.*
+   *`fastrom` once hung this ROM at boot (execution reached the $80-$BF mirror and never the
+   game loop). On since 2026-10-11: no surviving source, with the compiler of its day
+   or today's, reproduces the hang, and the stress run went from 0.81 to 0.96 ticks a vblank.*
 7. ~~**Economy and ordering.**~~ **DONE.** `src/order.r65` and `src/hud.r65`. Funds accumulate
    `heli_x_px >> 4` per frame against a 40000 threshold - one u16, not the 24-bit add the plan
    assumed, with nothing lost; the threshold is the pace knob (mid-field ~3 s a fund, far end

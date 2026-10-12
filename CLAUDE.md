@@ -110,7 +110,7 @@ then `BOOT_SETTLE` (13) frames, which is where a mission boot stood when the sui
 ~156 frames - without moving a case. A boot of the campaign proper (no mission) also sets
 `BOOT_NO_INTRO` in `boot_pick`, skipping the power-on BubbleZap intro, which `test_campaign.py`
 covers on its own. `tools/mkmovie.py` cannot sync or skip, so its `BOOT_FRAMES` idle (686) has to
-cover the intro, the upload running under it - main is at 677 - and must grow with them.
+cover the intro, the upload running under it - main is at 670 - and must grow with them.
 
 `./play.sh OUT.png ACTIONS [--dump REGION FILE]...` (`tools/play.py`) runs the actions on
 `mesen_gdb.rom_driver` with the suite's own `boot` and `read_snapshot`, and screenshots at the
@@ -413,8 +413,10 @@ The van end cannot be scripted in useful time; plant one with the debugger
 (`set` the tag/owner/x planes of a slot at the enemy base and step a few dozen frames).
 
 **The frame is now the binding constraint.** With the field full and every structure ticking, the
-stress movie (eight tanks bought at once against the CPU's column) runs at 0.896 ticks per
-vblank, pinned by `unit_budget`. Anything new that runs per unit or per frame has to be measured
+stress movie (eight tanks bought at once against the CPU's column) runs at 0.96 ticks per
+vblank, pinned by `unit_budget` - with **FastROM** (`#[snesrom(..., fastrom)]`, main.r65): the
+compiler runs code from the $80-$BF mirror, 6 master clocks a ROM byte rather than 8, which took
+it from 0.81. Anything new that runs per unit or per frame has to be measured
 against it. `tools/profile.py` is the profiler: a Mesen-GDB `trace` from the snapshot attributed
 to functions through the `.sym` (the docstring has the incantation). `tools/poolstat.py` prints
 the field from a `--dump wram` - every unit with its links and flags, the munitions, the

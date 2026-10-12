@@ -61,14 +61,15 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     Three bought tanks (slots 0, 2, 4) cross the field a convoy space apart;
     the lead holds 117 px short of the bunker at 5120 to shell it, and the two
     behind pack up at exactly width + gap (31 px) and halt in turn - every
-    flag set. The column is halted from frame 10000 to past 10600, so the wait
-    sits mid-window, where a faster or slower loop does not move the snapshot
-    before the column has arrived.
+    flag set. The column is halted from frame 9050 to past 9800 (10000 to
+    10600 before FastROM: a faster loop shells the bunker down sooner), so
+    the wait sits mid-window, where a faster or slower loop does not move the
+    snapshot before the column has arrived.
     """
     boot(snes, "MISSION_TEST_QUIET")
     snes.press("l", "a", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(3)
-    snes.press("l", "a", frames=3).wait(10200)
+    snes.press("l", "a", frames=3).wait(9450)
     v = read_snapshot(snes)
     assert v.units__block.u8[0] == 1
     assert v.units__x_px.u16[0] == 5003
@@ -126,9 +127,11 @@ def test_unit_budget(state):
     leaving no call at all where each side used to call its own copy.
     The enemy's paratrooper steering - off on this test mission - moved
     the layout a tick (3662/2970), and the bank raid's checks in the
-    pilot's decisions - off here too - four more (3662/2966).
+    pilot's decisions - off here too - four more (3662/2966). Then
+    FastROM, 0.81 -> 0.96 (3663/3529): code and ROM tables read from the
+    $80-$BF mirror at 6 master clocks a byte rather than 8.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3662
-    assert v.frames_loop == 2966
+    assert v.frames_nmi == 3663
+    assert v.frames_loop == 3529

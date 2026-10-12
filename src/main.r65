@@ -2,11 +2,12 @@
 // SNES LoROM. A helicopter tug-of-war descended from Rescue Raiders (1984)
 // by way of Armor Alley (1991).
 
-// NOTE: `fastrom` would buy back cycles the ground units need, but this ROM
-// hangs at boot with it enabled - execution moves to the $80-$BF mirror and
-// never reaches the game loop. Left off until that is understood; the frame
-// budget is met without it.
-#[snesrom(name="ROTOR_RAIDERS")]
+// FastROM: the compiler runs code from the $80-$BF mirror, entered through
+// bank-0 vector trampolines that set MEMSEL, so code and ROM tables read at
+// 6 master clocks a byte rather than 8 - the stress run's 0.81 ticks a
+// vblank became 0.96. It once hung at boot here; no build of this source or
+// its history with the current compiler reproduces that.
+#[snesrom(name="ROTOR_RAIDERS", fastrom)]
 
 #[stack(0x0100, 0x01FF)]
 
