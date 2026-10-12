@@ -129,9 +129,11 @@ def test_unit_budget(state):
     the layout a tick (3662/2970), and the bank raid's checks in the
     pilot's decisions - off here too - four more (3662/2966). Then
     FastROM, 0.81 -> 0.96 (3663/3529): code and ROM tables read from the
-    $80-$BF mirror at 6 master clocks a byte rather than 8.
+    $80-$BF mirror at 6 master clocks a byte rather than 8. Then 39 ticks
+    faster (3662/3568): R65 keeps an unsigned u8 -> u16 widening in A
+    rather than spilling it through the stack.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
-    assert v.frames_nmi == 3663
-    assert v.frames_loop == 3529
+    assert v.frames_nmi == 3662
+    assert v.frames_loop == 3568
