@@ -50,9 +50,7 @@ const VRAM_OBJ:  u16 = 0x4000;
 const VRAM_OBJ2: u16 = 0x5000;
 const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000
 
-// 128 sprites plus the 32-byte extended table. Kept in lowram, i.e. bank 0,
-// so the DMA source bank can be written as a literal: `#:` returns the wrong
-// bank for WRAM symbols, the same trap gnd_hdma_init works around.
+// 128 sprites plus the 32-byte extended table.
 #[lowram] static mut oam: OamBuffer;
 
 // ------------------------------------------------------- OAM allocation ---
@@ -98,9 +96,8 @@ fn oam_end() {
     oam_high = oam_next;
 }
 
-// oam_flush - push the shadow buffer to the PPU. Vblank only.
-// Sets the channel registers directly rather than using dma_copy_oam_const!,
-// which resolves the source bank through `#:`.
+// oam_flush - push the shadow buffer to the PPU. Vblank only. Not
+// dma_copy_oam_const!, which writes OAMADDH = 0 over the rotation bit.
 far fn oam_flush() {
     OAMADDL = 0;
     // Bit 7 enables priority rotation: the sprite evaluation start point
@@ -109,8 +106,7 @@ far fn oam_flush() {
     OAMADDH = 0x80;
     DMAP7 = 0x00;                  // 1 register, 1 write per transfer
     BBAD7 = 0x04;                  // $2104 OAMDATA
-    A1T7 = &oam as u16;
-    A1B7 = 0;
+    dma_set_src!(7, oam);
     DAS7 = 544;                    // 128 * 4 + 32
     dma_trigger!(7);
 }
@@ -235,21 +231,17 @@ const MOUNTAIN_BYTES: u16 = MOUNTAIN_ROWS << 6;
 // gnd_hdma_init - point channel 6 at the ground's band table and channel 5
 // at the sky's split. Transfer mode 2 = two bytes written to one register,
 // which is what the write-twice scroll registers need.
-// NOTE: sets A1T/A1B directly rather than using dma_set_src!, whose `#:`
-// bank operator returns the wrong bank for WRAM symbols.
 far fn gnd_hdma_init() {
     DMAP6 = 0x02;
     BBAD6 = 0x0D;                  // $210D BG1HOFS ($2113 is BG4HOFS)
-    A1T6 = &GND_HDMA as u16;
-    A1B6 = 0;
+    dma_set_src!(6, GND_HDMA);
 
     SKY_HDMA[0] = SKY_SPLIT;
     SKY_HDMA[3] = 1;               // one line: written once, then held
     SKY_HDMA[6] = 0;               // terminator
     DMAP5 = 0x02;
     BBAD5 = 0x0F;                  // $210F BG2HOFS
-    A1T5 = &SKY_HDMA as u16;
-    A1B5 = 0;
+    dma_set_src!(5, SKY_HDMA);
 
     dma_set_hdma!(0x60);           // channels 5 and 6 - HDMAEN takes both at once
 }

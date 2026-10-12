@@ -153,32 +153,12 @@ fn radar_build_base() {
 }
 
 // radar_copy - the whole image one way: 0 shadow -> base, 1 base ->
-// shadow. MVN, 7 cycles a byte; a loop was five times that. Both live
-// in lowram, so both are bank 0 - the .DEFINE symbols cannot be given
-// to block_move!, which asks WLA-DX for their bank.
+// shadow. MVN, 7 cycles a byte; a loop was five times that.
 fn radar_copy(to_shadow: u8) {
     if to_shadow != 0 {
-        asm!(
-            "PHB",
-            "REP #$20",
-            "LDA #511",
-            "LDX #radar_base",
-            "LDY #radar_buf",
-            "MVN $00,$00",
-            "SEP #$20",
-            "PLB"
-        );
+        block_move!(radar_base, radar_buf, 512);
     } else {
-        asm!(
-            "PHB",
-            "REP #$20",
-            "LDA #511",
-            "LDX #radar_buf",
-            "LDY #radar_base",
-            "MVN $00,$00",
-            "SEP #$20",
-            "PLB"
-        );
+        block_move!(radar_buf, radar_base, 512);
     }
 }
 

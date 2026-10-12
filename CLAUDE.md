@@ -277,8 +277,7 @@ A marching man (infantry or engineer) alternates his standing frame with a strid
 (`UNIT_TILE_MAN_WALK`, tile 74) every 4 px, picked from `x_px & 4`: no state, and a halted man stands.
 A man killed - shot, bombed, shelled, run over or a failed chute - lies where he fell for two
 seconds (`UNIT_TILE_MAN_DOWN`, tile 76), drawn by `fx` rather than kept in the unit pool.
-The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank; it sets the
-channel registers directly because `#:` resolves the wrong bank for WRAM symbols.
+The 544-byte OAM shadow lives in lowram and is DMA'd by `oam_flush` in vblank.
 
 Ground units (`src/unit.r65`) are a 32-slot pool. **32 is a measured limit, not a guess**: with
 every slot live the loop holds 1.00 ticks per vblank (one frame short in 3665). It was 16 until
