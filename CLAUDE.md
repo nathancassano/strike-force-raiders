@@ -12,9 +12,6 @@ The design and phase plan live in [design.md](design.md).
 `__init_start`, which has an open MVN/DBR bug that can hang the ROM. Declare bare and
 initialise in `boot_load()`. This is why `src/lib/rand.r65` diverges from `stdlib/rand.r65`.
 
-**Never use `continue` inside an entity loop** - it trips a compiler region-spill bug.
-Restructure as `if`/`else`.
-
 **Always use `OamBuffer.set_full!`, never `set!`.** `set!` writes only an 8-bit X and leaves
 a stale extended-X high bit, which renders a sprite 256px off - invisible but still active.
 In a side-scroller every entity crosses a screen edge, so this applies everywhere.

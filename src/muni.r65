@@ -104,7 +104,6 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8,
     let mut i: u16 = muni_cursor;
     let mut n: u16 = 0;
     muni_last = MUNI_MAX;
-    // No `continue` in an entity loop - compiler region-spill bug.
     while n < MUNI_MAX {
         if muni_kind[i] == MUNI_FREE {
             muni_last = i;
