@@ -1,10 +1,8 @@
 // input - Joypad subsystem for Rotor Raiders.
 // Reads controller 0 once per frame, provides held and trigger masks.
 //
-// NOTE: deliberately avoids the `let lo @ A = ...; let hi @ B = ...;` idiom
-// used by astroids/src/input.r65. That miscompiles: an `@ A` alias is not
-// preserved when a later expression loads A, and the compiler emits no
-// diagnostic. This is the composition form classickong.r65 ships with.
+// The word is composed through plain locals: a `let lo @ A = JOY1L;` alias
+// would be overwritten by the high byte's load, which the compiler rejects.
 
 #[bank(0)]
 

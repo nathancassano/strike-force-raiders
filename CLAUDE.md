@@ -22,11 +22,11 @@ In a side-scroller every entity crosses a screen edge, so this applies everywher
 **`*` only accepts power-of-two constants.** `mul8(i, 3)` costs ~57 cycles where `(i<<1)+i`
 costs ~16. Pad tables to power-of-two strides rather than multiplying by 3, 5, 6...
 
-**Never write `let x @ A = ...` if anything else touches A before its last use.** The alias
-is silently clobbered and the compiler emits no diagnostic - it just generates wrong code.
-This includes `let lo @ A = ...; let hi @ B = ...` (B is A's high byte), the idiom in
-`astroids/src/input.r65`, which is why `src/input.r65` here does not use it. Compose through
-plain locals instead: `let v: u16 = ((JOY1H as u16) << 8) | (JOY1L as u16);`
+**A `let x @ A` (or `@ X`, `@ Y`) alias is not preserved.** The compiler rejects one whose
+register is overwritten before its last use - the `let lo @ A = JOY1L; let hi = JOY1H;` pad
+idiom among them - so compose through plain locals instead:
+`let v: u16 = ((JOY1H as u16) << 8) | (JOY1L as u16);`. `@ B` (A's high byte) is not checked
+yet: it is clobbered just as silently.
 
 **The PPU expands 5-bit colour to 8-bit by bit replication** - `(v<<3)|(v>>2)`, not
 `round(v/31*255)`. The two disagree by one on most values, which is enough for an exact-match
