@@ -255,18 +255,13 @@ fn screen_stat(row: u16, label: far *u8, v: u8) {
     screen_value(row, v);
 }
 
-// screen_name - mission *m*'s name, centred, its padding trimmed.
+// screen_name - mission *m*'s name, centred. The row's padding is 0, so
+// the copy ends the string where the name does.
 fn screen_name(row: u16, m: u8) {
-    let at: u16 = (m as u16) << MISSION_NAME_SH;
-    let mut n: u16 = MISSION_NAME_W;
-    while n > 0 {
-        if mission_names[at + n - 1] != 0x20 { break; }
-        n = n - 1;
+    let i: u16 = m as u16;
+    for k in 0..MISSION_NAME_W {
+        screen_line[k] = mission_stats[i].name[k];
     }
-    for k in 0..n {
-        screen_line[k] = mission_names[at + k];
-    }
-    screen_line[n] = 0;
     screen_centre(row, &screen_line as far *u8);
 }
 

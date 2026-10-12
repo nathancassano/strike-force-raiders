@@ -23,7 +23,7 @@
 // tuned. Their rows, their convoys and their layout are frozen; treat
 // them as part of the tests.
 const MISSION_COUNT:   u8 = 10;
-// The campaign's, by the names its briefing gives them (mission_names).
+// The campaign's, by the names its briefing gives them (MissionStat::name).
 const MISSION_CAKE_WALK:      u8 = 0;
 const MISSION_ONE_GUN:        u8 = 1;
 const MISSION_SUCKER_PUNCH:   u8 = 2;
@@ -58,15 +58,9 @@ const MISSION_START: u8 = MISSION_CAKE_WALK;
 const CONVOY_TEST_HUNTER: u8 = 11;
 const CONVOY_TEST_CONVOY: u8 = 12;
 
-// The names, sixteen characters each, padded to that width - the
-// original's, in order, in capitals for the pages' console font. The
-// briefing screen reads them
-// by mission index; MISSION_NAME_W is the stride - a power of two, so the
-// index is a shift rather than the 57-cycle mul8 - and the trailing
-// spaces are trimmed off before it centres one.
+// A mission's name is at most fifteen characters, so it always ends in
+// a 0 within the row's sixteen.
 const MISSION_NAME_W:  u16 = 16;
-const MISSION_NAME_SH: u16 = 4;
-static mission_names: [u8; 160] = "CAKE WALK       ONE-GUN         SUCKER PUNCH    AIRBORNE        TWO-GUN         SUPER BUNKER    SCRAPYARD       BLIND SPOT      WASTELAND       MIDNIGHT OASIS  ";
 
 #[soa]
 struct MissionStat {
@@ -79,6 +73,7 @@ struct MissionStat {
     turrets:    u8,       // how many stand between the bases ...
     bunkers:    u8,
     owned:      u8,       // ... and how many at each end start owned rather than neutral
+    name:       [u8; MISSION_NAME_W],   // the original's, in capitals for the pages' console font
 }
 
 // The curve. Turret rate follows the plan's 15/12/6 - capped at 6, since
@@ -95,24 +90,24 @@ struct MissionStat {
 // where the difficulty was going anyway - a field of sixteen buildings is
 // as many as one screen's worth of scanlines can carry.
 static mission_stats: [MissionStat; 13] = [
-    MissionStat { cpu_row: 0, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 2, bunkers: 1, owned: 0 },
-    MissionStat { cpu_row: 1, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 3, bunkers: 2, owned: 0 },
-    MissionStat { cpu_row: 2, turret_rate: 14, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 2, owned: 1 },
-    MissionStat { cpu_row: 3, turret_rate: 13, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 3, owned: 1 },
-    MissionStat { cpu_row: 4, turret_rate: 12, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 4, turrets: 5, bunkers: 3, owned: 1 },
-    MissionStat { cpu_row: 5, turret_rate: 11, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 3, turrets: 5, bunkers: 4, owned: 2 },
-    MissionStat { cpu_row: 6, turret_rate: 10, turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 4, owned: 2 },
-    MissionStat { cpu_row: 7, turret_rate: 9,  turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 5, owned: 2 },
-    MissionStat { cpu_row: 8, turret_rate: 8,  turret_range: 380, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 3 },
-    MissionStat { cpu_row: 9, turret_rate: 6,  turret_range: 400, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 4 },
+    MissionStat { cpu_row: 0, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 2, bunkers: 1, owned: 0, name: "CAKE WALK" },
+    MissionStat { cpu_row: 1, turret_rate: 15, turret_range: 300, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 3, bunkers: 2, owned: 0, name: "ONE-GUN" },
+    MissionStat { cpu_row: 2, turret_rate: 14, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 2, owned: 1, name: "SUCKER PUNCH" },
+    MissionStat { cpu_row: 3, turret_rate: 13, turret_range: 320, econ_thresh: 38000, start_funds: 30, start_lives: 4, turrets: 4, bunkers: 3, owned: 1, name: "AIRBORNE" },
+    MissionStat { cpu_row: 4, turret_rate: 12, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 4, turrets: 5, bunkers: 3, owned: 1, name: "TWO-GUN" },
+    MissionStat { cpu_row: 5, turret_rate: 11, turret_range: 340, econ_thresh: 36000, start_funds: 28, start_lives: 3, turrets: 5, bunkers: 4, owned: 2, name: "SUPER BUNKER" },
+    MissionStat { cpu_row: 6, turret_rate: 10, turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 4, owned: 2, name: "SCRAPYARD" },
+    MissionStat { cpu_row: 7, turret_rate: 9,  turret_range: 360, econ_thresh: 34000, start_funds: 26, start_lives: 3, turrets: 6, bunkers: 5, owned: 2, name: "BLIND SPOT" },
+    MissionStat { cpu_row: 8, turret_rate: 8,  turret_range: 380, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 3, name: "WASTELAND" },
+    MissionStat { cpu_row: 9, turret_rate: 6,  turret_range: 400, econ_thresh: 32000, start_funds: 24, start_lives: 3, turrets: 6, bunkers: 5, owned: 4, name: "MIDNIGHT OASIS" },
     // The test rows: the tuning the suite's cases were written
     // against, and a layout laid by hand rather than by the curve (see
     // mission_layout_test). The counts here are ignored - the hand
     // layout decides - and the three differ only in the opponent they face.
     // Frozen: changing any of them re-pins two dozen cases.
-    MissionStat { cpu_row: 0, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
-    MissionStat { cpu_row: 7, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
-    MissionStat { cpu_row: 10, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1 },
+    MissionStat { cpu_row: 0, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1, name: "TEST QUIET" },
+    MissionStat { cpu_row: 7, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1, name: "TEST HUNTER" },
+    MissionStat { cpu_row: 10, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1, name: "TEST CONVOY" },
 ];
 
 // ---------------------------------------------------------------- state ---

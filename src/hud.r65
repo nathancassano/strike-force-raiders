@@ -235,9 +235,6 @@ const OV_ROWS: u16 = 8;                   // border + six lines + border
 const OV_COL:  u16 = 7;
 const OV_W:    u16 = 18;
 
-// Names in ring order, eight capitals each padded with spaces.
-static ov_names: [u8; 48] = "VAN     LAUNCHERTANK    INFANTRYENGINEERHELI    ";
-
 #[lowram] static mut hud_ov:       [u16; 256];   // OV_ROWS map rows, the box
 #[lowram] static mut hud_ov_clear: [u16; 256];   // ... and the same rows, empty
 #[lowram] static mut hud_ov_dirty: u8;           // 1 flush the box, 2 flush the clear
@@ -283,9 +280,9 @@ fn hud_ov_compose() {
         hud_ov[at + 3] = HUD_BLANK;
         for c in 0..8 {
             // Padding is the strip's navy, not a hole in the box.
-            let ch: u8 = ov_names[(k << 3) + c];
+            let ch: u8 = order_stats[k].name[c];
             let mut t: u16 = HUD_BLANK;
-            if ch != 0x20 { t = hud_letter(ch); }
+            if ch != 0 { t = hud_letter(ch); }
             hud_ov[at + 4 + c] = t;
         }
         hud_ov[at + 12] = HUD_BLANK;
