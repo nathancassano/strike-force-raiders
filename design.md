@@ -175,7 +175,7 @@ man's pace that put five in a heap.)*
 | X | Drop a paratrooper (per press) |
 | L (held) | Order overlay: d-pad highlights a unit type, A buys |
 | R | *(free)* |
-| Start | Start / reset after a battle |
+| Start | Pause / resume in battle (dims the screen); start / reset after a battle |
 | Select | Test-harness snapshot hook (debug) |
 
 ## Structures

@@ -20,11 +20,33 @@ const GAME_LOST:    u8 = 2;
 // A front-end page is up (screen.r65 says which). The simulation and the
 // draw are both off, and the field keeps its state behind it.
 const GAME_SCREEN:  u8 = 3;
+// Start in battle: the simulation stops and the draw goes on, so the
+// field holds on screen with PAUSED over it. Start again carries on from
+// the very tick it stopped at: frames_loop, which every stagger and roll
+// is keyed off and which only the simulation reads, runs on meanwhile and
+// is put back (game_pause_tick), so a battle with a pause in it is the same
+// battle.
+const GAME_PAUSED:  u8 = 4;
+// ... and the screen fades down to PAUSE_BRIGHT (set_brightness!, 0-15) a
+// step every PAUSE_FADE frames as it pauses, and back up to full before
+// the battle carries on - the battle stays paused through the fade up, so
+// the fading is all paused frames' work and a battle frame pays nothing
+// for it. Each step is written from the top of the loop, straight after
+// its vblank work; a brightness write is harmless should it land a line
+// into the frame.
+const PAUSE_BRIGHT: u8 = 0x07;
+const FULL_BRIGHT:  u8 = 0x0F;
+const PAUSE_FADE:   u8 = 2;               // frames a step: 16 each way
 
 #[lowram] static mut game_state: u8;
+#[lowram] static mut game_pause_clock: u16;   // frames_loop on the tick a pause skipped
+#[lowram] static mut game_bright: u8;         // the brightness the fade has reached
+#[lowram] static mut game_fade_t: u8;         // frames to the fade's next step
+#[lowram] static mut game_resuming: u8;       // 1 fading up to carry on, 0 down
 
 static MSG_WON:  [u8; 7]  = "VICTORY";
 static MSG_LOST: [u8; 6]  = "DEFEAT";
+static MSG_PAUSED: [u8; 6] = "PAUSED";
 
 far fn game_init() {
     game_state = GAME_PLAYING;
@@ -41,6 +63,49 @@ far fn game_over(result: u8) {
     } else {
         hud_message(&MSG_LOST as far *u8, 6);
     }
+}
+
+// game_pause - Start in battle: PAUSED, and the fade down begins
+// (game_pause_tick). The order dialog shares row 10 with the line, so it
+// goes; L still held brings it back on the first tick after.
+far fn game_pause() {
+    game_state = GAME_PAUSED;
+    game_pause_clock = frames_loop;
+    game_bright = FULL_BRIGHT;
+    game_fade_t = PAUSE_FADE;
+    game_resuming = 0;
+    hud_overlay_hide();
+    hud_message(&MSG_PAUSED as far *u8, 6);
+}
+
+// game_pause_tick - a paused frame. Start turns the fade around - up to
+// carry on, or, pressed again on the way up, back down - and the fade
+// steps toward its end; at full brightness on the way up the battle
+// carries on. That frame runs no tick either, so the clock goes back to
+// one short of the skipped tick, and the loop's count at the end of the
+// frame brings it there for the next.
+far fn game_pause_tick(trig: u16) {
+    if (trig & JOY_START) != 0 { game_resuming = game_resuming ^ 1; }
+    if game_fade_t > 1 {
+        game_fade_t = game_fade_t - 1;
+        return;
+    }
+    game_fade_t = PAUSE_FADE;
+    if game_resuming == 0 {
+        if game_bright > PAUSE_BRIGHT {
+            game_bright = game_bright - 1;
+            set_brightness!(game_bright);
+        }
+        return;
+    }
+    if game_bright < FULL_BRIGHT {
+        game_bright = game_bright + 1;
+        set_brightness!(game_bright);
+        return;
+    }
+    hud_message(&MSG_PAUSED as far *u8, 0);
+    frames_loop = game_pause_clock - 1;
+    game_state = GAME_PLAYING;
 }
 
 // game_continue - Start, with the match over. The campaign reports it on

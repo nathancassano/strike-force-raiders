@@ -1,8 +1,10 @@
 """Phases 9-10: win and loss, the CPU's purse, the enemy airframe and pilot."""
 
+from PIL import Image, ImageStat
+
 from shared import boot, five_passes, read_snapshot
 
-GAME_PLAYING, GAME_LOST = 0, 2
+GAME_PLAYING, GAME_LOST, GAME_PAUSED = 0, 2, 4
 FREE = 0                                    # an empty unit slot's kind
 
 
@@ -33,6 +35,100 @@ def test_game_reset(state):
     assert v.airframes__lives.u8[0] == 4
     assert v.airframes__x_px.u16[0] == 64
     assert v.camera_x == 0
+
+
+# ---- pause --------------------------------------------------------------------
+#
+# Start in battle pauses it: no tick runs, the screen fades down to brightness
+# 7 of 15, a step every two frames, and PAUSED goes up on the battle-over line.
+# Start again fades it back up, still paused, and carries on from the tick it
+# stopped at - frames_loop, the clock every stagger and roll is keyed off, is
+# put back - so a battle with a pause in it is the same battle.
+
+def test_start_pauses_the_battle(snes):
+    """Nothing moves: not the airframe under a held stick, not the enemy's
+    first man, not the enemy airframe."""
+    boot(snes, "MISSION_TEST_QUIET").wait(300).start()
+    v = read_snapshot(snes)
+    assert v.game_state == GAME_PAUSED
+    man, foe = v.units__x_px.u16[0], v.airframes__x_px.u16[1]
+    snes.right(60)
+    v = read_snapshot(snes)
+    assert v.airframes__x_px.u16[0] == 64
+    assert v.units__x_px.u16[0] == man
+    assert v.airframes__x_px.u16[1] == foe
+
+
+def test_start_acts_on_release(snes):
+    """Held, Start does nothing - the battle runs on under it; it is its
+    release that pauses (input.r65 triggers Start as it comes up)."""
+    boot(snes, "MISSION_TEST_QUIET").wait(300)
+    snes.press("start", frames=30)
+    assert snes.var.game_state == GAME_PLAYING
+    snes.wait(3)
+    v = read_snapshot(snes)
+    assert v.game_state == GAME_PAUSED
+
+
+def test_a_pause_reads_paused(snes):
+    """The six letters, centred on the 32-wide line, are the HUD letter
+    row's tiles (map row 29 of HUD_MAP, one a capital from A)."""
+    boot(snes, "MISSION_TEST_QUIET").wait(300).start()
+    v = read_snapshot(snes)
+    hud_map = snes.raw("HUD_MAP_data").u16
+    for k, c in enumerate("PAUSED"):
+        assert v.hud_msg.u16[13 + k] == hud_map[29 * 32 + ord(c) - ord("A")]
+
+
+def test_a_pause_dims_the_screen(snes, tmp_path):
+    boot(snes, "MISSION_TEST_QUIET").wait(300)
+    before = mean_light(snes.screenshot(tmp_path / "before.png"))
+    snes.start().wait(30)
+    paused = mean_light(snes.screenshot(tmp_path / "paused.png"))
+    snes.start().wait(30)
+    after = mean_light(snes.screenshot(tmp_path / "after.png"))
+    assert paused < before / 2
+    assert after > before * 0.9                     # full again; the field has moved on
+
+
+def test_a_pause_fades_down_and_back_up(snes):
+    """A step every two frames: down from 15 to 7 from Start's release
+    (the tap's three frames up are the first steps' frames), and back up
+    on the next - the battle still paused until it is at 15."""
+    boot(snes, "MISSION_TEST_QUIET").wait(300).start()
+    down = []
+    for _ in range(16):
+        down.append(snes.var.game_bright)
+        snes.wait(1)
+    assert down == [14, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 8, 8, 7, 7]
+    snes.start()
+    up = []
+    for _ in range(16):
+        up.append((snes.var.game_bright, snes.var.game_state))
+        snes.wait(1)
+    assert [b for b, _ in up] == [9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15]
+    assert [st for _, st in up] == [GAME_PAUSED] * 14 + [GAME_PLAYING] * 2
+
+
+def test_a_pause_does_not_re_deal_the_battle(snes):
+    """Flown 40 frames right and paused for two seconds, the battle at loop
+    tick 614 is the unpaused one's, boot(...).wait(200).right(40).wait(360):
+    the first man, the CPU's purse and seed, both airframes. (Neither the
+    pausing frame nor the fade back up runs a tick.)"""
+    boot(snes, "MISSION_TEST_QUIET").wait(200).right(40).wait(60)
+    snes.start().wait(120).start().wait(311)
+    v = read_snapshot(snes)
+    assert v.frames_loop == 614
+    assert v.units__x_px.u16[0] == 7405
+    assert v.cpu_funds == 30
+    assert v.cpu_seed == 23835
+    assert v.airframes__x_px.u16[0] == 314
+    assert v.airframes__x_px.u16[1] == 5073
+
+
+def mean_light(png):
+    """Mean luminance of a screenshot, 0-255."""
+    return ImageStat.Stat(Image.open(png).convert("L")).mean[0]
 
 
 # ---- Phase 10 - the CPU's purse and convoys -----------------------------------

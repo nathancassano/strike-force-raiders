@@ -192,7 +192,7 @@ far fn intro_show() {
 
         pad_read_ports();
         if frame > INTRO_FADE && frame < INTRO_FRAMES - INTRO_FADE {
-            if (pad_poll() & JOY_START) != 0 { frame = INTRO_FRAMES - INTRO_FADE; }
+            if (pad_poll_trigger() & JOY_START) != 0 { frame = INTRO_FRAMES - INTRO_FADE; }   // on release
         }
         frame = frame + 1;
     }

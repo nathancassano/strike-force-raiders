@@ -401,6 +401,12 @@ descent lands, and a crash has to start from above y 80 with Down and a directio
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
 from a letter row (`HUD_LETTER_ROW`, stamped by `tools/hud_glyphs.py` below the visible
 screen like the glyph strip), and Start calls `game_reset`, which re-runs every `*_init`.
+In battle Start pauses (`GAME_PAUSED`, `game_pause`/`game_pause_tick`): no tick, the screen
+fading to brightness 7 a step every `PAUSE_FADE` (2) frames and PAUSED on the same row; Start
+again fades it back up, still paused - so the fade costs a battle frame nothing - and carries on
+at 15. `frames_loop` runs on while paused (only the
+simulation reads it) and resume puts it back, so a pause does not re-deal the battle - keep it
+that way: anything new keyed off `frames_loop` must be simulation, not draw.
 `hud_message` takes a `far *u8`: its strings live in the caller's bank, and a near pointer
 read them through the wrong data bank.
 The van end cannot be scripted in useful time; plant one with the debugger
@@ -634,7 +640,9 @@ field the d-pad types the continue code, Start takes it and B goes back to the m
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
 dialog - Left/Right move the highlight, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck;
-Y is unassigned.
+Start pauses and resumes; Y is unassigned. **Start acts on release, everywhere**: `pad_read_ports`
+reports it in the trigger mask as it comes up (`PAD_PREV` holds the pad with Start's bit
+inverted, so that costs one EOR), and the intro's skip reads the trigger too.
 The dialog (`hud_overlay`) is a box on BG3 rows 2-9 composed once at init into an 8-row
 shadow (composing it on the press cost a frame) and DMA'd as one 512-byte block on show and
 cursor move, with an all-transparent twin DMA'd on hide; its border and cursor tiles are stamped

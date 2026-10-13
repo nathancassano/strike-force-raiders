@@ -10,20 +10,26 @@
 static mut PAD_STATE: u16;   // current held buttons (active-high mask)
 
 #[zeropage(0x12)]
-static mut PAD_PREV: u16;    // previous frame's mask
+static mut PAD_PREV: u16;    // previous frame's mask, Start's bit inverted
 
 #[zeropage(0x14)]
-static mut PAD_TRIG: u16;    // rising edge (new presses this tick)
+static mut PAD_TRIG: u16;    // edges this tick: new presses, and Start let go
 
 // pad_read_ports - read controller 0 and derive the edge mask.
 // Call once per game tick.
+//
+// Every button triggers as it goes down but Start, which triggers as it
+// comes up: nothing acts on Start until it is released. The edge test runs
+// on the mask with Start's bit inverted, where letting go of Start reads
+// as pressing it; PAD_PREV keeps that inverted mask, so the release costs
+// one EOR over a plain rising edge (the stress run sits on the budget
+// line, and a dearer version of this cost it a tick).
 far fn pad_read_ports() {
     wait_autojoy!();
-    let current: u16 = ((JOY1H as u16) << 8) | (JOY1L as u16);
-    let prev: u16 = PAD_PREV;
-    PAD_STATE = current;
-    PAD_PREV = current;
-    PAD_TRIG = (current ^ prev) & current;
+    PAD_STATE = ((JOY1H as u16) << 8) | (JOY1L as u16);
+    let flip: u16 = PAD_STATE ^ JOY_START;
+    PAD_TRIG = (flip ^ PAD_PREV) & flip;
+    PAD_PREV = flip;
 }
 
 // pad_poll - continuous held mask.
@@ -31,7 +37,7 @@ far fn pad_poll() -> u16 {
     return PAD_STATE;
 }
 
-// pad_poll_trigger - rising-edge mask for this tick.
+// pad_poll_trigger - edge mask for this tick: presses, and Start's release.
 far fn pad_poll_trigger() -> u16 {
     return PAD_TRIG;
 }
@@ -39,6 +45,6 @@ far fn pad_poll_trigger() -> u16 {
 // pad_init - zero the pad state, which holds power-on garbage until this runs.
 far fn pad_init() {
     PAD_STATE = 0;
-    PAD_PREV = 0;
+    PAD_PREV = JOY_START;     // nothing held, inverted: Start up
     PAD_TRIG = 0;
 }

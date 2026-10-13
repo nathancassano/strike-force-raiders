@@ -192,41 +192,48 @@ fn main() -> ! {
         let trig: u16 = pad_poll_trigger();
 
         if game_state == GAME_PLAYING {
-            // Holding L is the order overlay: the d-pad walks the ring and
-            // A buys, and neither reaches the airframe while it is down.
-            let mut fly_held: u16 = held;
-            let mut fly_trig: u16 = trig;
-            if (held & JOY_L) != 0 {
-                fly_held = held & ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT);
-                fly_trig = trig & ~JOY_A;
+            // Start pauses: this frame runs no tick (game_pause).
+            if (trig & JOY_START) != 0 {
+                game_pause();
+            } else {
+                // Holding L is the order overlay: the d-pad walks the ring and
+                // A buys, and neither reaches the airframe while it is down.
+                let mut fly_held: u16 = held;
+                let mut fly_trig: u16 = trig;
+                if (held & JOY_L) != 0 {
+                    fly_held = held & ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT);
+                    fly_trig = trig & ~JOY_A;
+                }
+                Player::update(fly_held);
+                Player::fire(fly_held, fly_trig);
+                Pilot::update();
+                econ_tick();
+                order_input(held, trig);
+                order_tick();
+                cpu_tick();
+                hud_update();
+                let mut want: u8 = 0;
+                if (held & JOY_L) != 0 { want = 1; }
+                hud_overlay(want);
+                muni_update();
+                if fx_live != 0 { fx_update(); }    // gated here: two idle far calls a frame cost the budget 10 ticks
+                unit_update();
+                para_update();
+                struct_update();
+                // Buildings before units: a bomb's blast is spent by
+                // unit_collide, and the building under it must see it first.
+                struct_collide();
+                unit_collide();
+                Player::collide();
+                Pilot::collide();
+                camera_update();
+                radar_update();
             }
-            Player::update(fly_held);
-            Player::fire(fly_held, fly_trig);
-            Pilot::update();
-            econ_tick();
-            order_input(held, trig);
-            order_tick();
-            cpu_tick();
-            hud_update();
-            let mut want: u8 = 0;
-            if (held & JOY_L) != 0 { want = 1; }
-            hud_overlay(want);
-            muni_update();
-            if fx_live != 0 { fx_update(); }    // gated here: two idle far calls a frame cost the budget 10 ticks
-            unit_update();
-            para_update();
-            struct_update();
-            // Buildings before units: a bomb's blast is spent by
-            // unit_collide, and the building under it must see it first.
-            struct_collide();
-            unit_collide();
-            Player::collide();
-            Pilot::collide();
-            camera_update();
-            radar_update();
         } else {
             if game_state == GAME_SCREEN {
                 screen_tick(held, trig);
+            } else if game_state == GAME_PAUSED {
+                game_pause_tick(trig);
             } else {
                 // The match is over: everything holds where it stands
                 // until Start goes on.
