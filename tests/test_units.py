@@ -165,9 +165,11 @@ def test_unit_budget(state):
     FastROM, 0.81 -> 0.96 (3663/3529): code and ROM tables read from the
     $80-$BF mirror at 6 master clocks a byte rather than 8. Then 39 ticks
     faster (3662/3568): R65 keeps an unsigned u8 -> u16 widening in A
-    rather than spilling it through the stack.
+    rather than spilling it through the stack. Then 73 more (3662/3641):
+    R65 records a branch's CFG edge from the block that really jumps, which
+    lets loop register promotion keep more counters in X/Y.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3568
+    assert v.frames_loop == 3641
