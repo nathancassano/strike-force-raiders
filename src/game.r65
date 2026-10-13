@@ -37,9 +37,9 @@ far fn game_over(result: u8) {
     game_state = result;
     hud_overlay_hide();                   // it shares row 10 with the message
     if result == GAME_WON {
-        hud_message(&MSG_WON as *u8, 7);
+        hud_message(&MSG_WON as far *u8, 7);
     } else {
-        hud_message(&MSG_LOST as *u8, 6);
+        hud_message(&MSG_LOST as far *u8, 6);
     }
 }
 
@@ -71,7 +71,7 @@ far fn game_reset() {
     Pilot::reset();
     hud_init();
     radar_init();
-    hud_message(&MSG_WON as *u8, 0);
+    hud_message(&MSG_WON as far *u8, 0);
     camera_x = 0;
     focus_x = CAM_MID;
     game_init();

@@ -203,8 +203,9 @@ fn hud_letter(c: u8) -> u16 {
     return (HUD_MAP[i] as u16) | ((HUD_MAP[i + 1] as u16) << 8);
 }
 
-// hud_message - show *len* capitals from *text*, centred; 0 clears.
-far fn hud_message(text: *u8, len: u16) {
+// hud_message - show *len* capitals from *text*, centred; 0 clears. Far:
+// the strings are ROM in the caller's bank, not this one's.
+far fn hud_message(text: far *u8, len: u16) {
     let blank: u16 = hud_clear_tile();
     for c in 0..HUD_MSG_MAX {
         hud_msg[c] = blank;

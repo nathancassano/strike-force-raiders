@@ -401,6 +401,8 @@ descent lands, and a crash has to start from above y 80 with Down and a directio
 still runs so the field freezes on screen, `hud_message` puts VICTORY/DEFEAT on map row 10
 from a letter row (`HUD_LETTER_ROW`, stamped by `tools/hud_glyphs.py` below the visible
 screen like the glyph strip), and Start calls `game_reset`, which re-runs every `*_init`.
+`hud_message` takes a `far *u8`: its strings live in the caller's bank, and a near pointer
+read them through the wrong data bank.
 The van end cannot be scripted in useful time; plant one with the debugger
 (`set` the tag/owner/x planes of a slot at the enemy base and step a few dozen frames).
 
