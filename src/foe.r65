@@ -228,8 +228,8 @@ impl Pilot {
     }
 
     // Pilot::collide - the player's munitions against the airframe's box, the
-    // balloons, and the other airframe: two helicopters that meet are both
-    // lost.
+    // balloons, the player's ground (unit_ram), and the other airframe: two
+    // helicopters that meet are both lost.
     fn collide() {
         if airframes[FOE].dead > 0 || airframes[FOE].rising != 0 { return; }
         let fx: u16 = airframes[FOE].x_px;
@@ -237,6 +237,13 @@ impl Pilot {
         if struct_balloon_at(fx, fy) != 0 {
             Pilot::lost();
             return;
+        }
+        if fy > RAM_LOW {
+            if unit_ram(SIDE_ENEMY, fx, fy) != 0 {
+                Pilot::lost();
+                airframes[FOE].wreck_vx = Q10(0);    // stopped by what it hit
+                return;
+            }
         }
         if airframes[HELI].dead == 0 && airframes[HELI].rising == 0 {
             let hx: u16 = airframes[HELI].x_px;

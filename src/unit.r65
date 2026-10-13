@@ -829,6 +829,63 @@ fn unit_hit(i: u16, dmg: u8) {
     }
 }
 
+// Ramming: an airframe flown into the other side's ground is lost, and
+// takes what it hit with it - the remake's rule (Helicopter.js). Heights
+// are the art's, not the cell boxes': an airframe's drawing is its top 14
+// rows, a vehicle's stands 13 tall on the ground line, and a bunker's roof
+// is BUNKER_ROOF_Y (the super bunker's too). Across, an airframe's drawing
+// is its box less 2 px each side.
+const RAM_ART_H:   u16 = 14;
+const RAM_ART_IN:  u16 = 2;
+const RAM_VEH_TOP: u16 = GROUND_Y - 13;
+// Above this an airframe clears every roof, and nothing is tested.
+const RAM_LOW:     u16 = BUNKER_ROOF_Y - RAM_ART_H;
+
+// unit_ram - the airframe of side *mine* with its box at (*hx*, *hy*)
+// against the other side's tanks, vans and launchers, a standing bunker
+// not its side's, and the super bunker unless it is its side's. A vehicle
+// or a bunker goes up with it; the super bunker, which only a tank can
+// hurt, does not - it is crashed on. Men are not hit: the airlift lands
+// among them. Turrets, banks and bases are flown through, as the remake
+// does. 1 if the airframe is lost. The caller tests RAM_LOW first.
+fn unit_ram(mine: u8, hx: u16, hy: u16) -> u8 {
+    let l: u16 = hx + RAM_ART_IN;
+    let r: u16 = hx + HELI_W - RAM_ART_IN;
+    let bot: u16 = hy + RAM_ART_H;
+    if bot > RAM_VEH_TOP {
+        let mut i: u8 = unit_head[(mine ^ 1) as u16];
+        while i != UNIT_NONE {
+            let u: u16 = i as u16;
+            let k: u8 = units[u].kind as u8;
+            if k < UnitType::Infantry as u8 {     // Free is never in a list
+                let ux: u16 = units[u].x_px;
+                if r > ux && l < ux + UNIT_W {
+                    unit_hit(u, 0xFF);
+                    return 1;
+                }
+            }
+            i = units[u].behind;
+        }
+    }
+    if bot > BUNKER_ROOF_Y {
+        for n in 0..bunker_count {
+            let b: u16 = bunker_idx[n] as u16;
+            if structs[b].hp > 0 && structs[b].owner != mine {
+                let bx: u16 = structs[b].x;
+                if r > bx && l < bx + BUNKER_W {
+                    struct_bunker_hit(b, 0xFF);
+                    return 1;
+                }
+            }
+        }
+        if structs[super_i].kind == StructKind::Super as u8 && structs[super_i].owner != mine {
+            let sx: u16 = structs[super_i].x;
+            if r > sx && l < sx + SUPER_W { return 1; }
+        }
+    }
+    return 0;
+}
+
 // unit_collide - munitions against units, and gunfire against bombs.
 //
 // Runs after both pools have moved, so a round and its target are compared

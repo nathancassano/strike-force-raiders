@@ -514,7 +514,8 @@ bank 3 to keep room in bank 0, with a bank-3 copy of `unit_apart` (`Pilot::apart
 
 **The enemy airframe** is `airframes[FOE]` with the player's physics, loadout, fuel, pad and
 loss rules - the same methods. It starts hovering at the far edge, facing the player. It is lost to a bomb outright, to 20 points
-of gunfire or two missiles, to a balloon, and to contact with the player's airframe (both go);
+of gunfire or two missiles, to a balloon, to contact with the player's airframe (both go), and to
+flying into the player's ground (`unit_ram`, either airframe's rule);
 the next one comes after the row's `regen_time`, rising out of the ground at the far edge, and
 the last one is the player's win.
 

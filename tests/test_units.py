@@ -93,6 +93,40 @@ def test_a_man_killed_lies_where_he_fell(snes):
     assert v.fx_x.u16[3] == 7578
 
 
+# ---- ramming ------------------------------------------------------------------
+#
+# An airframe flown into the other side's vehicle is lost, and takes the
+# vehicle with it (unit_ram, the remake's rule). The quiet row fields only
+# men, so slot 0 - its first infantryman, at x 6200 by frame 3000 - is
+# turned into a van, and the airframe planted on him at landed height
+# (HELI_Y_MAX, 168).
+
+def test_flying_into_an_enemy_van_loses_both(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(3000)
+    snes.write("units__kind__tag", VAN, 1)
+    snes.write("units__hp", 12, 1)
+    snes.write("airframes__x_px", snes.raw("units__x_px").u16[0] - 4, 2)
+    snes.write("airframes__y", 168 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[0] == 0
+    assert v.units__kind__tag.u8[1] == INFANTRY      # the man behind, 32 px back, untouched
+    assert v.airframes__lives.u8[0] == 3
+
+
+def test_a_man_is_not_rammed(snes):
+    """Men are flown over and landed among - that is the airlift - so the
+    same plant on the quiet row's first infantryman, left a man, costs
+    nothing."""
+    boot(snes, "MISSION_TEST_QUIET").wait(3000)
+    snes.write("airframes__x_px", snes.raw("units__x_px").u16[0] - 4, 2)
+    snes.write("airframes__y", 168 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[0] == INFANTRY
+    assert v.airframes__lives.u8[0] == 4
+
+
 def test_unit_budget(state):
     """Frame budget. The NMI counts real frames and the loop counts ticks it
     finished; a full field must still keep up.

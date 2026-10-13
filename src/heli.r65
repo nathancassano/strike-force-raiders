@@ -231,8 +231,9 @@ impl Player {
         airframes[HELI].wreck_up = 0;
     }
 
-    // Player::collide - enemy rounds against the airframe's box, and the
-    // barrage balloons, which end it outright.
+    // Player::collide - enemy rounds against the airframe's box, the
+    // barrage balloons, which end it outright, and the enemy's ground
+    // (unit_ram), which goes with it.
     fn collide() {
         if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { return; }   // nothing there to hit
         let hx: u16 = airframes[HELI].x_px;
@@ -240,6 +241,13 @@ impl Player {
         if struct_balloon_at(hx, hy) != 0 {
             Player::lost();
             return;
+        }
+        if hy > RAM_LOW {
+            if unit_ram(SIDE_PLAYER, hx, hy) != 0 {
+                Player::lost();
+                airframes[HELI].wreck_vx = Q10(0);   // stopped by what it hit
+                return;
+            }
         }
         // Nothing of another side up - the usual frame - and the pool is not
         // worth walking; muni_up counts the player's and everyone else's.

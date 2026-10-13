@@ -156,6 +156,12 @@ man's pace that put five in a heap.)*
 - **Losing an airframe**: the wreck falls and goes up, the view holds a second on it and then pans
   home inside 72 frames, and the next
   airframe **rises out of the ground** at the start with a full load.
+- **Ramming** (the remake's rule, either airframe): flown into the other side's tank, van or
+  launcher, or a standing bunker not its own, the airframe is lost and takes it with it; into the
+  super bunker unless its own, it is lost and the bunker stands (only a tank hurts it). Men are
+  not hit - the airlift lands among them - and turrets, banks and bases are flown through.
+  Heights are the art's: an airframe's top 14 rows, a vehicle 13 tall, a roof at 160
+  (`unit_ram`).
 - AA's mouse-seeking control becomes d-pad acceleration toward a target velocity.
 
 ### Controller map

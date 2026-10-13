@@ -136,3 +136,59 @@ def test_the_enemy_mans_the_super_bunker(snes):
     v = read_snapshot(snes)
     assert v.structs__men.u8[7] == 5
     assert v.structs__owner.u8[7] == ENEMY
+
+
+# ---- ramming ------------------------------------------------------------------
+#
+# A building's roof is 24 px off the ground line (BUNKER_ROOF_Y, 160) and an
+# airframe's drawing its top 14 rows, so an airframe with its top under 146
+# is into a bunker or the super bunker it is over. A standing bunker not its
+# side's goes up with it; the super bunker, which only a tank can hurt, is
+# crashed on and stands; its own side's is flown through. Each case plants
+# the airframe over the building at frame 30, before anything has marched.
+
+def test_flying_into_an_enemy_bunker_brings_it_down(snes):
+    """The enemy's bunker at 6144 is structs[11]."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30)
+    snes.write("airframes__x_px", 6144, 2)
+    snes.write("airframes__y", 150 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.structs__hp.u8[11] == 0
+    assert v.structs__owner.u8[11] == NOBODY
+    assert v.airframes__lives.u8[0] == 3
+
+
+def test_skimming_a_bunkers_roof_is_not_a_ram(snes):
+    """At 146 the airframe's drawing ends on the row above the roof."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30)
+    snes.write("airframes__x_px", 6144, 2)
+    snes.write("airframes__y", 146 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.structs__hp.u8[11] == 69
+    assert v.airframes__lives.u8[0] == 4
+
+
+def test_the_players_own_bunker_is_flown_through(snes):
+    """The player's bunker at 2048 is structs[3]."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30)
+    snes.write("airframes__x_px", 2048, 2)
+    snes.write("airframes__y", 150 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.structs__hp.u8[3] == 69
+    assert v.airframes__lives.u8[0] == 4
+
+
+def test_the_super_bunker_is_crashed_on(snes):
+    """Nobody's at the start (structs[7], x 4076): the airframe is lost and
+    the bunker stands, still nobody's and empty."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30)
+    snes.write("airframes__x_px", 4076, 2)
+    snes.write("airframes__y", 150 * 256, 2)
+    snes.wait(2)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[0] == 3
+    assert v.structs__owner.u8[7] == NOBODY
+    assert v.structs__men.u8[7] == 0
