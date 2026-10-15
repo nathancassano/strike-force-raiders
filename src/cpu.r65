@@ -150,6 +150,7 @@ static convoys: [Convoy; 25] = [
 // campaign mission, as in the original, but not the test missions, whose
 // battles the suite is calibrated to - a man out of the door re-deals them.
 #[lowram] static mut cpu_paras:  u8;
+#[lowram] static mut cpu_told:   u8;      // the first convoy has been announced (alert.r65)
 #[lowram] static mut cpu_funds:  u8;
 #[lowram] static mut cpu_acc:    u16;
 #[lowram] static mut cpu_seed:   u16;     // its own xorshift, see cpu_rand
@@ -172,6 +173,7 @@ far fn cpu_init() {
     cpu_t = 64;                           // the first convoy comes early
     cpu_head = 0;
     cpu_tail = 0;
+    cpu_told = 0;
     cpu_men = 0;
     cpu_kind = 0;
     cpu_gap = 0;
@@ -225,7 +227,12 @@ fn cpu_choose() -> u16 {
 // substitutions the row's flags call for.
 fn cpu_buy(c: u16) {
     cpu_funds = cpu_funds - convoys[c].cost;
-    alert_push(ALERT_CONVOY);
+    // ENEMY CONVOY ON THE WAY is the battle's opening: the first purchase
+    // only, not every one after it.
+    if cpu_told == 0 {
+        cpu_told = 1;
+        alert_push(ALERT_CONVOY);
+    }
     let flags: u8 = cpu_stats[cpu_level as u16].flags;
     let mut p: u16 = convoys[c].off as u16;
     cpu_head = 0;

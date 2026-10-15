@@ -52,6 +52,19 @@ def test_the_opponents_convoy_is_announced(snes):
     assert v.alert_cur == CONVOY
 
 
+def test_only_the_first_convoy_is_announced(snes):
+    """ENEMY CONVOY ON THE WAY opens the battle and is not repeated: over a
+    minute the quiet opponent buys convoy after convoy, and the alert is up
+    for one stretch only."""
+    boot(snes, "MISSION_TEST_QUIET")
+    showing = []
+    for _ in range(360):
+        snes.wait(10)
+        showing.append(snes.var.alert_cur == CONVOY)
+    stretches = sum(1 for a, b in zip([False] + showing, showing) if b and not a)
+    assert stretches == 1
+
+
 def test_an_order_short_of_funds_types_out(snes):
     short_of_funds(snes).wait(60)
     v = read_snapshot(snes)

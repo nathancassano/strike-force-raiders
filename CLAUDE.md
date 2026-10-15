@@ -666,11 +666,11 @@ times who took it from whom - a base never changes hands mid-battle, so there is
 share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_robbed`); a van
 starting to jam the radar (`radar_jammed`, `radar_update`); fuel crossing 25 and 10, hp 5 and the
 last airframe (in `hud_update`'s existing change branches); an order short of funds or over its
-cap (`order_place`); the CPU buying a convoy (`cpu_buy`); its paratroopers (`Pilot::maybe_drop`)
+cap (`order_place`); the CPU buying its first convoy (`cpu_buy`, once a battle: `cpu_told`); its paratroopers (`Pilot::maybe_drop`)
 and its bank raid (`Pilot::choose`). **Idle it costs nothing** - one byte test in `hud_update`
 (`alert_busy`, which ticks the queue) and one in `main`'s draw (`alert_up`) - measured with every
 push suppressed, the stress run did not move; while one is up the portrait and the tick cost it
-11 ticks a minute (the opponent's convoys keep one up a quarter of that run). `alert_draw` claims
+11 ticks a minute, when every convoy was announced and kept one up a quarter of that run. `alert_draw` claims
 its four OAM slots through `oam_next` itself, so it lives in bank 2 rather than calling bank 0's
 near `oam_take`, and it draws straight after the radar bracket (slot 2 is pinned). The tick is
 the battle's, in `hud_update`, so an alert freezes with a pause or the match's end, and nothing
