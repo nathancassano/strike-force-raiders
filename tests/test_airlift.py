@@ -106,3 +106,25 @@ def test_a_drop_needs_room_on_the_field(state):
     assert v.para_live == 1
     assert v.player__men.u8[0] == 4
     assert v.unit_side_held & 0xFF == 1            # [u8; 2], the player's first
+
+
+def test_engineers_board_and_rearm(snes):
+    """Engineers board as infantry do and, as Armor Alley's, partially
+    re-arm the airframe on the way in: half the hull, an eighth of the tank,
+    a bomb and half the rounds each, capped at a full load. Two bought, the
+    airframe landed on open ground ahead of them (x 664, where no deck
+    refills anything), run down by hand: both board, and the load is 0+32+32
+    rounds, 2 bombs, 4+10+10 hp capped at 20, 50+12+12 fuel."""
+    boot(snes, "MISSION_TEST_QUIET").press("l", "down", frames=3).wait(3)
+    snes.press("l", "down", frames=3).wait(3).press("l", "a", frames=3).wait(20)
+    snes.right(110).wait(60).down(30).wait(40)
+    snes.write("airframes__gun", 0, 1)
+    snes.write("airframes__bombs", 0, 1)
+    snes.write("airframes__hp", 4, 1)
+    snes.write("airframes__fuel", 50, 1)
+    snes.wait(200)
+    v = read_snapshot(snes)
+    assert v.player__on_pad.u8[0] == 0
+    assert v.player__men.u8[0] == 2
+    assert (v.airframes__gun.u8[0], v.airframes__bombs.u8[0]) == (64, 2)
+    assert (v.airframes__hp.u8[0], v.airframes__fuel.u8[0]) == (20, 74)

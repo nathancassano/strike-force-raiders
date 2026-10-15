@@ -92,8 +92,10 @@ const AL_ON_THE_WAY: u16 = 24;
 const AL_ENEMY:     u16 = 25;
 const AL_PARAS:     u16 = 26;
 const AL_RAID:      u16 = 27;
+const AL_ENGINEER:  u16 = 28;
+const AL_REARM:     u16 = 29;
 
-static alert_lines: [AlertLine; 28] = [
+static alert_lines: [AlertLine; 30] = [
     AlertLine { text: "" },
     AlertLine { text: "ENEMY TOOK OUR" },
     AlertLine { text: "ENEMY TOOK A" },
@@ -122,6 +124,8 @@ static alert_lines: [AlertLine; 28] = [
     AlertLine { text: "ENEMY" },
     AlertLine { text: "PARATROOPERS" },
     AlertLine { text: "ENEMY RAID ON" },
+    AlertLine { text: "ENGINEER ABOARD" },
+    AlertLine { text: "PARTIAL REARM" },
 ];
 
 // The alerts the rest of the game pushes. Captures and losses are made up
@@ -138,6 +142,7 @@ const ALERT_LIMIT:       u16 = (AL_LIMIT << 8) | AL_REACHED;
 const ALERT_CONVOY:      u16 = (AL_CONVOY << 8) | AL_ON_THE_WAY;
 const ALERT_PARAS:       u16 = (AL_ENEMY << 8) | AL_PARAS;
 const ALERT_RAID:        u16 = (AL_RAID << 8) | AL_OUR_BANK;
+const ALERT_REARM:       u16 = (AL_ENGINEER << 8) | AL_REARM;
 
 // The airframe's thresholds, crossed downward (hud_update).
 const ALERT_FUEL_AT: u8 = 25;

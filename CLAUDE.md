@@ -667,7 +667,7 @@ share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_
 starting to jam the radar (`radar_jammed`, `radar_update`); fuel crossing 25 and 10, hp 5 and the
 last airframe (in `hud_update`'s existing change branches); an order short of funds or over its
 cap (`order_place`); the CPU buying its first convoy (`cpu_buy`, once a battle: `cpu_told`); its paratroopers (`Pilot::maybe_drop`)
-and its bank raid (`Pilot::choose`). **Idle it costs nothing** - one byte test in `hud_update`
+and its bank raid (`Pilot::choose`); an engineer boarding (`para_refit`). **Idle it costs nothing** - one byte test in `hud_update`
 (`alert_busy`, which ticks the queue) and one in `main`'s draw (`alert_up`) - measured with every
 push suppressed, the stress run did not move; while one is up the portrait and the tick cost it
 11 ticks a minute, when every convoy was announced and kept one up a quarter of that run. `alert_draw` claims
@@ -678,8 +678,11 @@ the simulation reads is touched: a push never re-deals a battle. `hud_init` call
 so a reset or a page coming down clears it.
 
 The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`airframes[HELI].landed`;
-`player.on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
-airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
+`player.on_pad` says whether it rearms), and a player infantryman or engineer within 5 px of a
+landed airframe's middle boards it (five at most, and they count against the infantry cap). An
+engineer, as Armor Alley's, cannot take his equipment aboard - he is one more man, dropped as an
+infantryman - but uses it on the way in: half the hull, an eighth of the tank, a bomb and half the
+rounds, each capped at a full load (`para_refit`, with the ENGINEER ABOARD alert); X drops one as a paratrooper
 from an 8-slot pool both sides drop into - units have no y; when it is full, or the side has no
 room left for him on the field (`para_drop` returns 0), the man stays aboard. The men on their way
 down count against `UNIT_SIDE_MAX` (`unit_side_held`, which `unit_spawn` adds to the side's
