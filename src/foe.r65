@@ -571,15 +571,21 @@ impl Pilot {
         if pilot.drop > 0 { Pilot::drop_tick(); }    // men going out of the door
 
         if airframes[FOE].fuel == 0 {
-            // Dead stick: gravity, and the ground ends it.
+            // Dead stick: the player's slow forced descent (HELI_SINK), and
+            // the ground ends it, its own deck too. Its men get out as
+            // infantry - where it carries them at all: the campaign's rows
+            // (cpu_paras), as its drops, so a test mission's battle stays put.
             airframes[FOE].vx = approach(airframes[FOE].vx, Q10(0), HELI_ACC);
             airframes[FOE].lean(2);
-            let v: Q10 = airframes[FOE].vy + HELI_GRAVITY;
-            if v > HELI_VY_MAX { airframes[FOE].vy = HELI_VY_MAX; } else { airframes[FOE].vy = v; }
+            airframes[FOE].vy = approach(airframes[FOE].vy, HELI_SINK, HELI_GRAVITY);
             airframes[FOE].fly();
             if airframes[FOE].y == HELI_Y_MAX {
-                // Only its own deck saves it.
-                if pad_at(airframes[FOE].x_px + (HELI_W >> 1)) == 1 { airframes[FOE].landed = 1; } else { Pilot::lost(); }
+                if cpu_paras != 0 && pilot.men > 0 {
+                    para_disembark(airframes[FOE].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
+                                   SIDE_ENEMY, pilot.men);
+                    pilot.men = 0;
+                }
+                Pilot::lost();
             }
             return;
         }

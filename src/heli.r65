@@ -139,8 +139,13 @@ const HELI_BOMB_RELOAD: u8 = 10;
 // pilot's refit rule (health under 5 counts toward a return) assumes.
 const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 
-// Dead-stick descent once the tank is dry.
+// A dry tank is a forced descent: whatever vertical speed the airframe
+// had bleeds toward a steady sink at HELI_GRAVITY a frame (a dive or a
+// climb is arrested within a second), and touching the ground is the loss,
+// deck or not. From hover height that is about two seconds down. Gravity
+// proper is the wreck's (wreck_tick).
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
+const HELI_SINK:    Q10 = 32;             // 0.5 px/frame: the dry tank's descent
 
 
 // ---------------------------------------------------------------- state ---
@@ -385,16 +390,11 @@ impl Player {
             airframes[HELI].burn();
 
             if airframes[HELI].fuel == 0 {
-                // Dead stick. The plan allows gravity in exactly two places -
-                // an empty tank and an ejection - and this is the first.
+                // Dead stick: no control, the way on bleeding off, and a slow
+                // forced descent (HELI_SINK) to the ground, which ends it.
                 airframes[HELI].vx = approach(airframes[HELI].vx, Q10(0), HELI_ACC);
                 airframes[HELI].lean(2);
-                let v: Q10 = airframes[HELI].vy + HELI_GRAVITY;
-                if v > HELI_VY_MAX {
-                    airframes[HELI].vy = HELI_VY_MAX;
-                } else {
-                    airframes[HELI].vy = v;
-                }
+                airframes[HELI].vy = approach(airframes[HELI].vy, HELI_SINK, HELI_GRAVITY);
             } else {
                 let mut tx: Q10 = Q10(0);
                 // 2 = no direction held; the turn stalls on that.
@@ -429,11 +429,22 @@ impl Player {
             // floor from catching an airframe that is merely skimming it. Open
             // ground takes a powered landing anywhere - that is how men are
             // picked up in the field - and a deck takes any landing; a dead
-            // stick that meets open ground is a crash landing. The crash test
+            // stick that meets the ground is lost, deck or not. The crash test
             // takes vx after the move (a copy before it cost the stress run 7
             // ticks): at a world edge the move has stopped it, so a dive into
             // the edge lands.
             if airframes[HELI].y == HELI_Y_MAX {
+                if airframes[HELI].fuel == 0 {
+                    // Out of fuel, down is the end - but the men aboard get
+                    // out and fight on as infantry.
+                    if player.men > 0 {
+                        para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
+                                       SIDE_PLAYER, player.men);
+                        player.men = 0;
+                    }
+                    Player::lost();
+                    return;
+                }
                 if Airframe::crashes(airframes[HELI].vx, vy_in) != 0 {
                     Player::lost();              // flat out: a crash, deck or not
                     return;
@@ -441,13 +452,7 @@ impl Player {
                 if descending != 0 {
                     player.on_pad = 0;
                     if pad_at(airframes[HELI].x_px + (HELI_W >> 1)) < PAD_COUNT { player.on_pad = 1; }
-                    if player.on_pad != 0 || airframes[HELI].fuel > 0 {
-                        airframes[HELI].landed = 1;
-                    }
-                }
-                if airframes[HELI].fuel == 0 && airframes[HELI].landed == 0 {
-                    Player::lost();
-                    return;
+                    airframes[HELI].landed = 1;
                 }
             }
         }

@@ -396,7 +396,7 @@ second) after it goes up on the ground - from the loss itself, when that was on 
 then `camera_pan` brings the view home in `HELI_PAN` (72) frames at a pace sized as it starts
 (`camera_x / 72 + 1`, so the far end of the world arrives inside it). `airframes[HELI].dead`
 counts the pan, and is non-zero throughout. The wreck
-falls out of it under dead-stick gravity, spinning through the crashing frame and the turn's
+falls out of it under gravity (`HELI_GRAVITY`), spinning through the crashing frame and the turn's
 drawings (`WRECK_SPIN_TILE`, a turn's 3 frames each), keeping half the airframe's way on
 (`Airframe::half`) the whole way down - straight down instead when the two airframes went into
 each other (`Airframe::collided`) - and goes up where it hits: a second big explosion, and it is
@@ -410,8 +410,14 @@ as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
-are off until it is up. A dead stick touching open ground is a crash landing and a loss too;
-only a deck saves it - and a touchdown flat out on both axes, at `HELI_VY_MAX` down and
+are off until it is up. **A dry tank is a slow forced descent**: no control, the way on bleeding
+off, and the vertical speed going to a steady `HELI_SINK` (0.5 px/frame - a dive or a climb is
+arrested within a second; from hover about two seconds down), and touching the ground is a loss,
+deck or not, the enemy's airframe too. The men aboard get out there as infantry
+(`para_disembark`): standing in the para pool, already down, they go onto the field one at a time
+as `unit_spawn` makes room, and they take no `rand()`. The enemy's do so only on the campaign's
+rows (`cpu_paras`), as its drops, so a test mission's battle stays put. And a touchdown flat out
+on both axes, at `HELI_VY_MAX` down and
 `HELI_VX_MAX` either way, is a crash, deck or not (`Airframe::crashes`, the enemy airframe's rule too).
 Anything slower lands: the descent rate takes ~88 px of dive to build, so from hover height every
 descent lands, and a crash has to start from above y 80 with Down and a direction held. `game_state` gates the whole simulation; the draw

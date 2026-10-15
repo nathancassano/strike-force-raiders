@@ -97,6 +97,25 @@ far fn para_drop(x: u16, y: u16, owner: u8) -> u8 {
     return 0;                             // full: the man stays aboard
 }
 
+// para_disembark - *n* men out of an airframe come down on a dry tank, at
+// *x* on the ground: each stands in the pool as a landed paratrooper does
+// (PARA_DOWN), so they go onto the field one at a time as unit_spawn makes
+// room beside the last. No chute, so no roll: the player's men take
+// nothing from rand(). Men the pool has no slot for are lost with it.
+far fn para_disembark(x: u16, owner: u8, n: u8) {
+    let mut left: u8 = n;
+    for i in 0..PARA_MAX {
+        if left != 0 && para_state[i] == PARA_FREE {
+            para_x[i] = x;
+            para_y[i] = PARA_GROUND_Y;
+            para_owner[i] = owner;
+            para_state[i] = PARA_DOWN;
+            para_live = para_live + 1;
+            left = left - 1;
+        }
+    }
+}
+
 // para_pickup - one tick on the deck: a friendly infantryman centred
 // within PARA_PICKUP px of the airframe's centre boards. The window is the
 // middle of the airframe whatever its facing; a man is centred on it when

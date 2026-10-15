@@ -9,7 +9,9 @@ hover height cannot build, so any descent from there lands. right180 and a
 60-frame coast puts the airframe at x 1014.
 """
 
-from shared import boot, read_snapshot
+from shared import boarded, boot, read_snapshot
+
+INFANTRY = 4                    # units__kind__tag
 
 
 def test_landing_on_the_deck(snes):
@@ -104,14 +106,60 @@ def test_fuel_burns_one_unit_per_64_frames(snes):
 
 
 def test_a_dry_tank_sinks_and_crashes(snes):
-    """Gravity is allowed in exactly one place, and this is it.
-
-    The airframe sinks with no input, and open ground is not a deck: touching
-    it on a dead stick is a crash landing - a life gone, and by 7200 frames
-    the next airframe is up at hover height.
+    """The tank runs dry at hover and the airframe sinks with no input;
+    touching the ground on a dead stick is the loss - a life gone, and by
+    7200 frames the next airframe is up at hover height.
     """
     boot(snes, "MISSION_TEST_QUIET").wait(7200)
     v = read_snapshot(snes)
     assert v.airframes__lives.u8[0] == 3
     assert v.airframes__y.u16[0] == 112 * 256
     assert v.airframes__landed.u8[0] == 0
+
+
+# A dry tank is a slow forced descent (heli.r65 HELI_SINK, 0.5 px/frame in
+# Q10: 32), and the ground ends it wherever it comes down.
+
+def dry(snes):
+    """At hover, the tank emptied by hand."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20)
+    snes.write("airframes__fuel", 0, 1)
+    return snes
+
+
+def test_a_dry_tank_sinks_slowly(snes):
+    """Half a pixel a frame, steady, with the stick ignored: Up does not hold
+    it, and 40 frames on it is 20 px lower and still in the air."""
+    y0 = int.from_bytes(dry(snes).read("airframes__y", 2), "little")
+    snes.up(40)
+    v = read_snapshot(snes, "up")
+    assert v.airframes__vy.u16[0] == 32
+    assert v.airframes__lives.u8[0] == 4
+    assert 18 * 256 <= v.airframes__y.u16[0] - y0 <= 22 * 256
+
+
+def test_a_dry_tank_on_the_deck_is_lost(snes):
+    """The deck does not save it: come down dry on the player's (x 1024),
+    it is a loss, not a landing."""
+    dry(snes)
+    snes.write("airframes__x_px", 1024, 2)
+    snes.wait(160)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__landed.u8[0] == 0
+
+
+def test_the_men_aboard_walk_away_from_a_dry_tank(state):
+    """Five aboard, lifted off and run dry: the men get out where it comes
+    down and go onto the field one at a time, as five infantrymen."""
+    snes = state(boarded)
+    snes.up(10)
+    snes.write("airframes__fuel", 0, 1)
+    snes.wait(400)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[0] == 3
+    assert v.player__men.u8[0] == 0
+    out = [i for i in range(32)
+           if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0]
+    assert len(out) == 5
+    assert v.para_live == 0
