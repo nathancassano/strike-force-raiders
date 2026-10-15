@@ -157,7 +157,7 @@ far fn order_input(held: u16, trig: u16) {
         order_sel = order_sel - 1;
     }
     if (trig & JOY_A) != 0 {
-        order_place();
+        if order_place() != 0 { hud_ov_bought(); }   // the menu item flashes
     }
 }
 

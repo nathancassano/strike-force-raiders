@@ -133,6 +133,50 @@ def test_an_alert_beside_the_menu_leaves_the_bottom_icon(snes):
     assert m[23 * 32 + 10] == box_tl, "and the alert's box is up beside it"
 
 
+def tank_icon_palettes(snes, frames, labels=None):
+    """The tank icon's sub-palette in the menu's shadow, frame by frame, with
+    L held - the purchase pressed on the first. *labels*, if a list, gets the
+    first word of the tank's label each frame."""
+    seen = []
+    for f in range(frames):
+        snes.hold("l", "a", frames=1) if f == 0 else snes.hold("l", frames=1)
+        shadow = snes.raw("hud_ov").u16
+        seen.append(palette(shadow[(4 * TANK) * 32 + 1]))
+        if labels is not None:
+            labels.append(shadow[(4 * TANK) * 32 + 6])
+    return seen
+
+
+def runs(seq):
+    out = []
+    for p in seq:
+        if out and out[-1][0] == p:
+            out[-1][1] += 1
+        else:
+            out.append([p, 1])
+    return out
+
+
+def test_a_purchase_flashes_its_icon(snes):
+    """A tank bought: its icon goes unselected and lit by turns, two frames
+    each, for 16 frames - unselected first, at once - and stays lit. The
+    label beside it does not flash."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(10)
+    labels = []
+    seen = runs(tank_icon_palettes(snes, 28, labels))
+    assert [p for p, n in seen] == [3, 4] * 4
+    assert [n for p, n in seen[:-1]] == [2] * 7
+    assert seen[-1][1] >= 2 + 8
+    tee = snes.raw("HUD_MAP_data").u16[29 * 32 + ord("T") - ord("A")]
+    assert set(labels) == {tee}
+
+
+def test_a_refused_purchase_does_not_flash(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(10)
+    snes.write("funds", 0, 1)
+    assert set(tank_icon_palettes(snes, 20)) == {4}
+
+
 def test_letting_go_of_l_hides_the_overlay(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "down", frames=3).l(10).wait(5)
     v = read_snapshot(snes)

@@ -703,7 +703,10 @@ two icons and the labels and flushes only the rows from the old icon to the new.
 alert box's too, from column 10, so there both sides write only their own columns: the menu its
 first ten, `alert_flush` its box, a row per DMA and only the rows that changed. The labels sit on
 an icon's top row, so the last one's is row 22, clear of the box. The names come from the letter
-row. `game_over` and the pause hide the menu before writing their line on row 10.
+row. `game_over` and the pause hide the menu before writing their line on row 10. A purchase
+that goes through flashes its icon (`hud_ov_bought`, from `order_input`): unselected and selected
+by turns, `MENU_BLINK` (2) frames each for `MENU_FLASH` (16), unselected first, ending lit; the
+label stays put. A move or letting go of L ends it; a refused order does not flash.
 
 Funds (`src/order.r65`) accumulate `airframes[HELI].x_px >> 4` per frame against `ECON_THRESH`; that
 threshold is the pace knob. Orders go

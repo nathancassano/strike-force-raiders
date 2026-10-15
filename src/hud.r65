@@ -263,6 +263,13 @@ const ICON_PAL_SEL: u16 = 4;              // the selected icon's: CGRAM 16-19
 #[lowram] static mut hud_ov_hi:    u16;
 #[lowram] static mut hud_ov_shown: u8;
 #[lowram] static mut hud_ov_sel:   u8;        // the icon shown selected
+#[lowram] static mut hud_ov_flash: u8;        // frames of a purchase's flash left
+
+// A purchase answers on the menu: the icon bought goes between unselected
+// and selected every MENU_BLINK frames for MENU_FLASH, unselected first,
+// ending selected. Its label stays put.
+const MENU_FLASH: u8 = 16;
+const MENU_BLINK: u8 = 2;                     // a power of two: the phase is a bit
 
 // hud_box - the tile word for box piece *n*.
 fn hud_box(n: u16) -> u16 {
@@ -320,6 +327,19 @@ fn hud_ov_label(k: u16, on: u8) {
     hud_ov[at + 13] = HUD_BLANK;
 }
 
+// hud_ov_lit - the selected icon lit (*on* 1) or looking unselected, in
+// the shadow and flagged for the flush. The label is left as it is.
+fn hud_ov_lit(on: u8) {
+    let k: u16 = hud_ov_sel as u16;
+    if on != 0 { hud_ov_icon(k, ICON_PAL_SEL); } else { hud_ov_icon(k, ICON_PAL); }
+    hud_ov_flag(k << 2, (k << 2) + 3);
+}
+
+// hud_ov_bought - an order went through: flash the icon (order_input).
+far fn hud_ov_bought() {
+    hud_ov_flash = MENU_FLASH;
+}
+
 // hud_ov_select - move the selection from *old* to *new* in the shadow.
 fn hud_ov_select(old: u16, new: u16) {
     hud_ov_icon(old, ICON_PAL);
@@ -340,6 +360,7 @@ fn hud_ov_compose() {
         hud_ov_icon(k, ICON_PAL);
     }
     hud_ov_sel = order_sel;
+    hud_ov_flash = 0;
     hud_ov_select(order_sel as u16, order_sel as u16);
 }
 
@@ -361,6 +382,7 @@ far fn hud_overlay(want: u8) {
         if hud_ov_sel != order_sel {
             let old: u16 = hud_ov_sel as u16;
             let new: u16 = order_sel as u16;
+            hud_ov_flash = 0;                     // a move ends a flash: the old item goes plain
             hud_ov_select(old, new);
             hud_ov_sel = order_sel;
             if old < new {
@@ -370,6 +392,17 @@ far fn hud_overlay(want: u8) {
             }
             hud_ov_dirty = 1;
         }
+        if hud_ov_flash != 0 {
+            // Counting down, a phase every MENU_BLINK frames: odd phases
+            // (the first) unselected, even ones lit, the last lit.
+            hud_ov_flash = hud_ov_flash - 1;
+            if (hud_ov_flash & (MENU_BLINK - 1)) == MENU_BLINK - 1 {
+                let mut on: u8 = 1;
+                if (hud_ov_flash & MENU_BLINK) != 0 { on = 0; }
+                hud_ov_lit(on);
+                hud_ov_dirty = 1;
+            }
+        }
     } else {
         if hud_ov_shown != 0 { hud_overlay_hide(); }
     }
@@ -377,6 +410,10 @@ far fn hud_overlay(want: u8) {
 
 // hud_overlay_hide - the rows back to transparent.
 far fn hud_overlay_hide() {
+    if hud_ov_flash != 0 {
+        hud_ov_flash = 0;
+        hud_ov_lit(1);                            // shown again, it is selected
+    }
     hud_ov_shown = 0;
     hud_ov_flag(0, MENU_ROWS - 1);
     hud_ov_dirty = 2;
