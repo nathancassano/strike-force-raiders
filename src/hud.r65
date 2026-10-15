@@ -232,29 +232,37 @@ far fn hud_message(text: far *u8, len: u16) {
 }
 
 // -------------------------------------------------------------- overlay ---
-// The order dialog, shown while L is held: a box on map rows OV_ROW.. of
-// BG3 - under the strip, over the sky - one line per unit type with its
-// icon, name and cost, the highlighted line marked by a cursor. The box
-// is composed once, at init, into an 8-row shadow that only the cursor
-// ever changes (composing it on the press cost a frame); showing it and
-// moving the cursor DMA that shadow as a block, hiding it DMAs a second,
-// all-transparent block. Rows 3-10 are transparent in the art and row 2,
-// the old radar row, is cleared to match at boot; game_over hides the
-// overlay before it writes the battle-over line, from when they shared
-// row 10.
+// The order menu, shown while L is held: the six units' 32x32 icons in a
+// column down the left edge of BG3 (map rows MENU_ROW.., four apiece, in
+// ring order), the selected one on a brighter panel with its name and cost
+// beside it on its top row. The icons are BG3 tiles (icons.tilemap.bmp,
+// tools/icon_art.py), uploaded past the front end's font at boot.
 //
-// Line layout, 18 columns from OV_COL: border, cursor, icon, space, an
-// eight-letter name, space, '$', two digits, space, border.
-const OV_ROW:  u16 = 2;
-const OV_ROWS: u16 = 8;                   // border + six lines + border
-const OV_COL:  u16 = 7;
-const OV_W:    u16 = 18;
+// The menu is composed into a shadow once, at init (composing it on the
+// press cost a frame); a move rewrites only the two icons and the label,
+// and flushes the rows from the old icon to the new. Hiding flushes an
+// all-transparent twin. Map rows 23-25 are the alert box's too (alert.r65,
+// from column 10), so there the flush writes only the menu's columns, and
+// the label sits on an icon's top row - the last one's is row 22, above the
+// box. Row 2, the art's navy, is cleared from the twin at boot. Pause and
+// game_over hide the menu before writing the row-10 message.
+const MENU_ROW:   u16 = 2;
+const MENU_ROWS:  u16 = 24;               // six icons of four rows
+const MENU_WIDE:  u16 = 21;               // rows 2-22 flush whole; below, the alert's
+const MENU_NARROW: u16 = 10;              // ... columns of rows 23-25 the menu may write
+const MENU_COL:   u16 = 1;                // the icons' first column
+const MENU_LABEL: u16 = 5;                // the label's: past the icon
+const ICON_TILE0: u16 = SCREEN_FONT_TILE + SCREEN_FONT_TILES;   // BG3 tile, past the font
+const ICON_PAL:     u16 = 3;              // BG3 sub-palette: CGRAM 12-15
+const ICON_PAL_SEL: u16 = 4;              // the selected icon's: CGRAM 16-19
 
-#[lowram] static mut hud_ov:       [u16; 256];   // OV_ROWS map rows, the box
-#[lowram] static mut hud_ov_clear: [u16; 256];   // ... and the same rows, empty
-#[lowram] static mut hud_ov_dirty: u8;           // 1 flush the box, 2 flush the clear
+#[ram] static mut hud_ov:       [u16; 768];   // MENU_ROWS map rows, the menu
+#[ram] static mut hud_ov_clear: [u16; 768];   // ... and the same rows, empty
+#[lowram] static mut hud_ov_dirty: u8;        // 1 flush the menu, 2 flush the clear
+#[lowram] static mut hud_ov_lo:    u16;       // the shadow rows to flush
+#[lowram] static mut hud_ov_hi:    u16;
 #[lowram] static mut hud_ov_shown: u8;
-#[lowram] static mut hud_ov_sel:   u8;           // the line the cursor is on
+#[lowram] static mut hud_ov_sel:   u8;        // the icon shown selected
 
 // hud_box - the tile word for box piece *n*.
 fn hud_box(n: u16) -> u16 {
@@ -262,55 +270,83 @@ fn hud_box(n: u16) -> u16 {
     return (HUD_MAP[i] as u16) | ((HUD_MAP[i + 1] as u16) << 8);
 }
 
-// hud_ov_cursor - put *tile* in the cursor column of line *k*.
-fn hud_ov_cursor(k: u16, tile: u16) {
-    hud_ov[((k + 1) << 5) + OV_COL + 1] = tile;
+// hud_icons_load - the icons' tiles and both their palettes: boot, in
+// force blank. The selected palette is the sheet's with a brighter panel.
+far fn hud_icons_load() {
+    dma_copy_vram(0, &ICONS_CHR as far *u8, VRAM_HUDC + (ICON_TILE0 << 3), ICONS_CHR_SIZE);
+    dma_copy_cgram(0, &ICONS_PAL as far *u8, ICON_PAL << 2, 8);
+    dma_copy_cgram(0, &ICONS_PAL as far *u8, ICON_PAL_SEL << 2, 8);
+    set_cgram_addr!((ICON_PAL_SEL << 2) + 1);
+    write_color!(Color::rgb!(8, 13, 21));
 }
 
-// hud_ov_compose - the whole box, cursor on the current selection, and
-// the clear block. Once, at init.
+// hud_ov_icon - icon *k* into the shadow, on BG3 sub-palette *pal*.
+fn hud_ov_icon(k: u16, pal: u16) {
+    let attr: u16 = ICON_TILE0 | (pal << 10) | HUD_BLANK;   // HUD_BLANK: the priority bit
+    for r in 0..4 {
+        let row: u16 = (k << 2) + r;
+        for c in 0..4 {
+            let i: u16 = ((row << 2) + c) << 1;
+            let t: u16 = (ICONS_MAP[i] as u16) | ((ICONS_MAP[i + 1] as u16) << 8);
+            hud_ov[(row << 5) + MENU_COL + c] = t + attr;
+        }
+    }
+}
+
+// hud_ov_label - icon *k*'s name and cost beside it, or (*on* 0) the
+// clear tiles back. Blank, eight letters, blank, '$', two digits, blank.
+fn hud_ov_label(k: u16, on: u8) {
+    let at: u16 = (k << 7) + MENU_LABEL;          // icon k's top row
+    let clear: u16 = hud_clear_tile();
+    for c in 0..14 {
+        hud_ov[at + c] = clear;
+    }
+    if on == 0 { return; }
+    hud_ov[at] = HUD_BLANK;
+    for c in 0..8 {
+        // Padding is the strip's navy, not a hole in the label.
+        let ch: u8 = order_stats[k].name[c];
+        let mut t: u16 = HUD_BLANK;
+        if ch != 0 { t = hud_letter(ch); }
+        hud_ov[at + 1 + c] = t;
+    }
+    hud_ov[at + 9] = HUD_BLANK;
+    hud_ov[at + 10] = hud_glyph(GLYPH_DOLLAR);
+    let cost: u8 = order_stats[k].cost;
+    let tens: u8 = div8(cost, 10);
+    hud_ov[at + 11] = HUD_BLANK;                  // no leading zero
+    if tens != 0 { hud_ov[at + 11] = hud_glyph(GLYPH_DIGIT + (tens as u16)); }
+    hud_ov[at + 12] = hud_glyph(GLYPH_DIGIT + ((cost - mul8(tens, 10)) as u16));
+    hud_ov[at + 13] = HUD_BLANK;
+}
+
+// hud_ov_select - move the selection from *old* to *new* in the shadow.
+fn hud_ov_select(old: u16, new: u16) {
+    hud_ov_icon(old, ICON_PAL);
+    hud_ov_label(old, 0);
+    hud_ov_icon(new, ICON_PAL_SEL);
+    hud_ov_label(new, 1);
+}
+
+// hud_ov_compose - the whole menu, the current selection lit, and the
+// clear twin. Once, at init.
 fn hud_ov_compose() {
     let clear: u16 = hud_clear_tile();
-    for c in 0..256 {
+    for c in 0..768 {
         hud_ov[c] = clear;
         hud_ov_clear[c] = clear;
     }
-    // Top and bottom edges.
-    hud_ov[OV_COL] = hud_box(BOX_TL);
-    hud_ov[OV_COL + OV_W - 1] = hud_box(BOX_TR);
-    let bot: u16 = (OV_ROWS - 1) << 5;
-    hud_ov[bot + OV_COL] = hud_box(BOX_BL);
-    hud_ov[bot + OV_COL + OV_W - 1] = hud_box(BOX_BR);
-    for c in 1..(OV_W - 1) {
-        hud_ov[OV_COL + c] = hud_box(BOX_T);
-        hud_ov[bot + OV_COL + c] = hud_box(BOX_B);
-    }
-    // One line per entry.
     for k in 0..(ORDER_RING as u16) {
-        let at: u16 = ((k + 1) << 5) + OV_COL;
-        hud_ov[at] = hud_box(BOX_L);
-        hud_ov[at + OV_W - 1] = hud_box(BOX_R);
-        hud_ov[at + 1] = HUD_BLANK;
-        hud_ov[at + 2] = hud_glyph(GLYPH_ICON + k);
-        hud_ov[at + 3] = HUD_BLANK;
-        for c in 0..8 {
-            // Padding is the strip's navy, not a hole in the box.
-            let ch: u8 = order_stats[k].name[c];
-            let mut t: u16 = HUD_BLANK;
-            if ch != 0 { t = hud_letter(ch); }
-            hud_ov[at + 4 + c] = t;
-        }
-        hud_ov[at + 12] = HUD_BLANK;
-        hud_ov[at + 13] = hud_glyph(GLYPH_DOLLAR);
-        let cost: u8 = order_stats[k].cost;
-        let tens: u8 = div8(cost, 10);
-        hud_ov[at + 14] = HUD_BLANK;                   // no leading zero
-        if tens != 0 { hud_ov[at + 14] = hud_glyph(GLYPH_DIGIT + (tens as u16)); }
-        hud_ov[at + 15] = hud_glyph(GLYPH_DIGIT + ((cost - mul8(tens, 10)) as u16));
-        hud_ov[at + 16] = HUD_BLANK;
+        hud_ov_icon(k, ICON_PAL);
     }
     hud_ov_sel = order_sel;
-    hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
+    hud_ov_select(order_sel as u16, order_sel as u16);
+}
+
+// hud_ov_flag - flush shadow rows *lo*..*hi* (and anything already due).
+fn hud_ov_flag(lo: u16, hi: u16) {
+    if hud_ov_dirty == 0 || lo < hud_ov_lo { hud_ov_lo = lo; }
+    if hud_ov_dirty == 0 || hi > hud_ov_hi { hud_ov_hi = hi; }
 }
 
 // hud_overlay - one tick: *want* is whether L is down. Shows, follows the
@@ -319,12 +355,19 @@ far fn hud_overlay(want: u8) {
     if want != 0 {
         if hud_ov_shown == 0 {
             hud_ov_shown = 1;
+            hud_ov_flag(0, MENU_ROWS - 1);
             hud_ov_dirty = 1;
         }
         if hud_ov_sel != order_sel {
-            hud_ov_cursor(hud_ov_sel as u16, HUD_BLANK);
+            let old: u16 = hud_ov_sel as u16;
+            let new: u16 = order_sel as u16;
+            hud_ov_select(old, new);
             hud_ov_sel = order_sel;
-            hud_ov_cursor(order_sel as u16, hud_box(BOX_CURSOR));
+            if old < new {
+                hud_ov_flag(old << 2, (new << 2) + 3);
+            } else {
+                hud_ov_flag(new << 2, (old << 2) + 3);
+            }
             hud_ov_dirty = 1;
         }
     } else {
@@ -335,17 +378,35 @@ far fn hud_overlay(want: u8) {
 // hud_overlay_hide - the rows back to transparent.
 far fn hud_overlay_hide() {
     hud_ov_shown = 0;
+    hud_ov_flag(0, MENU_ROWS - 1);
     hud_ov_dirty = 2;
+}
+
+// hud_ov_flush - shadow rows hud_ov_lo..hud_ov_hi of *src* to VRAM: those
+// above the alert's rows whole, one DMA; the rest each its menu columns.
+// Byte offsets: pointer arithmetic does not scale by the element.
+fn hud_ov_flush(src: far *u8) {
+    let lo: u16 = hud_ov_lo;
+    let hi: u16 = hud_ov_hi;
+    if lo < MENU_WIDE {
+        let mut top: u16 = hi;
+        if top >= MENU_WIDE { top = MENU_WIDE - 1; }
+        dma_copy_vram(1, src + (lo << 6), VRAM_HUD + ((MENU_ROW + lo) << 5),
+                      (top - lo + 1) << 6);
+    }
+    let mut r: u16 = lo;
+    if r < MENU_WIDE { r = MENU_WIDE; }
+    while r <= hi {
+        dma_copy_vram(1, src + (r << 6), VRAM_HUD + ((MENU_ROW + r) << 5),
+                      MENU_NARROW << 1);
+        r = r + 1;
+    }
 }
 
 // hud_flush - push the rows to VRAM. Vblank only.
 far fn hud_flush() {
-    if hud_ov_dirty == 1 {
-        dma_copy_vram(1, &hud_ov as far *u8, VRAM_HUD + (OV_ROW << 5), 512);
-    }
-    if hud_ov_dirty == 2 {
-        dma_copy_vram(1, &hud_ov_clear as far *u8, VRAM_HUD + (OV_ROW << 5), 512);
-    }
+    if hud_ov_dirty == 1 { hud_ov_flush(&hud_ov as far *u8); }
+    if hud_ov_dirty == 2 { hud_ov_flush(&hud_ov_clear as far *u8); }
     hud_ov_dirty = 0;
     if hud_clear2 != 0 {
         // Once: the art's navy on row 2 goes transparent, the radar

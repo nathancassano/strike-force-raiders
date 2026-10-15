@@ -1,4 +1,4 @@
-"""The HUD rows, the radar and the order overlay (design.md).
+"""The HUD rows, the radar and the order menu (design.md).
 
 The strip's rows are composed from the glyph rows, so their tile IDs are
 whatever bmp2chr decided; the radar is the game's own bitmap and can be
@@ -52,21 +52,89 @@ def test_strip_drawn(snes, tmp_path):
     assert screen_colour(snes, tmp_path, (28, 30, 31), snes_colour=True) >= 0.9, "the white gauges are drawn"
 
 
-# The order overlay: shown while L is held. Right with L down moves the
+# The order menu: shown while L is held. Down with L down moves the
 # highlight from the tank to the infantry and leaves the airframe where it
-# was; letting go of L hides the box and keeps the selection.
+# was; letting go of L hides the menu and keeps the selection.
 
 def test_the_overlay_shows_while_l_is_held(snes):
     """The snapshot is taken with L still down (Select combined with L)."""
-    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "right", frames=3)
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "down", frames=3)
     v = read_snapshot(snes, "l")
     assert v.hud_ov_shown == 1
     assert v.order_sel == 3
     assert v.airframes__x_px.u16[0] == 64
 
 
+# What the menu puts on screen, read out of VRAM: BG3's map at word $7800.
+# Icon k is map rows 2+4k..5+4k, columns 1-4, BG3 tiles from 191 (past the
+# front end's font) on sub-palette 3, or 4 for the selected one, whose name
+# and cost are on its top row from column 6.
+MENU_ROW, ICON_TILE0, TANK, INFANTRY, HELI = 2, 191, 2, 3, 5
+
+
+def bg3_map(snes):
+    """BG3's 32x32 map, as words, straight out of VRAM."""
+    vram = snes.dump("vram")
+    base = 0x7800 * 2
+    return [vram[base + 2 * i] | (vram[base + 2 * i + 1] << 8) for i in range(32 * 32)]
+
+
+def icon_cells(m, k):
+    """Icon k's sixteen map words."""
+    return [m[(MENU_ROW + 4 * k + r) * 32 + 1 + c] for r in range(4) for c in range(4)]
+
+
+def palette(word):
+    return (word >> 10) & 7
+
+
+def test_the_menu_shows_six_icons_the_tank_lit(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20)
+    read_snapshot(snes, "l")
+    m = bg3_map(snes)
+    for k in range(6):
+        cells = icon_cells(m, k)
+        assert all((w & 0x3FF) >= ICON_TILE0 for w in cells), f"icon {k} is the icons' tiles"
+        assert {palette(w) for w in cells} == ({4} if k == TANK else {3}), f"icon {k}'s palette"
+    letters = snes.raw("HUD_MAP_data").u16
+    assert m[(MENU_ROW + 4 * TANK) * 32 + 6:(MENU_ROW + 4 * TANK) * 32 + 10] == \
+        [letters[29 * 32 + ord(c) - ord("A")] for c in "TANK"]
+
+
+def test_down_lights_the_next_icon(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "down", frames=3).l(3)
+    read_snapshot(snes, "l")
+    m = bg3_map(snes)
+    assert {palette(w) for w in icon_cells(m, TANK)} == {3}
+    assert {palette(w) for w in icon_cells(m, INFANTRY)} == {4}
+    clear = snes.raw("HUD_MAP_data").u16[10 * 32]
+    assert m[(MENU_ROW + 4 * TANK) * 32 + 6] == clear, "the tank's label is gone"
+
+
+def test_the_menu_goes_with_l(snes):
+    """The rows go back to the art's transparent tile, which is what the map
+    has under them."""
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).wait(5)
+    read_snapshot(snes)
+    m = bg3_map(snes)
+    clear = snes.raw("HUD_MAP_data").u16[10 * 32]
+    assert all(m[(MENU_ROW + r) * 32 + c] == clear for r in range(24) for c in range(19))
+
+
+def test_an_alert_beside_the_menu_leaves_the_bottom_icon(snes):
+    """The opponent's first convoy alert types into rows 23-26 from column
+    10 while the menu is up: the heli icon on rows 22-25 stays whole."""
+    boot(snes, "MISSION_TEST_QUIET").l(100)
+    v = read_snapshot(snes, "l")
+    assert v.alert_state != 0
+    m = bg3_map(snes)
+    assert all((w & 0x3FF) >= ICON_TILE0 for w in icon_cells(m, HELI))
+    box_tl = snes.raw("HUD_MAP_data").u16[30 * 32]
+    assert m[23 * 32 + 10] == box_tl, "and the alert's box is up beside it"
+
+
 def test_letting_go_of_l_hides_the_overlay(snes):
-    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "right", frames=3).l(10).wait(5)
+    boot(snes, "MISSION_TEST_QUIET").wait(30).l(20).press("l", "down", frames=3).l(10).wait(5)
     v = read_snapshot(snes)
     assert v.hud_ov_shown == 0
     assert v.order_sel == 3

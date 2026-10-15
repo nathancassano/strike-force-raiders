@@ -97,7 +97,7 @@ def screen_colour(snes, tmp_path, rgb, snes_colour=False):
 @rom_state
 def boarded(s):
     """Five infantry bought, the airframe landed on the pad, all five aboard."""
-    boot(s, "MISSION_TEST_QUIET").press("l", "right", frames=3).wait(3).press("l", "a", frames=3).wait(20)
+    boot(s, "MISSION_TEST_QUIET").press("l", "down", frames=3).wait(3).press("l", "a", frames=3).wait(20)
     s.right(180).wait(60).down(30).wait(40).wait(2800)
 
 

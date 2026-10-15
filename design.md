@@ -308,7 +308,7 @@ tile, and the clouds and mountains now share one.)
 |---|---|---|
 | BG1 (4bpp) | Dirt, rows 179-223 (units stand at 184) | **Per-scanline HDMA** — see below |
 | BG2 (4bpp) | Clouds (rows 16-91) and distant mountains (135-178) | HDMA split at line 104: clouds `camera_x >> 5` above (the farthest layer), mountains `>> 3` below |
-| BG3 (2bpp) | HUD / radar strip, order dialog, front-end pages | Fixed; over everything by `BGMODE`'s BG3 bit and the tiles' priority bit (the battle-over line borrows row 10) |
+| BG3 (2bpp) | HUD / radar strip, order menu, front-end pages | Fixed; over everything by `BGMODE`'s BG3 bit and the tiles' priority bit (the battle-over line borrows row 10) |
 
 Sky is the backdrop colour (CGRAM 0), optionally graded with an HDMA on `COLDATA`.
 
@@ -753,7 +753,9 @@ tiles each) at its own CHR base, and its own 4-colour block of CGRAM.
    fails, a landed man is an infantryman again; men aboard count against the cap. With it the
    order controls moved to the overlay scheme - hold L, Left/Right, A - freeing X, and the
    overlay itself is a BG1 dialog under the strip: icon, name and cost per line, a cursor on the
-   highlighted one. The canopy is tile 72 on the sheet. *Verified: `airlift_board` (five men aboard off the pad) and
+   highlighted one. *Amended:* the dialog is now a column of six 32x32 unit icons down the left
+   edge, still on BG3 (2bpp tiles, `icons.tilemap.bmp`); Up/Down move the highlight, which lights
+   the icon's panel and puts its name and cost beside it. The canopy is tile 72 on the sheet. *Verified: `airlift_board` (five men aboard off the pad) and
    `airlift_drop` (five drops, the fixed RNG's two failures, three men back on the field).*
 9c. ~~**HUD rows and radar.**~~ **DONE.** `src/hud.r65` rows 0-1 as decided (purse, lives,
    health and fuel bars of six glyph cells; rounds, bombs, men aboard - missiles when they

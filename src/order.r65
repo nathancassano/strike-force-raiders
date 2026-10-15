@@ -5,8 +5,9 @@
 // crosses a threshold it pays one fund. Deeper into enemy territory earns
 // faster - the income *is* the incentive to press forward.
 //
-// Orders are the plan's L/R ring: six entries in roster order, L and R move
-// the selection, X buys the selected one. The cost comes off immediately,
+// Orders are the plan's ring: six entries in roster order, shown while L is
+// held as a column of icons (hud.r65); Up and Down move the selection, A
+// buys the selected one. The cost comes off immediately,
 // and a refused order - short of funds, at the inventory cap, or queue
 // full - changes nothing. Bought units leave the base one every ORDER_GAP
 // frames; a multi-man order is just several in a row, so a convoy is what
@@ -57,7 +58,7 @@ struct OrderStat {
     cost: u8,
     men:  u8,             // units one order puts on the field
     cap:  u8,             // most of this kind one side may have out
-    name: [u8; 8],        // the order dialog's, in capitals, 0-padded
+    name: [u8; 8],        // the order menu's label, in capitals, 0-padded
 }
 
 static order_stats: [OrderStat; 6] = [
@@ -143,16 +144,15 @@ far fn order_place() -> u8 {
     return 1;
 }
 
-// order_input - with L held, Left/Right walk the ring and A buys. (The
-// overlay's drawing arrives with the HUD; the strip's ring is the
-// display until then.)
+// order_input - with L held, Down/Up walk the ring - down the order menu's
+// column of icons (hud.r65), wrapping at either end - and A buys.
 far fn order_input(held: u16, trig: u16) {
     if (held & JOY_L) == 0 { return; }
-    if (trig & JOY_RIGHT) != 0 {
+    if (trig & JOY_DOWN) != 0 {
         order_sel = order_sel + 1;
         if order_sel >= ORDER_RING { order_sel = 0; }
     }
-    if (trig & JOY_LEFT) != 0 {
+    if (trig & JOY_UP) != 0 {
         if order_sel == 0 { order_sel = ORDER_RING; }
         order_sel = order_sel - 1;
     }

@@ -33,7 +33,7 @@ def test_field(snes):
     up under it from the base and board there too; no deck needed.
     """
     boot(snes, "MISSION_TEST_QUIET")
-    snes.press("l", "right", frames=3).wait(3)
+    snes.press("l", "down", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(20)
     snes.right(120).wait(60).down(30).wait(40).wait(1600)
     v = read_snapshot(snes)

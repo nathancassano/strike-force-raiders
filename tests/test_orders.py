@@ -1,7 +1,7 @@
 """Phase 7: economy and ordering.
 
 Funds grow with the helicopter's distance from the west edge; with L held,
-Left/Right walk the order ring and A buys. Every check is on the ROM's own
+Up/Down walk the order ring and A buys. Every check is on the ROM's own
 state: the purse, the selection, and what came out of the base.
 """
 
@@ -39,7 +39,7 @@ def test_one_press_buys_one_tank(snes):
 
 
 def test_infantry_leave_the_gate_one_at_a_time(snes):
-    """Right moves the ring to infantry; one order is five men.
+    """Down moves the ring to infantry; one order is five men.
 
     The gate lets the next out only when the last is a convoy space (32 px,
     64 frames at a man's half pixel a frame) clear of it: 40 frames on, one
@@ -48,7 +48,7 @@ def test_infantry_leave_the_gate_one_at_a_time(snes):
     frame longer let him out.)
     """
     boot(snes, "MISSION_TEST_QUIET")
-    snes.press("l", "right", frames=3).wait(3)
+    snes.press("l", "down", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(40)
     v = read_snapshot(snes)
     assert v.funds == 27
@@ -57,13 +57,13 @@ def test_infantry_leave_the_gate_one_at_a_time(snes):
 
 
 def test_the_seventh_van_is_refused(snes):
-    """Left twice wraps to the van. Its cap is six, counted on the field and
+    """Up twice wraps to the van. Its cap is six, counted on the field and
     in the queue: the seventh press is refused and costs nothing, so the
     purse is 32 - 6*2, and the first van is out.
     """
     boot(snes, "MISSION_TEST_QUIET")
-    snes.press("l", "left", frames=3).wait(3)
-    snes.press("l", "left", frames=3).wait(3)
+    snes.press("l", "up", frames=3).wait(3)
+    snes.press("l", "up", frames=3).wait(3)
     seven_vans(snes).wait(80)
     v = read_snapshot(snes)
     assert v.funds == 20
@@ -72,10 +72,10 @@ def test_the_seventh_van_is_refused(snes):
 
 
 def test_buying_a_helicopter_adds_a_life(snes):
-    """Right three times from the tank is the helicopter: an extra life for 20."""
+    """Down three times from the tank is the helicopter: an extra life for 20."""
     boot(snes, "MISSION_TEST_QUIET")
     for _ in range(3):
-        snes.press("l", "right", frames=3).wait(3)
+        snes.press("l", "down", frames=3).wait(3)
     snes.press("l", "a", frames=3).wait(10)
     v = read_snapshot(snes)
     assert v.funds == 12

@@ -164,7 +164,7 @@ rotor_raiders/
 │   ├── heli.r65              # The airframes: the #[soa] pool (Airframe, both sides' methods) and the player's (Player)
 │   ├── foe.r65               # The enemy's pilot (Pilot): its decisions, and the world against its airframe
 │   ├── fx.r65                # Explosions and smoke: hindstrike's particle animations (bank 3, draw in 0)
-│   ├── hud.r65               # BG3 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
+│   ├── hud.r65               # BG3 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order menu of unit icons
 │   ├── alert.r65             # The alert queue and the avatar: a portrait and a typed two-line message, bottom right
 │   ├── radar.r65             # BG3 strip row 2: the radar, a 256x8 bitmap the game draws
 │   ├── game.r65              # Match state: the two ends, the reset
@@ -199,7 +199,7 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 |---|---|---|---|---|
 | BG1 | `ground` | dirt, rows 179-223 | per-scanline HDMA ch6, eight bands | 4bpp $0000 / $6000 (64x32) |
 | BG2 | `sky` + `mountains` | stratus clouds rows 16-91; mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp $1000-$3FFF (clouds' tiles, then mountains') / $6800 (64x32) |
-| BG3 | `hud` | HUD strip, radar, dialog, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
+| BG3 | `hud` + `icons` | HUD strip, radar, order menu, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
 | OBJ | `fx` | explosions and smoke, from hindstrike | camera-relative | after `heli` (4bpp, `FX_TILE0` on) |
@@ -239,7 +239,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
@@ -646,7 +646,7 @@ over it by a hair drops whole.
 `alert_push(code)`, and the queue (four deep; a code already showing or queued, or anything
 pushed while the battle is not on, is dropped) plays out one at a time - the portrait, four
 16x16 sprites of `avatar.bmp` (OBJ palette 6, after `fx` in the second name block; programmer
-art from `tools/avatar_art.py`), slides in at x 224, y 184; a box in the order dialog's pieces
+art from `tools/avatar_art.py`), slides in at x 224, y 184; a box in the HUD's box pieces
 goes up beside it on BG3 rows 23-26 (cols 10-27, under the units' band, over the dirt; cols
 28-31 stay transparent or they would hide the portrait), and the code's two lines type out in the
 HUD capitals a letter every 2 frames, the mouth working; it holds 120 frames (48 with another
@@ -680,16 +680,24 @@ the frame the unit pool has room. An airframe lost a third of its flight band up
 Controls: on the title, Up/Down and Start (or A) pick NEW GAME or ENTER CODE; in the code
 field the d-pad types the continue code, Start takes it and B goes back to the menu;
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
-dialog - Left/Right move the highlight, A buys - and the d-pad
+menu - Up/Down move the highlight, wrapping, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck;
 Start pauses and resumes; Y is unassigned. **Start acts on release, everywhere**: `pad_read_ports`
 reports it in the trigger mask as it comes up (`PAD_PREV` holds the pad with Start's bit
 inverted, so that costs one EOR), and the intro's skip reads the trigger too.
-The dialog (`hud_overlay`) is a box on BG3 rows 2-9 composed once at init into an 8-row
-shadow (composing it on the press cost a frame) and DMA'd as one 512-byte block on show and
-cursor move, with an all-transparent twin DMA'd on hide; its border and cursor tiles are stamped
-on map row 30 by `tools/hud_glyphs.py`, the names come from the letter row. `game_over` hides
-it before writing the battle-over line on row 10, from when they shared that row.
+The menu (`hud_overlay`) is a column of six 32x32 icons, one per order in ring order, down the
+left edge of BG3: map rows 2-25, four apiece, columns 1-4. The selected icon is on a brighter
+panel (BG3 sub-palette 4, the rest 3: CGRAM 12-19), with its name and cost beside it on its top
+row. The icons are BG3 tiles, 2bpp, from `icons.tilemap.bmp`, de-duplicated by the build, and
+uploaded at boot past the front end's font (`ICON_TILE0`, 191; 44 of the 65 tiles left there).
+`tools/icon_art.py` derives them from the units' own sprites in two tones.
+The menu is composed once at init into a 24-row shadow and a transparent twin, both `#[ram]`
+(composing it on the press cost a frame). Showing and hiding flush all of it. A move rewrites the
+two icons and the labels and flushes only the rows from the old icon to the new. Rows 23-25 are the
+alert box's too, from column 10, so there both sides write only their own columns: the menu its
+first ten, `alert_flush` its box, a row per DMA and only the rows that changed. The labels sit on
+an icon's top row, so the last one's is row 22, clear of the box. The names come from the letter
+row. `game_over` and the pause hide the menu before writing their line on row 10.
 
 Funds (`src/order.r65`) accumulate `airframes[HELI].x_px >> 4` per frame against `ECON_THRESH`; that
 threshold is the pace knob. Orders go

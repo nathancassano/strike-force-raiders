@@ -66,7 +66,7 @@ far fn game_over(result: u8) {
 }
 
 // game_pause - Start in battle: PAUSED, and the fade down begins
-// (game_pause_tick). The order dialog shares row 10 with the line, so it
+// (game_pause_tick). The order menu covers row 10 with its icons, so it
 // goes; L still held brings it back on the first tick after.
 far fn game_pause() {
     game_state = GAME_PAUSED;

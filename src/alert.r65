@@ -21,7 +21,7 @@
 // is what freezes it with the battle on a pause or at the end.
 //
 // The box is BG3 map rows ALERT_ROW.. (23-26, scanlines 184-215: under
-// the units, over the dirt), ALERT_COL..+ALERT_W, in the order dialog's
+// the units, over the dirt), ALERT_COL..+ALERT_W, in the HUD's box
 // border pieces and the HUD's capitals - opaque navy with the priority
 // bit, so it reads over the dirt. The portrait is four 16x16 sprites
 // (avatar.bmp, tools/avatar_art.py) at x ALERT_X over columns 28-31,
@@ -157,7 +157,7 @@ const ALERT_HP_AT:   u8 = 5;
 #[lowram] static mut alert_len1:  u8;
 #[lowram] static mut alert_len2:  u8;
 #[lowram] static mut alert_mouth: u8;         // 1 open
-#[lowram] static mut alert_dirty: u8;
+#[lowram] static mut alert_dirty: u8;         // a bit a box row to flush, row 0 in bit 0
 #[lowram] static mut alert_map:   [u16; 128]; // map rows ALERT_ROW..+4
 
 // alert_init - nothing showing or queued, the rows transparent again.
@@ -220,7 +220,7 @@ fn alert_clear() {
     for c in 0..128 {
         alert_map[c] = clear;
     }
-    alert_dirty = 1;
+    alert_dirty = 0x0F;
 }
 
 // alert_box - the empty box, beside the portrait.
@@ -235,6 +235,7 @@ fn alert_box() {
         alert_map[bot + ALERT_COL + c] = hud_box(BOX_B);
     }
     alert_blank();
+    alert_dirty = 0x0F;
 }
 
 // alert_blank - the box's two lines back to navy.
@@ -247,7 +248,7 @@ fn alert_blank() {
             alert_map[at + c] = HUD_BLANK;
         }
     }
-    alert_dirty = 1;
+    alert_dirty = alert_dirty | 0x06;
 }
 
 // alert_len - how long line *l* is: the letters up to its padding.
@@ -280,6 +281,7 @@ fn alert_type() {
     let k: u8 = alert_k;
     let mut ch: u8 = 0;
     let mut at: u16 = 0;
+    let mut row: u8 = 0x02;
     if k < alert_len1 {
         ch = alert_lines[alert_cur >> 8].text[k as u16];
         at = (1 << 5) + ALERT_COL + 1 + (k as u16);
@@ -287,10 +289,11 @@ fn alert_type() {
         let j: u8 = k - alert_len1;
         ch = alert_lines[alert_cur & 0xFF].text[j as u16];
         at = (2 << 5) + ALERT_COL + 1 + (j as u16);
+        row = 0x04;
     }
     if ch != 0x20 {
         alert_map[at] = hud_letter(ch);
-        alert_dirty = 1;
+        alert_dirty = alert_dirty | row;
     }
     alert_k = k + 1;
 }
@@ -353,10 +356,22 @@ far fn alert_tick() {
     }
 }
 
-// alert_flush - the box's rows to VRAM. Vblank, from hud_flush.
+// alert_flush - the box's changed rows to VRAM, each only its own columns:
+// the order menu's icons (hud.r65) share rows 23-25 at the left. A typed
+// letter is one row, one DMA. Vblank, from hud_flush.
 far fn alert_flush() {
+    let d: u8 = alert_dirty;
     alert_dirty = 0;
-    dma_copy_vram(1, &alert_map as far *u8, VRAM_HUD + (ALERT_ROW << 5), ALERT_ROWS << 6);
+    if (d & 0x01) != 0 { alert_flush_row(0); }
+    if (d & 0x02) != 0 { alert_flush_row(1); }
+    if (d & 0x04) != 0 { alert_flush_row(2); }
+    if (d & 0x08) != 0 { alert_flush_row(3); }
+}
+
+fn alert_flush_row(r: u16) {
+    let at: u16 = (r << 5) + ALERT_COL;
+    dma_copy_vram(1, &alert_map[at] as far *u8, VRAM_HUD + ((ALERT_ROW + r) << 5) + ALERT_COL,
+                  ALERT_W << 1);
 }
 
 // --------------------------------------------------------------- draw ---

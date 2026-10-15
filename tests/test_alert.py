@@ -62,14 +62,17 @@ def test_an_order_short_of_funds_types_out(snes):
 
 
 def test_the_letters_come_two_frames_apart(snes):
-    """After the slide, a letter every second frame."""
+    """After the slide, a letter every second frame. (From the first letter:
+    the frame the slide ends can be read mid-tick, and whether it shows the
+    count at 0 depends on where the loop is when the emulator's frame ends.)"""
     short_of_funds(snes)
     seen = []
     for _ in range(30):
         snes.wait(1)
         if snes.var.alert_state == ALERT_TYPING:
             seen.append(snes.var.alert_k)
-    assert seen[:7] == [0, 1, 1, 2, 2, 3, 3]
+    first = seen.index(1)
+    assert seen[first:first + 6] == [1, 1, 2, 2, 3, 3]
 
 
 def test_the_portrait_slides_in_from_the_right(snes):

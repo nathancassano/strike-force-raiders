@@ -14,7 +14,7 @@
 // (lib/default_font.r65, ASCII 32-126) uploaded at boot past the radar's
 // tiles. Its text area is the inside of the frame, so a centred line
 // clears and centres between the border columns. The border and the code
-// cursor are still the order dialog's pieces, read back out of the BG3
+// cursor are still the HUD's box pieces, read back out of the BG3
 // map by position (HUD_BOX_ROW, tools/hud_glyphs.py).
 //
 // The front end is the *campaign's*. A test mission (mission.r65) boots
@@ -272,7 +272,7 @@ fn screen_clear() {
     screen_con.set_area(SCREEN_TEXT_COL as u8, 0, SCREEN_TEXT_W as u8, SCREEN_ROWS as u8);
 }
 
-// screen_frame - the order dialog's border pieces around the whole page.
+// screen_frame - the HUD's box pieces around the whole page.
 fn screen_frame() {
     let bot: u16 = SCREEN_BOX_ROW + SCREEN_BOX_ROWS - 1;
     screen_put(SCREEN_BOX_ROW, SCREEN_BOX_COL, hud_box(BOX_TL));

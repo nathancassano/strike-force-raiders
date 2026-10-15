@@ -118,6 +118,7 @@ fn boot_load() {
     // Sky. Written after the palette DMA, which overwrites CGRAM 0.
     set_backdrop!(Color::rgb!(7, 19, 29));   // #3d9aec, the clouds' sky (sky.tilemap.bmp entry 0)
     radar_palette();
+    hud_icons_load();
     screen_font();
 
     pad_init();
