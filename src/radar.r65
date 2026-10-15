@@ -70,6 +70,7 @@ static radar_bit: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 #[lowram] static mut radar_map_dirty: u8;        // map row to VRAM, once
 #[lowram] static mut radar_base_dirty: u8;       // rebuild the base first
 #[lowram] static mut radar_jam:   u16;           // first tile a van jams this redraw; RADAR_TILES none
+#[lowram] static mut radar_jammed: u8;           // the last redraw was jammed (alert.r65's ALERT_VAN)
 
 // radar_palette - the sub-palette: transparent, the strip's navy, blue,
 // red. CGRAM, so force blank only: boot, not the reset.
@@ -91,6 +92,7 @@ far fn radar_init() {
     radar_map_dirty = 1;
     radar_dirty = 0;
     radar_jam = RADAR_TILES;
+    radar_jammed = 0;
     radar_build_base();
     radar_base_dirty = 0;
 }
@@ -218,7 +220,13 @@ far fn radar_update() {
         radar_red2(f, 1);
         if f < 255 { radar_red2(f + 1, 1); }
     }
-    if radar_jam < RADAR_TILES { radar_blank(radar_jam); }
+    if radar_jam < RADAR_TILES {
+        radar_blank(radar_jam);
+        if radar_jammed == 0 { alert_push(ALERT_VAN); }   // from clear to jammed
+        radar_jammed = 1;
+    } else {
+        radar_jammed = 0;
+    }
     radar_dirty = 1;
 }
 

@@ -50,6 +50,7 @@ include!("intro.r65")
 include!("heli.r65")
 include!("foe.r65")
 include!("fx.r65")
+include!("alert.r65")
 
 // Bank 0 - Main code
 #[bank(0)]
@@ -250,6 +251,7 @@ fn main() -> ! {
             airframes[HELI].draw();
             airframes[FOE].draw();
             radar_draw();
+            if alert_up != 0 { alert_draw(); }
             muni_draw();
             if fx_live != 0 { fx_draw(); }
             para_draw();

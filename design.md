@@ -267,6 +267,11 @@ L overlay; the airframe's own gauges are on a third row along the bottom of the 
 
 Plus an **avatar pop-in at the bottom right** of the screen: a character portrait that slides in
 to deliver briefings and in-battle warnings (van approaching, bank robbed, low fuel).
+*Amended:* built for the battle only (`alert.r65`), not the briefings: a 32x32 portrait slides
+in and a two-line message types out in a box beside it on BG3 rows 23-26, one alert at a time
+from a four-deep queue - buildings changing hands, either bank robbed, a van jamming the radar,
+fuel low and critical, heavy damage, the last airframe, an order refused, and the opponent's
+convoys, paratroopers and bank raid.
 
 ## Original quirks worth keeping
 

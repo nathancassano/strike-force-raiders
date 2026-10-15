@@ -159,6 +159,7 @@ rotor_raiders/
 │   ├── foe.r65               # The enemy's pilot (Pilot): its decisions, and the world against its airframe
 │   ├── fx.r65                # Explosions and smoke: hindstrike's particle animations (bank 3, draw in 0)
 │   ├── hud.r65               # BG3 strip rows 0-1 (purse, lives, gauges, ammo, men); the battle-over line; the order dialog
+│   ├── alert.r65             # The alert queue and the avatar: a portrait and a typed two-line message, bottom right
 │   ├── radar.r65             # BG3 strip row 2: the radar, a 256x8 bitmap the game draws
 │   ├── game.r65              # Match state: the two ends, the reset
 │   ├── sound.r65             # SNES GSS sound driver: upload, commands, sfx_play, music_play (bank 3)
@@ -196,6 +197,7 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
 | OBJ | `fx` | explosions and smoke, from hindstrike | camera-relative | after `heli` (4bpp, `FX_TILE0` on) |
+| OBJ | `avatar` | the alert portrait, two 32x32 frames | fixed, bottom right | after `fx` (4bpp, `ALERT_TILE0` on) |
 
 The clouds and the mountains share BG2 because they never share a scanline: one HDMA split
 gives each its own scroll. **They are two sheets**, `sky.tilemap.bmp` and
@@ -231,7 +233,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
@@ -625,6 +627,31 @@ the edge follows the van. It costs ~2.5% of a frame on average; `unit_budget`'s
 pinned figure dropped more than that because that movie sits on the budget line and a frame
 over it by a hair drops whole.
 
+**Alerts** (`src/alert.r65`, bank 2) are the avatar pop-in design.md planned: an event calls
+`alert_push(code)`, and the queue (four deep; a code already showing or queued, or anything
+pushed while the battle is not on, is dropped) plays out one at a time - the portrait, four
+16x16 sprites of `avatar.bmp` (OBJ palette 6, after `fx` in the second name block; programmer
+art from `tools/avatar_art.py`), slides in at x 224, y 184; a box in the order dialog's pieces
+goes up beside it on BG3 rows 23-26 (cols 10-27, under the units' band, over the dirt; cols
+28-31 stay transparent or they would hide the portrait), and the code's two lines type out in the
+HUD capitals a letter every 2 frames, the mouth working; it holds 120 frames (48 with another
+waiting), the next types into the same box, and the last clears it and slides out. A code is two
+indexes into `alert_lines`, so captures and losses (`alert_owner`, from `struct_set_owner`: kind
+times who took it from whom - a base never changes hands mid-battle, so there is no "base taken")
+share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_robbed`); a van
+starting to jam the radar (`radar_jammed`, `radar_update`); fuel crossing 25 and 10, hp 5 and the
+last airframe (in `hud_update`'s existing change branches); an order short of funds or over its
+cap (`order_place`); the CPU buying a convoy (`cpu_buy`); its paratroopers (`Pilot::maybe_drop`)
+and its bank raid (`Pilot::choose`). **Idle it costs nothing** - one byte test in `hud_update`
+(`alert_busy`, which ticks the queue) and one in `main`'s draw (`alert_up`) - measured with every
+push suppressed, the stress run did not move; while one is up the portrait and the tick cost it
+11 ticks a minute (the opponent's convoys keep one up a quarter of that run). `alert_draw` claims
+its four OAM slots through `oam_next` itself, so it lives in bank 2 rather than calling bank 0's
+near `oam_take`, and it draws straight after the radar bracket (slot 2 is pinned). The tick is
+the battle's, in `hud_update`, so an alert freezes with a pause or the match's end, and nothing
+the simulation reads is touched: a push never re-deals a battle. `hud_init` calls `alert_init`,
+so a reset or a page coming down clears it.
+
 The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`airframes[HELI].landed`;
 `player.on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
 airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
@@ -704,7 +731,8 @@ one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the 
 airframe of either side or a turret or bunker falling (`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
 or `SFX_ENEMY_MISSILE` by its side), the missile alarm (`SFX_MISSILE_WARNING`, centred, every 32
 frames while a missile homes on the player's airframe - `muni_update`, on the loss channel as
-`SFX_CHN_WARN`, so a hit cuts it), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
+`SFX_CHN_WARN`, so a hit cuts it), an alert's chime (`SFX_MESSAGE`, centred, on the launch
+channel as `SFX_CHN_MSG` - launches are the rarest sound), and the player's **rotor** - `SFX_HELI_1..4` restarted in turn
 every 4 frames on channel 7 while the airframe is up (`sfx_rotor`, from `Player::update`; 19 in the
 air, 11 idling on a deck - a fifth of where it started, which ran over everything - jittered by 1
 from the frame count, never `rand()`). Its four effects are pitched down a fourth, B-4 to F#4, by

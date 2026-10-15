@@ -225,6 +225,7 @@ fn cpu_choose() -> u16 {
 // substitutions the row's flags call for.
 fn cpu_buy(c: u16) {
     cpu_funds = cpu_funds - convoys[c].cost;
+    alert_push(ALERT_CONVOY);
     let flags: u8 = cpu_stats[cpu_level as u16].flags;
     let mut p: u16 = convoys[c].off as u16;
     cpu_head = 0;

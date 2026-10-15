@@ -133,6 +133,7 @@ far fn hud_init() {
     hud_ov_dirty = 0;
     hud_ov_shown = 0;
     hud_ov_compose();
+    alert_init();
     hud_update();
 }
 
@@ -140,12 +141,15 @@ far fn hud_init() {
 // (2.5 px/hp, the last two clipped); fuel is 100 over 48 (half a pixel a
 // unit, the last two clipped).
 far fn hud_update() {
+    if alert_busy != 0 { alert_tick(); }
     if hud_funds != funds {
         hud_funds = funds;
         hud_put2(HUD_COL_FUNDS + 1, funds);
         hud_dirty = 1;
     }
     if hud_lives != airframes[HELI].lives {
+        // The last airframe: from more, not from the init's 0xFF.
+        if airframes[HELI].lives == 1 && hud_lives > 1 && hud_lives != 0xFF { alert_push(ALERT_LAST_HELI); }
         hud_lives = airframes[HELI].lives;
         let mut n: u8 = airframes[HELI].lives;
         if n > 9 { n = 9; }
@@ -153,12 +157,22 @@ far fn hud_update() {
         hud_dirty = 1;
     }
     if hud_hp != airframes[HELI].hp {
-        hud_hp = airframes[HELI].hp;
+        let hp: u8 = airframes[HELI].hp;
+        if hp != 0 && hp <= ALERT_HP_AT && hud_hp > ALERT_HP_AT && hud_hp != 0xFF { alert_push(ALERT_DAMAGE); }
+        hud_hp = hp;
         hud_bar(32 + HUD_COL_HEALTH + 2, ((airframes[HELI].hp as u16) * 2) + ((airframes[HELI].hp as u16) >> 1));
         hud_dirty = 1;
     }
     if hud_fuel != airframes[HELI].fuel {
-        hud_fuel = airframes[HELI].fuel;
+        let fuel: u8 = airframes[HELI].fuel;
+        if hud_fuel != 0xFF {
+            if fuel <= ALERT_CRIT_AT && hud_fuel > ALERT_CRIT_AT {
+                alert_push(ALERT_FUEL_CRIT);
+            } else if fuel <= ALERT_FUEL_AT && hud_fuel > ALERT_FUEL_AT {
+                alert_push(ALERT_FUEL_LOW);
+            }
+        }
+        hud_fuel = fuel;
         hud_bar(32 + HUD_COL_FUEL + 2, (airframes[HELI].fuel as u16) >> 1);
         hud_dirty = 1;
     }
@@ -349,4 +363,5 @@ far fn hud_flush() {
         hud_msg_dirty = 0;
         dma_copy_vram(1, &hud_msg as far *u8, VRAM_HUD + (HUD_MSG_ROW << 5), 64);
     }
+    if alert_dirty != 0 { alert_flush(); }
 }

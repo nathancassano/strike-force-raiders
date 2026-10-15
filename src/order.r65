@@ -113,7 +113,10 @@ fn order_queued(kind: Order) -> u8 {
 far fn order_place() -> u8 {
     let k: u16 = order_sel as u16;
     let cost: u8 = order_stats[k].cost;
-    if funds < cost { return 0; }
+    if funds < cost {
+        alert_push(ALERT_FUNDS);
+        return 0;
+    }
 
     if order_sel == Order::Heli as u8 {
         funds = funds - cost;
@@ -128,7 +131,10 @@ far fn order_place() -> u8 {
     let mut have: u8 = unit_count(kind, SIDE_PLAYER) + order_queued(kind);
     if order_sel == Order::Infantry as u8 { have = have + order_queued(Order::Engineer) + player.men; }
     if order_sel == Order::Engineer as u8 { have = have + order_queued(Order::Infantry) + player.men; }
-    if have + order_stats[k].men > order_stats[k].cap { return 0; }
+    if have + order_stats[k].men > order_stats[k].cap {
+        alert_push(ALERT_LIMIT);
+        return 0;
+    }
 
     if order_tail - order_head >= ORDER_QUEUE { return 0; }
     order_q[(order_tail & ORDER_QMASK) as u16] = order_sel;

@@ -1,0 +1,384 @@
+// alert - the radio operator: a portrait that slides in at the bottom
+// right with a two-line message typed out beside it, for what happens
+// off screen - a bunker taken, the bank robbed, a van on the radar - and
+// for the airframe's own warnings.
+//
+// Events push an alert *code* onto a four-deep queue (alert_push); the
+// HUD's tick plays the queue out one at a time (alert_tick):
+//
+//   in     the portrait slides in from the right edge, 4 px a frame
+//   type   the box goes up beside it and the lines type out, a letter
+//          every ALERT_TYPE frames, the mouth working as they do
+//   hold   ALERT_HOLD frames - ALERT_HOLD_BUSY with more queued
+//   next   the next queued alert types into the same box, or
+//   out    the box clears and the portrait slides back out
+//
+// A push costs its event a far call and nothing else, and an idle queue
+// costs a frame one byte test in hud_update and one in main's draw: the
+// stress run sits on the frame-budget line. Nothing the simulation reads
+// is touched here - no rand(), no cpu_rand, no frames_loop - so an alert
+// never re-deals a battle, and the tick being the battle's (hud_update)
+// is what freezes it with the battle on a pause or at the end.
+//
+// The box is BG3 map rows ALERT_ROW.. (23-26, scanlines 184-215: under
+// the units, over the dirt), ALERT_COL..+ALERT_W, in the order dialog's
+// border pieces and the HUD's capitals - opaque navy with the priority
+// bit, so it reads over the dirt. The portrait is four 16x16 sprites
+// (avatar.bmp, tools/avatar_art.py) at x ALERT_X over columns 28-31,
+// which stay transparent: a priority cell there would hide them.
+
+#[bank(2)]
+
+const ALERT_ROW:  u16 = 23;               // top border; the lines are 24 and 25
+const ALERT_ROWS: u16 = 4;
+const ALERT_COL:  u16 = 10;
+const ALERT_W:    u16 = 18;               // border, ALERT_LINE letters, border
+const ALERT_LINE: u16 = 16;
+
+const ALERT_X:     u16 = 224;             // the portrait, in
+const ALERT_X_OUT: u16 = 256;             // ... and off the right edge
+const ALERT_Y:     u8  = 184;
+const ALERT_SLIDE: u16 = 4;               // px a frame
+const ALERT_TYPE:  u8  = 2;               // frames a letter
+const ALERT_HOLD:  u8  = 120;             // frames a finished message stays
+const ALERT_HOLD_BUSY: u8 = 48;           // ... with another waiting
+const ALERT_QMAX:  u8  = 4;               // the queue's depth, a power of two
+
+// The avatar's sheet sits after the explosions' in the second OBJ name
+// block; its own palette is OBJ 6.
+const ALERT_TILE0:  u16 = (HELI_CHR_SIZE + FX_CHR_SIZE) >> 5;
+const CGRAM_OBJ_ALERT: u16 = 224;
+const OBJ_PAL_ALERT:   u16 = 0x0C00;
+const ALERT_ATTR: u16 = 0x3000 | HELI_PAGE | OBJ_PAL_ALERT;   // priority 3
+
+const ALERT_IDLE: u8 = 0;
+const ALERT_IN:   u8 = 1;
+const ALERT_TYPING: u8 = 2;
+const ALERT_HELD: u8 = 3;
+const ALERT_OUT:  u8 = 4;
+
+// The lines an alert is made of, in capitals and spaces (hud_letter's
+// set), 0-padded. A code is two of them: (first << 8) | second.
+#[soa]
+struct AlertLine {
+    text: [u8; 16],
+}
+
+const AL_NONE:      u16 = 0;
+const AL_ENEMY_TOOK_OUR: u16 = 1;
+const AL_ENEMY_TOOK: u16 = 2;
+const AL_WE_TOOK:   u16 = 3;
+const AL_WE_LOST:   u16 = 4;
+const AL_ENEMY_LOST: u16 = 5;
+const AL_TURRET:    u16 = 6;
+const AL_BUNKER:    u16 = 7;
+const AL_SUPER:     u16 = 8;
+const AL_OUR_BANK:  u16 = 9;
+const AL_ROBBED:    u16 = 10;
+const AL_WE_ROBBED: u16 = 11;
+const AL_ENEMY_BANK: u16 = 12;
+const AL_ENEMY_VAN: u16 = 13;
+const AL_JAMMED:    u16 = 14;
+const AL_FUEL_LOW:  u16 = 15;
+const AL_FUEL_CRIT: u16 = 16;
+const AL_DAMAGE:    u16 = 17;
+const AL_LAST_HELI: u16 = 18;
+const AL_NOT_ENOUGH: u16 = 19;
+const AL_FUNDS:     u16 = 20;
+const AL_LIMIT:     u16 = 21;
+const AL_REACHED:   u16 = 22;
+const AL_CONVOY:    u16 = 23;
+const AL_ON_THE_WAY: u16 = 24;
+const AL_ENEMY:     u16 = 25;
+const AL_PARAS:     u16 = 26;
+const AL_RAID:      u16 = 27;
+
+static alert_lines: [AlertLine; 28] = [
+    AlertLine { text: "" },
+    AlertLine { text: "ENEMY TOOK OUR" },
+    AlertLine { text: "ENEMY TOOK A" },
+    AlertLine { text: "WE TOOK A" },
+    AlertLine { text: "WE LOST A" },
+    AlertLine { text: "ENEMY LOST A" },
+    AlertLine { text: "TURRET" },
+    AlertLine { text: "BUNKER" },
+    AlertLine { text: "SUPER BUNKER" },
+    AlertLine { text: "OUR BANK" },
+    AlertLine { text: "WAS ROBBED" },
+    AlertLine { text: "WE ROBBED THE" },
+    AlertLine { text: "ENEMY BANK" },
+    AlertLine { text: "ENEMY VAN" },
+    AlertLine { text: "RADAR JAMMED" },
+    AlertLine { text: "FUEL LOW" },
+    AlertLine { text: "FUEL CRITICAL" },
+    AlertLine { text: "HEAVY DAMAGE" },
+    AlertLine { text: "LAST HELICOPTER" },
+    AlertLine { text: "NOT ENOUGH" },
+    AlertLine { text: "FUNDS" },
+    AlertLine { text: "UNIT LIMIT" },
+    AlertLine { text: "REACHED" },
+    AlertLine { text: "ENEMY CONVOY" },
+    AlertLine { text: "ON THE WAY" },
+    AlertLine { text: "ENEMY" },
+    AlertLine { text: "PARATROOPERS" },
+    AlertLine { text: "ENEMY RAID ON" },
+];
+
+// The alerts the rest of the game pushes. Captures and losses are made up
+// by alert_owner from the kind and the two sides.
+const ALERT_ROBBED_US:   u16 = (AL_OUR_BANK << 8) | AL_ROBBED;
+const ALERT_ROBBED_THEM: u16 = (AL_WE_ROBBED << 8) | AL_ENEMY_BANK;
+const ALERT_VAN:         u16 = (AL_ENEMY_VAN << 8) | AL_JAMMED;
+const ALERT_FUEL_LOW:    u16 = AL_FUEL_LOW << 8;
+const ALERT_FUEL_CRIT:   u16 = AL_FUEL_CRIT << 8;
+const ALERT_DAMAGE:      u16 = AL_DAMAGE << 8;
+const ALERT_LAST_HELI:   u16 = AL_LAST_HELI << 8;
+const ALERT_FUNDS:       u16 = (AL_NOT_ENOUGH << 8) | AL_FUNDS;
+const ALERT_LIMIT:       u16 = (AL_LIMIT << 8) | AL_REACHED;
+const ALERT_CONVOY:      u16 = (AL_CONVOY << 8) | AL_ON_THE_WAY;
+const ALERT_PARAS:       u16 = (AL_ENEMY << 8) | AL_PARAS;
+const ALERT_RAID:        u16 = (AL_RAID << 8) | AL_OUR_BANK;
+
+// The airframe's thresholds, crossed downward (hud_update).
+const ALERT_FUEL_AT: u8 = 25;
+const ALERT_CRIT_AT: u8 = 10;
+const ALERT_HP_AT:   u8 = 5;
+
+#[lowram] static mut alert_q:     [u16; 4];   // codes waiting, from alert_qh
+#[lowram] static mut alert_qh:    u8;
+#[lowram] static mut alert_qn:    u8;
+#[lowram] static mut alert_busy:  u8;         // anything showing or queued
+#[lowram] static mut alert_up:    u8;         // the portrait is drawn
+#[lowram] static mut alert_state: u8;
+#[lowram] static mut alert_cur:   u16;        // the code showing; 0 none
+#[lowram] static mut alert_x:     u16;        // the portrait's left edge
+#[lowram] static mut alert_t:     u8;         // frames to the next letter / of the hold
+#[lowram] static mut alert_k:     u8;         // letters typed
+#[lowram] static mut alert_len1:  u8;
+#[lowram] static mut alert_len2:  u8;
+#[lowram] static mut alert_mouth: u8;         // 1 open
+#[lowram] static mut alert_dirty: u8;
+#[lowram] static mut alert_map:   [u16; 128]; // map rows ALERT_ROW..+4
+
+// alert_init - nothing showing or queued, the rows transparent again.
+// From hud_init: every time BG3 is rebuilt (boot, reset, a page coming
+// down).
+far fn alert_init() {
+    alert_qh = 0;
+    alert_qn = 0;
+    alert_busy = 0;
+    alert_up = 0;
+    alert_state = ALERT_IDLE;
+    alert_cur = 0;
+    alert_mouth = 0;
+    alert_clear();
+}
+
+// alert_push - queue *code*, unless the battle is not on (a reset or the
+// base going to nobody after the match), it is showing or queued already,
+// or the queue is full.
+far fn alert_push(code: u16) {
+    if game_state != GAME_PLAYING { return; }
+    if alert_state != ALERT_IDLE && alert_cur == code { return; }
+    for n in 0..(alert_qn as u16) {
+        if alert_q[((alert_qh as u16) + n) & ((ALERT_QMAX as u16) - 1)] == code { return; }
+    }
+    if alert_qn >= ALERT_QMAX { return; }
+    alert_q[((alert_qh + alert_qn) & (ALERT_QMAX - 1)) as u16] = code;
+    alert_qn = alert_qn + 1;
+    alert_busy = 1;
+}
+
+// alert_owner - a building changed hands (struct_set_owner): *kind* went
+// from side *from* to side *to*. Banks and bases say nothing - a base
+// only goes to nobody once the match is over.
+far fn alert_owner(kind: u8, from: u8, to: u8) {
+    let mut what: u16 = AL_TURRET;
+    if kind == StructKind::Bunker as u8 { what = AL_BUNKER; }
+    if kind == StructKind::Super as u8 { what = AL_SUPER; }
+    if kind > StructKind::Super as u8 { return; }
+    let mut first: u16 = AL_WE_TOOK;
+    if to == SIDE_ENEMY {
+        first = AL_ENEMY_TOOK;
+        if from == SIDE_PLAYER { first = AL_ENEMY_TOOK_OUR; }
+    }
+    if to == SIDE_NONE {
+        first = AL_ENEMY_LOST;
+        if from == SIDE_PLAYER { first = AL_WE_LOST; }
+    }
+    alert_push((first << 8) | what);
+}
+
+// alert_robbed - a bank of side *owner* has just been robbed.
+far fn alert_robbed(owner: u8) {
+    if owner == SIDE_PLAYER { alert_push(ALERT_ROBBED_US); } else { alert_push(ALERT_ROBBED_THEM); }
+}
+
+// alert_clear - every row back to the art's transparent tile.
+fn alert_clear() {
+    let clear: u16 = hud_clear_tile();
+    for c in 0..128 {
+        alert_map[c] = clear;
+    }
+    alert_dirty = 1;
+}
+
+// alert_box - the empty box, beside the portrait.
+fn alert_box() {
+    let bot: u16 = (ALERT_ROWS - 1) << 5;
+    alert_map[ALERT_COL] = hud_box(BOX_TL);
+    alert_map[ALERT_COL + ALERT_W - 1] = hud_box(BOX_TR);
+    alert_map[bot + ALERT_COL] = hud_box(BOX_BL);
+    alert_map[bot + ALERT_COL + ALERT_W - 1] = hud_box(BOX_BR);
+    for c in 1..(ALERT_W - 1) {
+        alert_map[ALERT_COL + c] = hud_box(BOX_T);
+        alert_map[bot + ALERT_COL + c] = hud_box(BOX_B);
+    }
+    alert_blank();
+}
+
+// alert_blank - the box's two lines back to navy.
+fn alert_blank() {
+    for r in 1..3 {
+        let at: u16 = (r << 5) + ALERT_COL;
+        alert_map[at] = hud_box(BOX_L);
+        alert_map[at + ALERT_W - 1] = hud_box(BOX_R);
+        for c in 1..(ALERT_W - 1) {
+            alert_map[at + c] = HUD_BLANK;
+        }
+    }
+    alert_dirty = 1;
+}
+
+// alert_len - how long line *l* is: the letters up to its padding.
+fn alert_len(l: u16) -> u8 {
+    let mut n: u16 = 0;
+    while n < ALERT_LINE {
+        if alert_lines[l].text[n] == 0 { break; }
+        n = n + 1;
+    }
+    return n as u8;
+}
+
+// alert_next - take the code at the head of the queue and start typing
+// it, the chime with it.
+fn alert_next() {
+    alert_cur = alert_q[alert_qh as u16];
+    alert_qh = (alert_qh + 1) & (ALERT_QMAX - 1);
+    alert_qn = alert_qn - 1;
+    alert_len1 = alert_len(alert_cur >> 8);
+    alert_len2 = alert_len(alert_cur & 0xFF);
+    alert_k = 0;
+    alert_t = 1;
+    alert_state = ALERT_TYPING;
+    sfx_play(SFX_CHN_MSG, SFX_MESSAGE, 100, 128);
+}
+
+// alert_type - the next letter onto the box. Spaces are the box's navy
+// already.
+fn alert_type() {
+    let k: u8 = alert_k;
+    let mut ch: u8 = 0;
+    let mut at: u16 = 0;
+    if k < alert_len1 {
+        ch = alert_lines[alert_cur >> 8].text[k as u16];
+        at = (1 << 5) + ALERT_COL + 1 + (k as u16);
+    } else {
+        let j: u8 = k - alert_len1;
+        ch = alert_lines[alert_cur & 0xFF].text[j as u16];
+        at = (2 << 5) + ALERT_COL + 1 + (j as u16);
+    }
+    if ch != 0x20 {
+        alert_map[at] = hud_letter(ch);
+        alert_dirty = 1;
+    }
+    alert_k = k + 1;
+}
+
+// alert_tick - one battle frame of the queue. Called from hud_update only
+// while alert_busy.
+far fn alert_tick() {
+    if alert_state == ALERT_IDLE {
+        if alert_qn == 0 {
+            alert_busy = 0;
+            return;
+        }
+        alert_x = ALERT_X_OUT;
+        alert_up = 1;
+        alert_mouth = 0;
+        alert_state = ALERT_IN;
+        return;
+    }
+    if alert_state == ALERT_IN {
+        alert_x = alert_x - ALERT_SLIDE;
+        if alert_x <= ALERT_X {
+            alert_x = ALERT_X;
+            alert_box();
+            alert_next();
+        }
+        return;
+    }
+    if alert_state == ALERT_TYPING {
+        alert_t = alert_t - 1;
+        if alert_t != 0 { return; }
+        alert_t = ALERT_TYPE;
+        alert_type();
+        alert_mouth = alert_mouth ^ 1;
+        if alert_k >= alert_len1 + alert_len2 {
+            alert_mouth = 0;
+            alert_t = 0;
+            alert_state = ALERT_HELD;
+        }
+        return;
+    }
+    if alert_state == ALERT_HELD {
+        alert_t = alert_t + 1;
+        if alert_t < ALERT_HOLD_BUSY { return; }
+        if alert_qn != 0 {
+            alert_blank();
+            alert_next();
+            return;
+        }
+        if alert_t < ALERT_HOLD { return; }
+        alert_clear();
+        alert_cur = 0;
+        alert_state = ALERT_OUT;
+        return;
+    }
+    // ALERT_OUT
+    alert_x = alert_x + ALERT_SLIDE;
+    if alert_x >= ALERT_X_OUT {
+        alert_up = 0;
+        alert_state = ALERT_IDLE;
+    }
+}
+
+// alert_flush - the box's rows to VRAM. Vblank, from hud_flush.
+far fn alert_flush() {
+    alert_dirty = 0;
+    dma_copy_vram(1, &alert_map as far *u8, VRAM_HUD + (ALERT_ROW << 5), ALERT_ROWS << 6);
+}
+
+// --------------------------------------------------------------- draw ---
+// The portrait: four 16x16 sprites, mouth shut or open. main calls it only
+// while alert_up, straight after the radar bracket - the HUD's slots come
+// first and are never dropped. It claims its four slots by hand rather
+// than through oam_take, which is near in bank 0: bank 0 is full, and this
+// keeps all of it here. Unrolled - the loop's index arithmetic, per sprite
+// per frame, cost the stress run more than the writes do.
+far fn alert_draw() {
+    if alert_x >= ALERT_X_OUT { return; }        // wholly off the right edge
+    let s: u16 = oam_next as u16;
+    if s > OAM_SLOTS - 4 { return; }
+    oam_next = oam_next + 4;
+    let chr: u16 = (ALERT_TILE0 + ((alert_mouth as u16) << 2)) | ALERT_ATTR;
+    let x: u16 = alert_x;
+    oam.set_full!(s as u8, x, ALERT_Y, chr);
+    oam.set_size!(s as u8, 1);
+    oam.set_full!((s + 1) as u8, x + 16, ALERT_Y, chr + 2);
+    oam.set_size!((s + 1) as u8, 1);
+    oam.set_full!((s + 2) as u8, x, ALERT_Y + 16, chr + 32);
+    oam.set_size!((s + 2) as u8, 1);
+    oam.set_full!((s + 3) as u8, x + 16, ALERT_Y + 16, chr + 34);
+    oam.set_size!((s + 3) as u8, 1);
+}

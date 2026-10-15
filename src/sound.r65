@@ -94,6 +94,8 @@ const SFX_CHN_LOST:    u8 = 5;   // an airframe lost, a building fallen
 const SFX_CHN_WARN:    u8 = 5;   // the missile alarm: shares the loss channel, so a
                                  // missile that connects cuts it with the explosion
 const SFX_CHN_MISSILE: u8 = 6;   // a base's or a missile truck's launch
+const SFX_CHN_MSG:     u8 = 6;   // an alert's chime (alert.r65): launches are the
+                                 // rarest sound, and one cutting it short is harmless
 const SFX_CHN_ROTOR:   u8 = 7;   // the player's airframe, all the time it is up
 
 // The rotor is one of four short effects (SFX_HELI_1..4) restarted every

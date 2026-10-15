@@ -167,9 +167,13 @@ def test_unit_budget(state):
     faster (3662/3568): R65 keeps an unsigned u8 -> u16 widening in A
     rather than spilling it through the stack. Then 73 more (3662/3641):
     R65 records a branch's CFG edge from the block that really jumps, which
-    lets loop register promotion keep more counters in X/Y.
+    lets loop register promotion keep more counters in X/Y. Then the alert
+    avatar, 11 slower (3662/3630): idle it costs nothing (measured with
+    every push suppressed), but the opponent's five ENEMY CONVOY alerts
+    keep the portrait's four sprites and the queue's tick up for a quarter
+    of the run.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3641
+    assert v.frames_loop == 3630

@@ -820,6 +820,7 @@ impl Pilot {
         }
         pilot.drop = n;
         pilot.gap = 0;
+        alert_push(ALERT_PARAS);
     }
 
     // Pilot::para_target - the nearest bunker or super bunker within
@@ -949,7 +950,10 @@ impl Pilot {
             bank = Pilot::player_bank();
         } else {
             pilot.raid = 0;
-            if cpu_paras != 0 && pilot.steal != 0 && pilot.drop == 0 { bank = Pilot::raid_wanted(); }
+            if cpu_paras != 0 && pilot.steal != 0 && pilot.drop == 0 {
+                bank = Pilot::raid_wanted();
+                if bank < STRUCT_MAX { alert_push(ALERT_RAID); }   // the raid starts
+            }
         }
         if bank < STRUCT_MAX {
             pilot.raid = 1;

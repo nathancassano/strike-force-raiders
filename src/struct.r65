@@ -206,8 +206,10 @@ fn struct_attr(owner: u8) -> u16 {
     return 0x3000 | OBJ_PAL_PLAYER;
 }
 
-// struct_set_owner - hand a structure to a side; the palette follows.
+// struct_set_owner - hand a structure to a side; the palette follows, and
+// a change of hands is an alert (alert_owner).
 fn struct_set_owner(i: u16, owner: u8) {
+    if owner != structs[i].owner { alert_owner(structs[i].kind, structs[i].owner, owner); }
     radar_base_dirty = 1;
     structs[i].owner = owner;
     structs[i].attr = struct_attr(owner);
@@ -230,6 +232,7 @@ far fn struct_init() {
         structs[i].bal = 0;
         structs[i].men = 0;
         if level_layout[i].kind == StructKind::Bunker as u8 { structs[i].bal = BALLOON_HP; }
+        structs[i].owner = level_layout[i].owner;   // no change of hands: no alert
         struct_set_owner(i, level_layout[i].owner);
     }
     struct_count = level_count;
@@ -937,6 +940,7 @@ fn struct_bank_rob(i: u16) {
                 if ux + UNIT_MAN_W > x + 8 {
                     if ux < x + BANK_W - 8 {
                         if structs[i].owner == SIDE_PLAYER { funds = funds >> 1; } else { cpu_funds = cpu_funds >> 1; }
+                        alert_robbed(structs[i].owner);
                         unit_free(j);
                         return;
                     }
@@ -1006,6 +1010,7 @@ far fn struct_bank_rob_at(x: u16, side: u8) -> u8 {
             let bx: u16 = structs[i].x;
             if x + UNIT_MAN_W > bx + 8 && x < bx + BANK_W - 8 {
                 if structs[i].owner == SIDE_PLAYER { funds = funds >> 1; } else { cpu_funds = cpu_funds >> 1; }
+                alert_robbed(structs[i].owner);
                 return 1;
             }
         }

@@ -354,6 +354,7 @@ far fn video_upload() {
     dma_copy_cgram(0, &OBJ_PAL as far *u8, 128, OBJ_PAL_SIZE);
     dma_copy_cgram(0, &HELI_PAL as far *u8, CGRAM_OBJ_HELI, HELI_PAL_SIZE);
     dma_copy_cgram(0, &FX_PAL as far *u8, CGRAM_OBJ_FX, FX_PAL_SIZE);
+    dma_copy_cgram(0, &AVATAR_PAL as far *u8, CGRAM_OBJ_ALERT, AVATAR_PAL_SIZE);
     struct_palettes();              // the recoloured variants of both
 
     dma_copy_vram(0, &GROUND_CHR as far *u8, VRAM_GROUNDC, GROUND_CHR_SIZE);
@@ -371,6 +372,7 @@ far fn video_upload() {
     dma_copy_vram(0, &OBJ_CHR as far *u8, VRAM_OBJ, OBJ_CHR_SIZE);
     dma_copy_vram(0, &HELI_CHR as far *u8, VRAM_OBJ2, HELI_CHR_SIZE);
     dma_copy_vram(0, &FX_CHR as far *u8, VRAM_OBJ2 + (HELI_CHR_SIZE >> 1), FX_CHR_SIZE);
+    dma_copy_vram(0, &AVATAR_CHR as far *u8, VRAM_OBJ2 + (ALERT_TILE0 << 4), AVATAR_CHR_SIZE);
 
     // Mode 1, 8x8 tiles, and bit 3: BG3's priority-1 tiles draw in front
     // of everything, sprites included - the HUD over the dirt and the sky.
