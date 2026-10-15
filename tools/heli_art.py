@@ -25,16 +25,29 @@ would put a cell's lower half in the wrong place. Two rows of cells:
     row 2   the turn frames: three-quarter view at cols 0-3, head-on at
             cols 4-7, slight turn at cols 8-11 (tiles 32, 36, 40)
 
+    row 4   the nose dipping, at cols 0-3 (tile 64): the first lean into
+            forward flight, between level and nose down; the rest of the
+            row is blank
+
 and the wreck in each row's last four columns: crashing (falling after a
 loss) at row 0 cols 12-15, crashed (down on the ground) at row 2 cols
 12-15 (tiles 12, 44). The sheet is drawn art now (ec7833d), which this
 tool would overwrite; the wreck frames were added to it by hand.
+
+`heli_art.py dip` touches the drawn sheet only to derive the dipping frame:
+the level frame (tile 4) turned 6 degrees nose down, nearest-neighbour,
+and set at row 4 (growing the sheet to 48 rows). It is a starting point
+for a hand retouch. 6 degrees is the most that keeps the tail rotor
+inside the 16 rows. The sheet's tile count is what fx.r65 and alert.r65
+count from, and the three sheets now fill the second name block
+exactly (video.r65).
 
 Palette indices: 1 black, 2 dark green, 3 green, 4 canopy blue, 5 light
 grey, 6 orange. 0 is transparent. The order matches obj.bmp's first seven
 entries, so the same two greens carry the owner's colour.
 
     python3 tools/heli_art.py && make
+    python3 tools/heli_art.py dip && make
 """
 
 import os
@@ -211,5 +224,35 @@ def main():
     print(f"airframe drawn; {BMP} is {im.size[0]}x{im.size[1]}")
 
 
+DIP_DEGREES = 6
+DIP_ROW = 32                                    # pixel row of sheet row 4
+
+
+def dip():
+    """Derive the nose-dipping frame from the drawn sheet's level frame."""
+    src = Image.open(BMP)
+    pal = src.getpalette()[:48]
+    level = src.crop((32, 0, 64, 16))
+    # Turned about the frame's centre on a canvas with room to spare, then
+    # cut back to 32x16 flush with the drawing's foot.
+    big = Image.new('P', (64, 48), 0)
+    big.putpalette(pal)
+    big.paste(level, (16, 16))
+    turned = big.rotate(-DIP_DEGREES, resample=Image.NEAREST, center=(31, 23))
+    left, top, right, bottom = turned.getbbox()
+    assert bottom - top <= 16 and left >= 16 and right <= 48, 'the dip spills out of its cell'
+    frame = turned.crop((16, bottom - 16, 48, bottom))
+    im = Image.new('P', (SHEET_W, max(src.size[1], DIP_ROW + 16)), 0)
+    im.putpalette(pal)
+    im.paste(src, (0, 0))
+    im.paste(Image.new('P', (32, 16), 0), (0, DIP_ROW))
+    im.paste(frame, (0, DIP_ROW))
+    save_bmp4(im, BMP)
+    print(f"nose dip derived; {BMP} is {im.size[0]}x{im.size[1]}")
+
+
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['dip']:
+        dip()
+    else:
+        main()

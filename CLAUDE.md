@@ -28,8 +28,9 @@ correctly; use that rather than converting by hand.
 
 **Name sprite frames for the subject, not the screen.** Facing-left renders hflipped, so a
 frame called `LEFT` is ambiguous about whether it means the art or the result. Tilt frames are
-`NOSE_DOWN`/`NOSE_UP`, and tilt is selected from velocity *along the nose* - using signed vX
-double-flips against hflip.
+`NOSE_DIP`/`NOSE_DOWN`/`NOSE_UP`. The forward lean follows the stick held *along the nose*
+(`Airframe::lean`, from `turn_step`'s `want`), and nose-up follows velocity along the nose. Using
+the signed vX, or the raw Right bit, double-flips against hflip.
 
 **BG1HOFS is $210D, BG2HOFS $210F** (BG4HOFS, $2113, is gone with Mode 0). Getting one wrong
 in an HDMA `BBAD` silently drives the wrong layer and presents as "HDMA is not working".
@@ -271,11 +272,20 @@ Sprites are 4bpp with OBSEL small=8x8 / large=16x16, so a unit is 16x16 and a mu
 **There are two sprite sheets.** `obj.bmp` holds the units, the buildings, the decks and the
 munitions at $4000 (tiles 0-255); `heli.bmp` holds the two airframes' frames alone - three
 flight, three turn, and the wreck's two in each row's last four columns, crashing (tile 12) and
-crashed (44) - loaded
-into the second OBJ name block at $5000, so its tile numbers are 256 + the sheet's and the 9th
+crashed (44), plus the nose dipping on a third row (tile 64, `HELI_TILE_NOSE_DIP`, derived from the level
+frame by `tools/heli_art.py dip`). The lean is the stick's, not the speed's. `Airframe::tilt`
+counts up `HELI_LEAN_RISE` (2) a frame while the direction along the nose is held, to
+`HELI_LEAN_FULL` (20), and back down one a frame otherwise (released, reversing, dead stick; a
+landing zeroes it). So a push dips 2 frames in and is nose-down at 10, and letting go is the dip
+on the next frame, held 16 frames, then level, however fast the airframe still coasts. The rise
+is the knob for how much slower the lean comes off than it goes on. The gun's downward angle
+follows the same count. The
+sheet is loaded into the second OBJ name block at $5000, so its tile numbers are 256 + the sheet's and the 9th
 tile bit (`HELI_PAGE`) rides in the attribute word. It has its own CGRAM palette as well
 (`OBJ_PAL_HELI`, palette 3, and palette 4 for the enemy's), so the airframes can be redrawn or
-recoloured without touching anything the ground shares. Either sheet must be 16 tiles wide
+recoloured without touching anything the ground shares. **That block is full**: the airframe's
+96 tiles, the explosions' 96 and the avatar's 64 are its 256 exactly, so a bigger sheet in it needs
+a row given up first (a sheet's tile count moves every sheet after it). Either sheet must be 16 tiles wide
 whatever it holds: the hardware reads a 16x16 sprite as tiles T, T+1, T+16, T+17.
 A 24-px vehicle is one 16x16 cell plus its second cell's left half drawn as **two 8x8s** - three
 tiles on a scanline, not four, which is what keeps eight bunched tanks and a bunker (28) under

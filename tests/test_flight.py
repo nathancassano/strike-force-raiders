@@ -108,7 +108,11 @@ def test_airframe_stops_on_the_ground(snes):
 
 
 # Tilt is cosmetic, from velocity ALONG THE NOSE: OAM sprite 0's tile picks
-# the frame (0 nose-down, 4 level, 8 nose-up). Flying left mirrors the
+# the frame (0 nose-down, 4 level, 8 nose-up, 64 the nose dipping). The
+# forward lean follows the stick, not the speed: it dips 2 frames into a
+# push and is fully down at 10, and lets go the frame the stick does, at
+# half that rate (the dip for 16 frames, then level) - so a
+# case reading a lean holds the direction through the snapshot's Select. Flying left mirrors the
 # airframe, which swaps the two cells as well as setting hflip - so sprite 0
 # then holds the frame's far tile (+2) and its attribute byte gains $40.
 # The attribute reads $37 (or $77 mirrored): priority 3, OBJ palette 3 and
@@ -124,16 +128,40 @@ def test_airframe_sits_level_at_rest(snes):
     assert v.oam.u8[3] == 0x37
 
 
-def test_airframe_tilts_nose_down_flying_right(snes):
+def test_the_nose_dips_first_pulling_away(snes):
+    """Six frames into a push: leaning in, not yet nose down."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(6)
+    v = read_snapshot(snes, "right")
+    assert v.oam.u8[2] == 0x40
+    assert v.oam.u8[3] == 0x37
+
+
+def test_the_lean_comes_off_as_the_stick_is_let_go(snes):
+    """At full speed, released: the frame after it is the dip again, held
+    16 frames - the lean comes off at half the rate it went on - and then
+    the airframe is level while still coasting right."""
     boot(snes, "MISSION_TEST_QUIET").wait(20).right(60)
     v = read_snapshot(snes)
+    assert v.oam.u8[2] == 0x40
+    snes.wait(8)
+    v = read_snapshot(snes)
+    assert v.oam.u8[2] == 0x40
+    snes.wait(8)
+    v = read_snapshot(snes)
+    assert v.oam.u8[2] == 0x04
+    assert 0 < v.airframes__vx.u16[0] < 0x8000          # Q10, signed: still going right
+
+
+def test_airframe_tilts_nose_down_flying_right(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(60)
+    v = read_snapshot(snes, "right")
     assert v.oam.u8[2] == 0x00
     assert v.oam.u8[3] == 0x37
 
 
 def test_airframe_is_mirrored_flying_left(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(20).right(120).left(60)
-    v = read_snapshot(snes)
+    v = read_snapshot(snes, "left")
     assert v.oam.u8[2] == 0x02
     assert v.oam.u8[3] == 0x77
 

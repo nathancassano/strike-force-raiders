@@ -173,8 +173,10 @@ def test_unit_budget(state):
     keep the portrait's four sprites and the queue's tick up for a quarter
     of the run. Then 10 faster (3662/3640) on R65's 10-14/15 codegen fixes,
     measured apart from boot_load's NMITIMEN write that went in with them.
+    Then 1 slower (3662/3639) for the airframes' lean following the stick,
+    a counter stepped each frame for both.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3640
+    assert v.frames_loop == 3639

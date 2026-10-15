@@ -467,14 +467,12 @@ impl Pilot {
                         airframes[FOE].gun_cd = HELI_GUN_RATE;
                         let mut mx: u16 = airframes[FOE].x_px + HELI_W;
                         let mut v: Q10 = BULLET_SPEED;
-                        let mut fwd: Q10 = airframes[FOE].vx;
                         if airframes[FOE].face_left != 0 {
                             mx = airframes[FOE].x_px;
                             v = Q10(0) - BULLET_SPEED;
-                            fwd = Q10(0) - airframes[FOE].vx;
                         }
                         let mut vy: Q10 = 0;
-                        if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
+                        if airframes[FOE].tilt >= HELI_LEAN_DIP { vy = HELI_GUN_DROP; }
                         muni_spawn(MUNI_BULLET, mx, airframes[FOE].y + (HELI_MUZZLE_Y << 8),
                                    v, vy, BULLET_LIFE, SIDE_ENEMY);
                         sfx_at(SFX_CHN_FOE_GUN, SFX_ENEMY_GUN, mx);
@@ -558,6 +556,7 @@ impl Pilot {
             // On the deck until the load is full, then away.
             airframes[FOE].vx = Q10(0);
             airframes[FOE].vy = Q10(0);
+            airframes[FOE].tilt = 0;
             airframes[FOE].rearm();
             if airframes[FOE].fuel == HELI_FUEL_MAX && airframes[FOE].gun == HELI_GUN_MAX && airframes[FOE].bombs == HELI_BOMB_MAX
                && airframes[FOE].hp == HELI_HP_MAX {
@@ -574,6 +573,7 @@ impl Pilot {
         if airframes[FOE].fuel == 0 {
             // Dead stick: gravity, and the ground ends it.
             airframes[FOE].vx = approach(airframes[FOE].vx, Q10(0), HELI_ACC);
+            airframes[FOE].lean(2);
             let v: Q10 = airframes[FOE].vy + HELI_GRAVITY;
             if v > HELI_VY_MAX { airframes[FOE].vy = HELI_VY_MAX; } else { airframes[FOE].vy = v; }
             airframes[FOE].fly();

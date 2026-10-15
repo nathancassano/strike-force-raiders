@@ -84,12 +84,13 @@ def test_the_portrait_slides_in_from_the_right(snes):
 
 
 def test_the_portrait_is_four_sprites_at_the_bottom_right(snes):
-    """Its first sprite is the avatar sheet's first tile (160 in the second
-    name block), on OBJ palette 6 at priority 3."""
+    """Its first sprite is the avatar sheet's first tile (192 in the second
+    name block, after the airframe's 96 and the explosions' 96), on OBJ
+    palette 6 at priority 3."""
     short_of_funds(snes).wait(40)
     v = read_snapshot(snes)
     oam = v.oam.u8
-    slots = [i for i in range(128) if oam[i * 4 + 2] in (160, 164) and oam[i * 4 + 3] == 0x3D]
+    slots = [i for i in range(128) if oam[i * 4 + 2] in (192, 196) and oam[i * 4 + 3] == 0x3D]
     assert len(slots) == 1
     i = slots[0]
     assert (oam[i * 4], oam[i * 4 + 1]) == (224, 184)

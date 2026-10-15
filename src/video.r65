@@ -45,7 +45,9 @@ const CGRAM_MOUNTAINS: u16 = 64;    // palette 4
 const VRAM_OBJ:  u16 = 0x4000;
 // The second OBJ name block - tiles 256-511, which is where the
 // airframe's own sheet goes (heli.r65 HELI_PAGE), and the explosions'
-// straight after it (fx.r65, FX_TILE0 = the airframe sheet's tile count).
+// straight after it (fx.r65, FX_TILE0 = the airframe sheet's tile count),
+// then the alert avatar's (alert.r65 ALERT_TILE0). The three fill the
+// block's 256 tiles exactly: past it they would overwrite BG1's map.
 // OBSEL's name-select field of 0 puts it one 4K-word block past the base.
 const VRAM_OBJ2: u16 = 0x5000;
 const OBJ_BASE:  u8  = 2;                 // 0x4000 / 0x2000

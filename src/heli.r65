@@ -49,7 +49,18 @@ const HELI_DRAG_X:   Q10 = 8;             // 0.125
 const HELI_THRUST_Y: Q10 = 6;            // 0.19: ~21 frames to top climb
 const HELI_DRAG_Y:   Q10 = 8;
 const HELI_ACC:      Q10 = 16;            // dead-stick horizontal decay
-const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
+// The stick picks the forward lean, not the speed (Airframe::lean): `tilt`
+// counts up HELI_LEAN_RISE a frame while the direction along the nose is
+// held and back down one a frame while it is not, so the nose dips 2
+// frames into a push and is fully down at 10, and lets go the frame the
+// stick does - one frame off full it is the dip again - but comes back
+// more slowly than it went, level 16 frames later, however fast the
+// airframe is still coasting. Nose up stays the speed's: sliding backward
+// faster than HELI_TILT_ON, as it does coming out of a turn.
+const HELI_LEAN_RISE: u8 = 2;             // tilt a frame pushing; letting go is 1
+const HELI_LEAN_DIP:  u8 = 2 * 2;         // tilt from here: the nose dips (2 frames in)
+const HELI_LEAN_FULL: u8 = 10 * 2;        // and from here: nose down (10 in; tilt's cap)
+const HELI_TILT_ON:   Q10 = 96;           // 1.5 px/frame backward: nose up
 
 // Tilt frames in the OBJ sheet. A 16x16 sprite at tile t covers t, t+1,
 // t+16, t+17, so a 32x16 frame is two cells four tiles apart.
@@ -60,6 +71,7 @@ const HELI_TILT_ON: Q10 = 96;             // 1.5 px/frame before the nose drops
 const HELI_TILE_NOSE_DOWN: u8 = 0;        // assets/src/heli.bmp, frame 0
 const HELI_TILE_LEVEL:     u8 = 4;        // ... frame 1
 const HELI_TILE_NOSE_UP:   u8 = 8;        // ... frame 2
+const HELI_TILE_NOSE_DIP:  u8 = 64;       // ... row 4: the first lean, nose just down
 // Turning: five drawings - a slight turn and a three-quarter view facing
 // the old way, head-on, then the same two facing the new way - each held
 // HELI_TURN_HOLD frames. The turn only advances while the new direction
@@ -101,10 +113,10 @@ const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 // Where a round leaves the airframe: the nose when facing right, the tail
 // end of the same box when facing left, and level with the cabin.
 const HELI_MUZZLE_Y: u16 = 7;
-// Driving forward the nose drops (HELI_TILT_ON, the same test Airframe::draw
-// uses to pick the frame) and the gun fires along it: 1 px down for every
-// 8 forward, about 7 degrees, so a strafing run walks rounds into the
-// ground ahead instead of over everything.
+// Driving forward the nose drops and the gun fires along it: 1 px down for
+// every 8 forward, about 7 degrees, so a strafing run walks rounds into the
+// ground ahead instead of over everything. While the nose is drawn down at
+// all (tilt from HELI_LEAN_DIP), so the rounds follow the stick as it does.
 const HELI_GUN_DROP: Q10 = 64;            // 1 px/frame
 
 // ----------------------------------------------------------- fuel & pad ---
@@ -149,6 +161,7 @@ struct Airframe {
     vy:         Q10,
     face_left:  u8,     // 0 nose right, 1 nose left
     turn:       u8,     // progress through a turn, 0 = none
+    tilt:       u8,     // the forward lean, 0 to HELI_LEAN_FULL (lean)
     hp:         u8,     // the plan's 20; a bomb ends it outright
     hp_t:       u8,     // countdown to the next point repaired
     fuel:       u8,     // 0..HELI_FUEL_MAX
@@ -301,15 +314,13 @@ impl Player {
                     airframes[HELI].gun_cd = HELI_GUN_RATE;
                     let mut mx: u16 = airframes[HELI].x_px + HELI_W;
                     let mut v: Q10 = BULLET_SPEED;
-                    let mut fwd: Q10 = airframes[HELI].vx;
                     if airframes[HELI].face_left != 0 {
                         mx = airframes[HELI].x_px;
                         v = Q10(0) - BULLET_SPEED;
-                        fwd = Q10(0) - airframes[HELI].vx;
                     }
                     // Nose down: the round leaves at a slight downward angle.
                     let mut vy: Q10 = 0;
-                    if fwd > HELI_TILT_ON { vy = HELI_GUN_DROP; }
+                    if airframes[HELI].tilt >= HELI_LEAN_DIP { vy = HELI_GUN_DROP; }
                     muni_spawn(MUNI_BULLET, mx, airframes[HELI].y + (HELI_MUZZLE_Y << 8),
                                v, vy, BULLET_LIFE, SIDE_PLAYER);
                     sfx_at(SFX_CHN_GUN, SFX_PLAYER_GUN1, mx);
@@ -364,6 +375,7 @@ impl Player {
             // fuel to lift off on.
             airframes[HELI].vx = Q10(0);
             airframes[HELI].vy = Q10(0);
+            airframes[HELI].tilt = 0;
             if player.on_pad != 0 { airframes[HELI].rearm(); }
             para_pickup();
             if (held & JOY_UP) != 0 {
@@ -376,6 +388,7 @@ impl Player {
                 // Dead stick. The plan allows gravity in exactly two places -
                 // an empty tank and an ejection - and this is the first.
                 airframes[HELI].vx = approach(airframes[HELI].vx, Q10(0), HELI_ACC);
+                airframes[HELI].lean(2);
                 let v: Q10 = airframes[HELI].vy + HELI_GRAVITY;
                 if v > HELI_VY_MAX {
                     airframes[HELI].vy = HELI_VY_MAX;
@@ -502,6 +515,7 @@ impl Airframe {
         self.vy = Q10(0);
         self.face_left = face;
         self.turn = 0;
+        self.tilt = 0;
         self.hp = HELI_HP_MAX;
         self.hp_t = HELI_HP_REPAIR;
         self.fuel = HELI_FUEL_MAX;
@@ -573,6 +587,7 @@ impl Airframe {
     // until then.
     #[inline(always)]
     fn turn_step(self, want: u8) {
+        self.lean(want);
         if self.turn == 0 {
             if want < 2 && want != self.face_left { self.turn = 1; }
             return;
@@ -586,6 +601,20 @@ impl Airframe {
             }
         } else {
             self.turn = self.turn - 1;
+        }
+    }
+
+    // lean - a frame of the forward lean, from the direction held (as
+    // turn_step): up HELI_LEAN_RISE while it is the way the nose points,
+    // down one otherwise - let go, reversing, or no stick at all (a dead
+    // stick passes 2).
+    #[inline(always)]
+    fn lean(self, want: u8) {
+        if want == self.face_left {
+            let t: u8 = self.tilt + HELI_LEAN_RISE;
+            if t > HELI_LEAN_FULL { self.tilt = HELI_LEAN_FULL; } else { self.tilt = t; }
+        } else {
+            if self.tilt > 0 { self.tilt = self.tilt - 1; }
         }
     }
 
@@ -670,19 +699,21 @@ impl Airframe {
         let mut face: u8 = self.face_left;
         let turn: u8 = self.turn;
         let rising: u8 = self.rising;
+        let tilt: u8 = self.tilt;
 
         let d: u16 = x - camera_x;
         if d >= 256 && d < 0xFFE0 { return; }
 
-        // Tilt comes from speed along the nose, not from the sign of vx.
-        // Facing left sets the hflip bit, which already mirrors the lean,
-        // so feeding the signed velocity straight in would flip it a
-        // second time and pitch the nose UP under forward acceleration.
+        // The lean is the stick's (lean); nose up is speed along the nose,
+        // not the sign of vx. Facing left sets the hflip bit, which already
+        // mirrors the tilt, so feeding the signed velocity straight in
+        // would flip it a second time.
         let mut fwd: Q10 = vx;
         if face != 0 { fwd = Q10(0) - vx; }
 
         let mut tile: u8 = HELI_TILE_LEVEL;
-        if fwd > HELI_TILT_ON { tile = HELI_TILE_NOSE_DOWN; }
+        if tilt >= HELI_LEAN_DIP { tile = HELI_TILE_NOSE_DIP; }
+        if tilt >= HELI_LEAN_FULL { tile = HELI_TILE_NOSE_DOWN; }
         if fwd < Q10(0) - HELI_TILT_ON { tile = HELI_TILE_NOSE_UP; }
 
         // Mid-turn the tilt frames give way to the swing: slight and
