@@ -57,6 +57,20 @@ def test_start_skips_the_intro(snes):
     assert snes.frame - start < 240
 
 
+def test_the_pad_works_after_the_intro(snes):
+    """A real power-on, intro and all, then Start on the title. boot_load
+    turned NMI and the auto joypad read on with two read-modify-writes of
+    NMITIMEN, which is write-only: after the intro the reads came back 0
+    and the second write left the auto read off, so the title saw no
+    button. Every other case skips the intro, which is why none caught it.
+    """
+    snes.until("screen_show", max_frames=900).wait(30)
+    snes.start().wait(30)
+    v = read_snapshot(snes)
+    assert v.game_state == GAME_SCREEN
+    assert v.screen_kind == SCREEN_BRIEF
+
+
 def test_a_campaign_opens_on_the_title(snes):
     boot(snes).wait(30)
     v = read_snapshot(snes)

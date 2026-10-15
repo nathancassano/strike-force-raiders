@@ -40,6 +40,11 @@ switches the other off. And an HDMA channel costs CPU time on every scanline unt
 ends, so a table that has nothing left to write ends rather than holding to the foot of the
 screen (the sky's stops at its split; run to 224 it cost `unit_budget` 29 ticks).
 
+**Write `NMITIMEN` whole, with `set_nmitimen!`.** It is write-only, and sneslib's
+`enable_nmi!`/`enable_autojoy!`/`disable_nmi!` are read-modify-writes, so they OR into open bus.
+Two in a row in `boot_load` dropped the auto joypad read, and the pad went dead. An older R65
+happened to hide this by forwarding the stored value instead of re-reading the register.
+
 **Bank 0 is full, and wlalink does not say so.** An over-full bank is linked over whatever
 follows it - the ROM header and vectors at the top of bank 0 - with an `Overwrite at` line and
 exit status 0, and the ROM crashes on its first frame. The Makefile fails the link on that line

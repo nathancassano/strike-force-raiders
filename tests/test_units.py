@@ -171,9 +171,10 @@ def test_unit_budget(state):
     avatar, 11 slower (3662/3630): idle it costs nothing (measured with
     every push suppressed), but the opponent's five ENEMY CONVOY alerts
     keep the portrait's four sprites and the queue's tick up for a quarter
-    of the run.
+    of the run. Then 10 faster (3662/3640) on R65's 10-14/15 codegen fixes,
+    measured apart from boot_load's NMITIMEN write that went in with them.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3630
+    assert v.frames_loop == 3640

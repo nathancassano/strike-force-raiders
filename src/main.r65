@@ -154,8 +154,9 @@ fn boot_load() {
     // wait_nmi! in main catches the first edge either way.
     frames_nmi = 0;
     frames_loop = 0;
-    enable_autojoy!();
-    enable_nmi!();
+    // One write: NMITIMEN is write-only, so enable_nmi!/enable_autojoy!'s
+    // read-modify-write ORs into open bus and can lose the other's bit.
+    set_nmitimen!(Interrupt::Nmi | Interrupt::AutoJoy);
 
     INIDISP = 0x0F;
 }
