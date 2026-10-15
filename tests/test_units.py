@@ -177,8 +177,10 @@ def test_unit_budget(state):
     a counter stepped each frame for both. Then 1 slower (3662/3638) for the
     order menu's icons: the eight purchases show and hide the taller menu,
     and the alert box goes up a row at a time, clear of the menu's columns.
+    Then 1 slower (3662/3637): unit_spawn counting the men on their way
+    down against the side's cap, and the dry airframe still steering.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3638
+    assert v.frames_loop == 3637

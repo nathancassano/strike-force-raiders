@@ -141,9 +141,10 @@ const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 
 // A dry tank is a forced descent: whatever vertical speed the airframe
 // had bleeds toward a steady sink at HELI_GRAVITY a frame (a dive or a
-// climb is arrested within a second), and touching the ground is the loss,
-// deck or not. From hover height that is about two seconds down. Gravity
-// proper is the wreck's (wreck_tick).
+// climb is arrested within a second); left and right still fly it. A deck
+// under it saves it - it lands and refuels - and open ground is the loss.
+// From hover height that is about two seconds down. Gravity proper is the
+// wreck's (wreck_tick).
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 const HELI_SINK:    Q10 = 32;             // 0.5 px/frame: the dry tank's descent
 
@@ -389,29 +390,28 @@ impl Player {
         } else {
             airframes[HELI].burn();
 
+            let mut tx: Q10 = Q10(0);
+            // 2 = no direction held; the turn stalls on that.
+            let mut want: u8 = 2;
+            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
+            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
+            airframes[HELI].turn_step(want);
+            let mut ax: Q10 = HELI_THRUST_X;
+            if tx == Q10(0) { ax = HELI_DRAG_X; }
+            airframes[HELI].vx = approach(airframes[HELI].vx, tx, ax);
+
             if airframes[HELI].fuel == 0 {
-                // Dead stick: no control, the way on bleeding off, and a slow
-                // forced descent (HELI_SINK) to the ground, which ends it.
-                airframes[HELI].vx = approach(airframes[HELI].vx, Q10(0), HELI_ACC);
-                airframes[HELI].lean(2);
+                // Dead stick: left and right still fly it, but it comes down -
+                // a slow forced descent (HELI_SINK) - to the deck, which
+                // saves it, or the ground, which does not.
                 airframes[HELI].vy = approach(airframes[HELI].vy, HELI_SINK, HELI_GRAVITY);
             } else {
-                let mut tx: Q10 = Q10(0);
-                // 2 = no direction held; the turn stalls on that.
-                let mut want: u8 = 2;
-                if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
-                if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
-                airframes[HELI].turn_step(want);
-
                 let mut ty: Q10 = Q10(0);
                 if (held & JOY_DOWN) != 0 { ty = HELI_VY_MAX; }
                 if (held & JOY_UP)   != 0 { ty = Q10(0) - HELI_VY_MAX; }
 
-                let mut ax: Q10 = HELI_THRUST_X;
-                if tx == Q10(0) { ax = HELI_DRAG_X; }
                 let mut ay: Q10 = HELI_THRUST_Y;
                 if ty == Q10(0) { ay = HELI_DRAG_Y; }
-                airframes[HELI].vx = approach(airframes[HELI].vx, tx, ax);
                 airframes[HELI].vy = approach(airframes[HELI].vy, ty, ay);
             }
 
@@ -429,14 +429,15 @@ impl Player {
             // floor from catching an airframe that is merely skimming it. Open
             // ground takes a powered landing anywhere - that is how men are
             // picked up in the field - and a deck takes any landing; a dead
-            // stick that meets the ground is lost, deck or not. The crash test
+            // stick that meets open ground is lost. The crash test
             // takes vx after the move (a copy before it cost the stress run 7
             // ticks): at a world edge the move has stopped it, so a dive into
             // the edge lands.
             if airframes[HELI].y == HELI_Y_MAX {
-                if airframes[HELI].fuel == 0 {
-                    // Out of fuel, down is the end - but the men aboard get
-                    // out and fight on as infantry.
+                if airframes[HELI].fuel == 0
+                   && pad_at(airframes[HELI].x_px + (HELI_W >> 1)) >= PAD_COUNT {
+                    // Out of fuel off a deck, down is the end - but the men
+                    // aboard get out and fight on as infantry.
                     if player.men > 0 {
                         para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
                                        SIDE_PLAYER, player.men);

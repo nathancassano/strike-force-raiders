@@ -143,7 +143,8 @@ man's pace that put five in a heap.)*
   goes with the airframe.
 - **Zero fuel is a crash landing**: the dead-stick descent ends on ground contact with the
   airframe lost, a life gone. *Amended:* the descent is slow and forced (0.5 px/frame, no
-  control), a deck does not save it, and the men aboard get out on the ground as infantry. So is **touching down flat out on both axes** - the top descent
+  vertical control; left and right still steer), a deck under it saves it, and on open ground
+  the men aboard get out as infantry. So is **touching down flat out on both axes** - the top descent
   rate and the top horizontal speed (`Airframe::crashes`) - deck or not; anything slower lands.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
 - Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,

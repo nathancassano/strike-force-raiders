@@ -118,7 +118,8 @@ def test_a_dry_tank_sinks_and_crashes(snes):
 
 
 # A dry tank is a slow forced descent (heli.r65 HELI_SINK, 0.5 px/frame in
-# Q10: 32), and the ground ends it wherever it comes down.
+# Q10: 32) that left and right still steer: a deck under it saves it, open
+# ground ends it.
 
 def dry(snes):
     """At hover, the tank emptied by hand."""
@@ -138,22 +139,35 @@ def test_a_dry_tank_sinks_slowly(snes):
     assert 18 * 256 <= v.airframes__y.u16[0] - y0 <= 22 * 256
 
 
-def test_a_dry_tank_on_the_deck_is_lost(snes):
-    """The deck does not save it: come down dry on the player's (x 1024),
-    it is a loss, not a landing."""
+def test_a_dry_tank_still_steers(snes):
+    """Right still flies it: 40 frames of it on a dry tank, and it is going
+    right at speed, still coming down."""
+    x0 = int.from_bytes(dry(snes).read("airframes__x_px", 2), "little")
+    snes.right(40)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__x_px.u16[0] > x0 + 60
+    assert v.airframes__vy.u16[0] == 32
+
+
+def test_a_dry_tank_on_the_deck_is_saved(snes):
+    """Come down dry on the player's deck (x 1024): it lands, and the deck
+    starts filling the tank."""
     dry(snes)
     snes.write("airframes__x_px", 1024, 2)
-    snes.wait(160)
+    snes.wait(200)
     v = read_snapshot(snes)
-    assert v.airframes__lives.u8[0] == 3
-    assert v.airframes__landed.u8[0] == 0
+    assert v.airframes__lives.u8[0] == 4
+    assert v.airframes__landed.u8[0] == 1
+    assert v.player__on_pad.u8[0] == 1
+    assert v.airframes__fuel.u8[0] > 0
 
 
 def test_the_men_aboard_walk_away_from_a_dry_tank(state):
-    """Five aboard, lifted off and run dry: the men get out where it comes
-    down and go onto the field one at a time, as five infantrymen."""
+    """Five aboard, lifted off, flown clear of the deck and run dry: the men
+    get out where it comes down and go onto the field one at a time, as
+    five infantrymen."""
     snes = state(boarded)
-    snes.up(10)
+    snes.up(10).right(40)
     snes.write("airframes__fuel", 0, 1)
     snes.wait(400)
     v = read_snapshot(snes)

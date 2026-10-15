@@ -410,10 +410,11 @@ as it stands. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
-are off until it is up. **A dry tank is a slow forced descent**: no control, the way on bleeding
-off, and the vertical speed going to a steady `HELI_SINK` (0.5 px/frame - a dive or a climb is
-arrested within a second; from hover about two seconds down), and touching the ground is a loss,
-deck or not, the enemy's airframe too. The men aboard get out there as infantry
+are off until it is up. **A dry tank is a slow forced descent**: the vertical speed goes to a
+steady `HELI_SINK` (0.5 px/frame - a dive or a climb is arrested within a second; from hover about
+two seconds down) whatever the stick says, while left and right still fly it - the player's; the
+enemy's way on just bleeds off. Touching down on a deck saves it (it lands and the deck refuels
+it; the enemy's, its own deck only), and open ground is the loss. The men aboard get out there as infantry
 (`para_disembark`): standing in the para pool, already down, they go onto the field one at a time
 as `unit_spawn` makes room, and they take no `rand()`. The enemy's do so only on the campaign's
 rows (`cpu_paras`), as its drops, so a test mission's battle stays put. And a touchdown flat out
