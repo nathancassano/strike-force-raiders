@@ -337,7 +337,7 @@ impl Player {
         // walk back aboard.
         if (trig & JOY_X) != 0 {
             if player.men > 0 && airframes[HELI].landed == 0 {
-                if para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER) != 0 {
+                if para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER, 0) != 0 {
                     player.men = player.men - 1;
                 }
             }
@@ -828,7 +828,7 @@ impl Player {
         sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, cx);
         fx_burst(FX_BIG, cx, airframes[HELI].y >> 8);
         if player.men > 0 && airframes[HELI].y <= HELI_Y_BAIL {
-            let _: u8 = para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER);
+            let _: u8 = para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER, 0);
         }
         airframes[HELI].lives = airframes[HELI].lives - 1;
         if airframes[HELI].lives == 0 {

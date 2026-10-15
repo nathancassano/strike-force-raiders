@@ -158,6 +158,7 @@ struct Pilot {
     para_t:   u16,      // frames until another drop may start
     steal:    u8,       // the 1-in-4 window in which a raid may start (the original's stealB)
     raid:     u8,       // a raid under way: held until its men are out
+    robbing:  u8,       // the drop under way is the raid's: no room needed (para_drop)
 }
 #[lowram] static mut pilot: Pilot;
 
@@ -174,6 +175,7 @@ impl Pilot {
     fn init() {
         airframes[FOE].init(FOE_START_X, 1);
         pilot.raid = 0;                     // a lost airframe's raid goes with it
+        pilot.robbing = 0;
         pilot.men = FOE_MEN;                // a new airframe's men; the last one's went with it
         pilot.drop = 0;
         pilot.gap = 0;
@@ -885,19 +887,22 @@ impl Pilot {
     fn drop_tick() {
         if airframes[FOE].landed != 0 || pilot.men == 0 {
             pilot.drop = 0;
+            pilot.robbing = 0;
             return;
         }
         if pilot.gap > 0 {
             pilot.gap = pilot.gap - 1;
             return;
         }
-        if para_drop(airframes[FOE].x_px + (HELI_W >> 1), airframes[FOE].y, SIDE_ENEMY) == 0 {
+        if para_drop(airframes[FOE].x_px + (HELI_W >> 1), airframes[FOE].y, SIDE_ENEMY, pilot.robbing) == 0 {
             pilot.drop = 0;                 // nowhere to put him: called off, the men kept
+            pilot.robbing = 0;
             return;
         }
         pilot.men = pilot.men - 1;
         pilot.drop = pilot.drop - 1;
         pilot.gap = FOE_PARA_GAP;
+        if pilot.drop == 0 { pilot.robbing = 0; }
     }
 
     // Pilot::choose - what to do and where to fly, in priority order.
@@ -972,6 +977,7 @@ impl Pilot {
                 pilot.gap = 0;
                 pilot.para_t = FOE_PARA_EVERY;
                 pilot.raid = 0;
+                pilot.robbing = 1;              // robbing the bank takes no room on the field
             }
             return;
         }

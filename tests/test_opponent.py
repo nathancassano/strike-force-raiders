@@ -219,14 +219,17 @@ def test_the_enemy_raids_the_bank(snes):
     distance, through the base's missiles at hover height, under the
     balloons - and over the bank (~frame 1820) puts its men out. Two land in
     the doorway and rob it as they touch down (struct_bank_rob_at): 99 ->
-    49 -> 24. The raider is shot down on its way out.
+    49 -> 24. The third lands short of the door and goes onto the field -
+    the raid's drop takes no room, but his own is there once the robbers
+    are gone - and walks in: 24 -> 12. (He used to stand where he landed,
+    the enemy's units at their cap.) The raider is shot down on its way out.
     """
     boot(snes, "MISSION_BLIND_SPOT")
     snes.write("funds", 99, 1)
     snes.write("pilot__steal", 1, 1)
-    snes.wait(2000)
+    snes.wait(2100)
     v = read_snapshot(snes)
-    assert v.funds == 24
+    assert v.funds == 12
 
 
 def test_a_purse_under_fund_max_is_not_raided(snes):

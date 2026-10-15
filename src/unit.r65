@@ -234,6 +234,13 @@ fn unit_free(i: u16) {
 
 // Live units per side, kept exact by unit_spawn and unit_free.
 #[lowram] static mut unit_side_count: [u8; 2];
+// Men of a side on their way to the field through the para pool - under a
+// chute, falling, or landed and waiting for room (para.r65): they count
+// against UNIT_SIDE_MAX as if they were out, so a drop with no room left is
+// refused rather than leaving a man standing on the ground, unhittable,
+// until something of his side dies; and the gate cannot take his room
+// while he is in the air. Reset by para_init.
+#[lowram] static mut unit_side_held: [u8; 2];
 
 far fn unit_init() {
     for i in 0..UNIT_MAX {
@@ -261,7 +268,7 @@ far fn unit_init() {
 // lead finds the first unit behind it, and the new one goes in ahead of
 // that - at the tail, for a spawn at the base.
 far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
-    if unit_side_count[owner as u16] >= UNIT_SIDE_MAX { return 0; }
+    if unit_side_count[owner as u16] + unit_side_held[owner as u16] >= UNIT_SIDE_MAX { return 0; }
     let mut ahead: u8 = UNIT_NONE;
     let mut behind: u8 = unit_head[owner as u16];
     if owner == SIDE_PLAYER {

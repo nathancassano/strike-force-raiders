@@ -602,7 +602,10 @@ refit, through the base's missiles (`think` lifts `FOE_WEST` for it), to the pla
 within 16 px puts every man out. At hover height, not the original's high flight: climbing back
 up between the field's balloons carried it into the next one. A man who lands in a bank's
 doorway robs it as he touches down (`struct_bank_rob_at`, from `para_update`), so a raid works
-with the enemy's units at their cap; the raider usually goes down to the missiles on the way out.
+with the enemy's units at their cap: the raid's drop (`pilot.robbing`, set as it begins and
+cleared when its men are out) skips `para_drop`'s room check. One who lands short of the door
+waits for room on the field, then walks in and robs it again. The raider usually goes down to the
+missiles on the way out.
 Not adapted: clouds, the kamikaze run, and the
 smart missile with its counter-measures (slice (d), built and then taken out of the game). Both decks now repair (`HELI_HP_REPAIR`, a point
 per 16 frames), which the refit rule assumes. A bomb's blast reaches buildings -
@@ -676,8 +679,11 @@ so a reset or a page coming down clears it.
 The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`airframes[HELI].landed`;
 `player.on_pad` says whether it rearms), and a player infantryman within 5 px of a landed
 airframe's middle boards it (five at most, and they count against the infantry cap); X drops one as a paratrooper
-from an 8-slot pool both sides drop into - units have no y; when it is full (`para_drop` returns
-0) the man stays aboard, and sixteen slots cost the frame enough to move `test_drop` - who sinks at 0.75 px/frame under a canopy
+from an 8-slot pool both sides drop into - units have no y; when it is full, or the side has no
+room left for him on the field (`para_drop` returns 0), the man stays aboard. The men on their way
+down count against `UNIT_SIDE_MAX` (`unit_side_held`, which `unit_spawn` adds to the side's
+count): a man who landed with no room used to stand where he landed, unhittable, until something
+of his side died. Sixteen slots cost the frame enough to move `test_drop`. A man sinks at 0.75 px/frame under a canopy
 cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
 the frame the unit pool has room. An airframe lost a third of its flight band up or higher

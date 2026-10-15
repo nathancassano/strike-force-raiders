@@ -62,6 +62,8 @@ far fn para_init() {
     }
     para_cursor = 0;
     para_live = 0;
+    unit_side_held[0] = 0;
+    unit_side_held[1] = 0;
     player.men = 0;
 }
 
@@ -71,7 +73,11 @@ far fn para_init() {
 // sequence the suite's airlift cases are pinned to; the enemy's on the
 // frame count and the spot, so its drops neither move that sequence nor
 // take a draw from cpu_rand, which deals the CPU's purchases.
-far fn para_drop(x: u16, y: u16, owner: u8) -> u8 {
+// *raid* 1 skips the room check: a raider robs the bank as he lands in its
+// door (struct_bank_rob_at), which needs no room on the field, and the raid
+// is meant to work with the side's units at their cap.
+far fn para_drop(x: u16, y: u16, owner: u8, raid: u8) -> u8 {
+    if raid == 0 && para_room(owner) == 0 { return 0; }   // the side's units are all out: he stays aboard
     let mut i: u16 = para_cursor;
     let mut n: u16 = 0;
     while n < PARA_MAX {
@@ -89,6 +95,7 @@ far fn para_drop(x: u16, y: u16, owner: u8) -> u8 {
             if roll < PARA_FAIL { para_state[i] = PARA_FALLING; }
             para_cursor = (i + 1) & PARA_MASK;
             para_live = para_live + 1;
+            unit_side_held[owner as u16] = unit_side_held[owner as u16] + 1;
             return 1;
         }
         i = (i + 1) & PARA_MASK;
@@ -97,20 +104,29 @@ far fn para_drop(x: u16, y: u16, owner: u8) -> u8 {
     return 0;                             // full: the man stays aboard
 }
 
+// para_room - 1 while a man of *owner* may yet go onto the field: his
+// side's units out, and its men on the way (unit_side_held), under the cap.
+fn para_room(owner: u8) -> u8 {
+    if unit_side_count[owner as u16] + unit_side_held[owner as u16] >= UNIT_SIDE_MAX { return 0; }
+    return 1;
+}
+
 // para_disembark - *n* men out of an airframe come down on a dry tank, at
 // *x* on the ground: each stands in the pool as a landed paratrooper does
 // (PARA_DOWN), so they go onto the field one at a time as unit_spawn makes
 // room beside the last. No chute, so no roll: the player's men take
-// nothing from rand(). Men the pool has no slot for are lost with it.
+// nothing from rand(). Men the pool or the side's cap has no room for are
+// lost with it.
 far fn para_disembark(x: u16, owner: u8, n: u8) {
     let mut left: u8 = n;
     for i in 0..PARA_MAX {
-        if left != 0 && para_state[i] == PARA_FREE {
+        if left != 0 && para_state[i] == PARA_FREE && para_room(owner) != 0 {
             para_x[i] = x;
             para_y[i] = PARA_GROUND_Y;
             para_owner[i] = owner;
             para_state[i] = PARA_DOWN;
             para_live = para_live + 1;
+            unit_side_held[owner as u16] = unit_side_held[owner as u16] + 1;
             left = left - 1;
         }
     }
@@ -152,12 +168,10 @@ far fn para_update() {
                 para_y[i] = PARA_GROUND_Y;
                 if st == PARA_FALLING {
                     fx_man(para_x[i], para_owner[i]);   // splat
-                    para_state[i] = PARA_FREE;
-                    para_live = para_live - 1;
+                    para_free(i);
                 } else {
                     if struct_bank_rob_at(para_x[i], para_owner[i]) != 0 {
-                        para_state[i] = PARA_FREE;  // landed in a bank's door: robbed it
-                        para_live = para_live - 1;
+                        para_free(i);               // landed in a bank's door: robbed it
                     } else {
                         para_state[i] = PARA_DOWN;
                     }
@@ -167,12 +181,26 @@ far fn para_update() {
             }
         }
         if para_state[i] == PARA_DOWN {
+            // His own reservation is the room he spawns into: let it go for
+            // the call, and take it back if the spot is still taken.
+            let o: u16 = para_owner[i] as u16;
+            unit_side_held[o] = unit_side_held[o] - 1;
             if unit_spawn(Order::Infantry, para_owner[i], para_x[i]) != 0 {
                 para_state[i] = PARA_FREE;
                 para_live = para_live - 1;
+            } else {
+                unit_side_held[o] = unit_side_held[o] + 1;
             }
         }
     }
+}
+
+// para_free - a man gone from the pool without reaching the field.
+fn para_free(i: u16) {
+    let o: u16 = para_owner[i] as u16;
+    unit_side_held[o] = unit_side_held[o] - 1;
+    para_state[i] = PARA_FREE;
+    para_live = para_live - 1;
 }
 
 // para_draw - after the munitions in the OAM order.

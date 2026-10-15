@@ -90,3 +90,19 @@ def test_drop(state):
     assert v.units__kind__tag.u8[23] == INFANTRY
     assert v.units__kind__tag.u8[24] == FREE
     assert v.units__owner.u8[21] == PLAYER
+
+
+def test_a_drop_needs_room_on_the_field(state):
+    """Men on their way down count against the side's 16 units (unit.r65
+    unit_side_held), so a drop with no room left is refused and the man
+    stays aboard, rather than landing to stand there unhittable until
+    something of his side dies. With room for one: the first X drops a
+    man, the second, while he is still in the air, does not."""
+    snes = state(boarded)
+    snes.up(30)
+    snes.write("unit_side_count", 15, 1)
+    snes.x(1).wait(10).x(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.para_live == 1
+    assert v.player__men.u8[0] == 4
+    assert v.unit_side_held & 0xFF == 1            # [u8; 2], the player's first
