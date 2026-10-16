@@ -129,3 +129,22 @@ def test_engineers_board_and_rearm(snes):
     assert v.player__men.u8[0] == 2
     assert (v.airframes__gun.u8[0], v.airframes__bombs.u8[0]) == (64, 2)
     assert (v.airframes__hp.u8[0], v.airframes__fuel.u8[0]) == (20, 74)
+
+
+def test_men_step_out_of_a_landed_airframe(state):
+    """Landed, X puts a man out onto the ground ahead of the airframe - an
+    infantryman at once, marching away from the pickup window - but not
+    while one of ours is within a convoy space of the spot: a second X at
+    once is refused, one after the first has walked clear is not."""
+    snes = state(boarded)
+    snes.x(3).wait(3)
+    v = read_snapshot(snes)
+    assert v.player__men.u8[0] == 4
+    out = [v.units__x_px.u16[i] for i in range(32)
+           if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == PLAYER]
+    assert len(out) == 1
+    assert 1014 + 32 <= out[0] < 1014 + 32 + 8      # put out at the right edge, walking on
+    snes.x(3).wait(3)
+    assert read_snapshot(snes).player__men.u8[0] == 4
+    snes.wait(70).x(3).wait(3)
+    assert read_snapshot(snes).player__men.u8[0] == 3

@@ -343,11 +343,20 @@ impl Player {
             }
         }
 
-        // X: a man out of the door, airborne only - on the deck he would just
-        // walk back aboard.
-        if (trig & JOY_X) != 0 {
-            if player.men > 0 && airframes[HELI].landed == 0 {
+        // X: a man out of the door. In the air, a paratrooper. Landed, he
+        // steps out onto the ground at the airframe's right edge - ahead of
+        // it, so he marches away rather than through the pickup window - and
+        // goes straight onto the field: unless one of ours is within a
+        // convoy space of that spot (unit_spawn's spacing, which also keeps
+        // the side's cap), and then he stays aboard. Not on the fuse of a
+        // dry landing: they are all out already.
+        if (trig & JOY_X) != 0 && player.men > 0 {
+            if airframes[HELI].landed == 0 {
                 if para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER, 0) != 0 {
+                    player.men = player.men - 1;
+                }
+            } else if airframes[HELI].fuse == 0 && airframes[HELI].x_px < WORLD_W - HELI_W - UNIT_W {
+                if unit_spawn(Order::Infantry, SIDE_PLAYER, airframes[HELI].x_px + HELI_W) != 0 {
                     player.men = player.men - 1;
                 }
             }

@@ -691,8 +691,11 @@ The airlift (`src/para.r65`): a powered descent lands anywhere on the ground (`a
 landed airframe's middle boards it (five at most, and they count against the infantry cap). An
 engineer, as Armor Alley's, cannot take his equipment aboard - he is one more man, dropped as an
 infantryman - but uses it on the way in: half the hull, an eighth of the tank, a bomb and half the
-rounds, each capped at a full load (`para_refit`, with the ENGINEER ABOARD alert); X drops one as a paratrooper
-from an 8-slot pool both sides drop into - units have no y; when it is full, or the side has no
+rounds, each capped at a full load (`para_refit`, with the ENGINEER ABOARD alert). Landed, X puts a
+man out onto the ground at the airframe's right edge - ahead of it, so he marches away rather than
+back through the pickup window - straight onto the field through `unit_spawn`, whose spacing
+refuses it while one of ours is within a convoy space of the spot (he stays aboard). In the air, X
+drops one as a paratrooper from an 8-slot pool both sides drop into - units have no y; when it is full, or the side has no
 room left for him on the field (`para_drop` returns 0), the man stays aboard. The men on their way
 down count against `UNIT_SIDE_MAX` (`unit_side_held`, which `unit_spawn` adds to the side's
 count): a man who landed with no room used to stand where he landed, unhittable, until something
@@ -706,7 +709,7 @@ Controls: on the title, Up/Down and Start (or A) pick NEW GAME or ENTER CODE; in
 field the d-pad types the continue code, Start takes it and B goes back to the menu;
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
 menu - Up/Down move the highlight, wrapping, A buys - and the d-pad
-and A do not reach the airframe while L is down; B gun, A bomb, X drop, Up lifts off a deck;
+and A do not reach the airframe while L is down; B gun, A bomb, X drop (or, landed, step out), Up lifts off a deck;
 Start pauses and resumes; Y is unassigned. **Start acts on release, everywhere**: `pad_read_ports`
 reports it in the trigger mask as it comes up (`PAD_PREV` holds the pad with Start's bit
 inverted, so that costs one EOR), and the intro's skip reads the trigger too.
