@@ -418,7 +418,9 @@ are off until it is up. **A dry tank is a slow forced descent**: the vertical sp
 steady `HELI_SINK` (0.5 px/frame - a dive or a climb is arrested within a second; from hover about
 two seconds down) whatever the stick says, while left and right still fly it - the player's; the
 enemy's way on just bleeds off. Touching down on a deck saves it (it lands and the deck refuels
-it; the enemy's, its own deck only), and open ground is the loss. The men aboard get out there as infantry
+it; the enemy's, its own deck only), and open ground is the loss: the men aboard get out at once,
+and the airframe sits there `HELI_DRY_FUSE` (60) frames (`Airframe::fuse`, landed, nothing picked
+up, no lift-off) before it goes up. The men become infantry
 (`para_disembark`): standing in the para pool, already down, they go onto the field one at a time
 as `unit_spawn` makes room, and they take no `rand()`. The enemy's do so only on the campaign's
 rows (`cpu_paras`), as its drops, so a test mission's battle stays put. And a touchdown flat out

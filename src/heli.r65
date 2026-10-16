@@ -147,6 +147,7 @@ const HELI_HP_REPAIR:   u8 = 16;          // frames per point
 // wreck's (wreck_tick).
 const HELI_GRAVITY: Q10 = 10;             // ~0.16 px/frame^2
 const HELI_SINK:    Q10 = 32;             // 0.5 px/frame: the dry tank's descent
+const HELI_DRY_FUSE: u8 = 60;             // frames down dry off a deck before it goes up
 
 
 // ---------------------------------------------------------------- state ---
@@ -189,6 +190,7 @@ struct Airframe {
     wreck_face: u8,
     wreck_spin: u8,     // frames it has fallen: the spin's clock
     wreck_up:   u8,     // 1 while a wreck is falling; 0 none (down, or never)
+    fuse:       u8,     // down dry off a deck: frames until it goes up; 0 none
 }
 #[lowram] static mut airframes: [Airframe; 2];
 
@@ -389,10 +391,20 @@ impl Player {
             airframes[HELI].vx = Q10(0);
             airframes[HELI].vy = Q10(0);
             airframes[HELI].tilt = 0;
-            if player.on_pad != 0 { airframes[HELI].rearm(); }
-            para_pickup();
-            if (held & JOY_UP) != 0 {
-                if airframes[HELI].fuel > 0 { airframes[HELI].landed = 0; }
+            if airframes[HELI].fuse != 0 {
+                // Down dry off a deck: the men are out, nothing to be done
+                // but wait for it to go up.
+                airframes[HELI].fuse = airframes[HELI].fuse - 1;
+                if airframes[HELI].fuse == 0 {
+                    Player::lost();
+                    return;
+                }
+            } else {
+                if player.on_pad != 0 { airframes[HELI].rearm(); }
+                para_pickup();
+                if (held & JOY_UP) != 0 {
+                    if airframes[HELI].fuel > 0 { airframes[HELI].landed = 0; }
+                }
             }
         } else {
             airframes[HELI].burn();
@@ -444,13 +456,16 @@ impl Player {
                 if airframes[HELI].fuel == 0
                    && pad_at(airframes[HELI].x_px + (HELI_W >> 1)) >= PAD_COUNT {
                     // Out of fuel off a deck, down is the end - but the men
-                    // aboard get out and fight on as infantry.
+                    // aboard get out and fight on as infantry, and it sits
+                    // there HELI_DRY_FUSE frames before it goes up.
                     if player.men > 0 {
                         para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
                                        SIDE_PLAYER, player.men);
                         player.men = 0;
                     }
-                    Player::lost();
+                    player.on_pad = 0;
+                    airframes[HELI].landed = 1;
+                    airframes[HELI].fuse = HELI_DRY_FUSE;
                     return;
                 }
                 if Airframe::crashes(airframes[HELI].vx, vy_in) != 0 {
@@ -541,6 +556,7 @@ impl Airframe {
         self.landed = 0;
         self.dead = 0;
         self.rising = 0;
+        self.fuse = 0;
     }
 
     // rearm - one tick on the deck. Fuel, rounds, bombs and health each

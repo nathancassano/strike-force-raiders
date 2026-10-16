@@ -564,6 +564,13 @@ impl Pilot {
             airframes[FOE].vx = Q10(0);
             airframes[FOE].vy = Q10(0);
             airframes[FOE].tilt = 0;
+            if airframes[FOE].fuse != 0 {
+                // Down dry off its deck: its men are out; it goes up when
+                // the fuse runs out.
+                airframes[FOE].fuse = airframes[FOE].fuse - 1;
+                if airframes[FOE].fuse == 0 { Pilot::lost(); }
+                return;
+            }
             airframes[FOE].rearm();
             if airframes[FOE].fuel == HELI_FUEL_MAX && airframes[FOE].gun == HELI_GUN_MAX && airframes[FOE].bombs == HELI_BOMB_MAX
                && airframes[FOE].hp == HELI_HP_MAX {
@@ -597,7 +604,8 @@ impl Pilot {
                                    SIDE_ENEMY, pilot.men);
                     pilot.men = 0;
                 }
-                Pilot::lost();
+                airframes[FOE].landed = 1;          // HELI_DRY_FUSE frames, then up
+                airframes[FOE].fuse = HELI_DRY_FUSE;
             }
             return;
         }

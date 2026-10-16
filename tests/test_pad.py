@@ -177,3 +177,27 @@ def test_the_men_aboard_walk_away_from_a_dry_tank(state):
            if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0]
     assert len(out) == 5
     assert v.para_live == 0
+
+
+def test_down_dry_it_waits_then_goes_up(state):
+    """Down dry off a deck, the men get out at once and the airframe sits
+    there 60 frames (HELI_DRY_FUSE) before it goes up: half a second on it
+    is still landed, its life still in hand, the men on their way onto the
+    field; a second on it is gone."""
+    snes = state(boarded)
+    snes.up(10).right(40)
+    snes.write("airframes__fuel", 0, 1)
+    for _ in range(200):
+        snes.wait(1)
+        if snes.raw("airframes__landed").u8[0]:
+            break
+    snes.wait(30)
+    v = read_snapshot(snes)
+    assert v.airframes__landed.u8[0] == 1
+    assert v.airframes__lives.u8[0] == 4
+    assert v.player__men.u8[0] == 0
+    ours = sum(1 for i in range(32) if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0)
+    assert v.para_live + ours == 5
+    snes.wait(40)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[0] == 3
