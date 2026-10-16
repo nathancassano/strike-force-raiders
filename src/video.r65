@@ -346,6 +346,27 @@ far fn scroll_update() {
 // is far (the DMA helpers, struct_palettes) or a register write.
 #[bank(2)]
 
+// video_extras - the uploads that came after video_load at boot: the sky's
+// backdrop colour (written after the palette DMA, which overwrites CGRAM
+// 0), the radar's palette, the order menu's icons and the front end's font.
+far fn video_extras() {
+    set_backdrop!(Color::rgb!(7, 19, 29));   // #3d9aec, the clouds' sky (sky.tilemap.bmp entry 0)
+    radar_palette();
+    hud_icons_load();
+    screen_font_load();
+}
+
+// video_restore - the field's art back after the title page, which loads
+// its Mode 3 picture over VRAM and CGRAM and switches HDMA off. Force
+// blank. Everything the boot uploaded, and Mode 1's registers; the maps
+// the game writes at runtime (the strip, the radar) are recomposed when
+// the battle comes back (screen_hide).
+far fn video_restore() {
+    video_upload();
+    video_extras();
+    gnd_hdma_init();
+}
+
 far fn video_upload() {
     // The HUD's palette at 0 (BG3's, and the backdrop), the 4bpp sheets
     // above it - see CGRAM_SKY.

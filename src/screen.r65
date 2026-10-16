@@ -17,6 +17,13 @@
 // cursor are still the HUD's box pieces, read back out of the BG3
 // map by position (HUD_BOX_ROW, tools/hud_glyphs.py).
 //
+// The title is the exception: it is Mode 3, a 256-colour picture on BG1
+// (assets/src/title.tilemap.bmp, painted from a render by
+// tools/title_art.py) with the menu on BG2, in the same console font
+// widened to 4bpp - Mode 3 has no BG3. The picture fills VRAM, so the
+// title loads over the field's VRAM and CGRAM (title_load) and leaving
+// it puts them back (video_restore) before the next page goes up.
+//
 // The front end is the *campaign's*. A test mission (mission.r65) boots
 // straight into its battle and its Start still restarts it, so the suite
 // never sees a page it did not ask for.
@@ -59,11 +66,23 @@ const SCREEN_PROMPT:   u16 = 22;          // the PRESS START row
 // one being typed, and the line that says what the code reads as. They
 // are kept together because editing one redraws the block, and a block of
 // whole rows is one DMA (see screen_flush).
-const SCREEN_CODE_ROW:  u16 = 14;
-const SCREEN_CODE_ROWS: u16 = 5;          // 14..18: letters, cursor, readout
+const SCREEN_CODE_ROW:  u16 = 19;
+const SCREEN_CODE_ROWS: u16 = 5;          // 19..23: letters, cursor, readout
 const SCREEN_CODE_COL:  u16 = 16;         // the first letter; two columns apart
 const SCREEN_LABEL_COL: u16 = 10;         // and the word CODE, to their left
-const SCREEN_READ_ROW:  u16 = 17;
+const SCREEN_READ_ROW:  u16 = 22;
+const SCREEN_TITLE_PROMPT: u16 = 25;      // under the code block, on the art's panel
+
+// The title's VRAM, Mode 3. BG1's 8bpp tiles take $0000-$6FFF - 896 of
+// them, a whole screen's, so any picture fits. BG2's 4bpp font sits at its
+// own tile numbers (SCREEN_FONT_TILE on) from a base of $7000, so the
+// first 96 tiles of that base are never named and hold BG1's map instead;
+// BG2's map is the last 1K words. The font's two colours are entries 34
+// and 35 of the picture's palette (BG2 palette 2, as on BG3), fixed by
+// title_art.py.
+const TITLE_VRAM_MAP:  u16 = 0x7000;      // 0x1C in $400-word units
+const TITLE_VRAM_FONT: u16 = 0x7000;      // BG2's tile base, 7 in 4K-word units
+const TITLE_VRAM_TEXT: u16 = 0x7C00;      // 0x1F
 
 // The title opens on a menu - NEW GAME, then ENTER CODE - in the same rows
 // as the code field, which it gives way to when ENTER CODE is picked: one
@@ -86,6 +105,9 @@ const SCREEN_MENU_CURSOR: u16 = 10;       // ... and the > picking one
 
 #[ram] static mut screen_con: Console;
 #[ram] static mut screen_line: [u8; 17];  // a mission name, trimmed and terminated
+
+// A 4bpp tile's upper two bitplanes, which the 2bpp font has none of.
+static SCREEN_ZERO: [u8; 16] = [0; 16];
 
 // ------------------------------------------------------ continue code ---
 // Progress between missions is a typed code, not a save file: four
@@ -313,8 +335,8 @@ fn screen_code_block() {
         return;
     }
     screen_code(SCREEN_CODE_ROW);
-    screen_put(SCREEN_CODE_ROW + 1, SCREEN_CODE_COL + ((code_cursor as u16) << 1),
-               hud_box(BOX_CURSOR));
+    // The cursor is the font's caret: the HUD's box pieces are BG3's.
+    screen_at(SCREEN_CODE_ROW + 1, SCREEN_CODE_COL + ((code_cursor as u16) << 1), "^\0");
     // What it means, live: the mission it opens - and Start takes it - or
     // nothing, and Start does not.
     let m: u8 = code_mission();
@@ -328,11 +350,10 @@ fn screen_code_block() {
 
 // --------------------------------------------------------------- pages ---
 
+// The title: the menu and the prompt. The name is in the picture.
 fn screen_title() {
-    screen_centre(6, "ROTOR RAIDERS\0");
-    screen_centre(9, "HELICOPTER TUG OF WAR\0");
     screen_code_block();
-    screen_centre(SCREEN_PROMPT, "PRESS START\0");
+    screen_centre(SCREEN_TITLE_PROMPT, "PRESS START\0");
 }
 
 // The briefing: which mission, its name, and what it is made of - the
@@ -385,13 +406,19 @@ fn screen_end() {
 
 // ------------------------------------------------------------ the page ---
 
-// screen_blit - the composed page to VRAM and BG3 alone on the screen.
-// Force blank because this is a 1792-byte DMA at an arbitrary point in the
-// frame; a black frame at a transition costs nothing.
+// screen_blit - the composed page to VRAM and BG3 alone on the screen -
+// or, the title's, to BG2's map over the picture. Force blank because this
+// is a 1792-byte DMA at an arbitrary point in the frame; a black frame at
+// a transition costs nothing.
 fn screen_blit() {
     INIDISP = FORCE_BLANK;
-    dma_copy_vram(0, &screen_page as far *u8, VRAM_HUD, SCREEN_ROWS << 6);
-    set_main_layers!(Screen::BG3);
+    if screen_kind == SCREEN_TITLE {
+        dma_copy_vram(0, &screen_page as far *u8, TITLE_VRAM_TEXT, SCREEN_ROWS << 6);
+        set_main_layers!(Screen::BG1 | Screen::BG2);
+    } else {
+        dma_copy_vram(0, &screen_page as far *u8, VRAM_HUD, SCREEN_ROWS << 6);
+        set_main_layers!(Screen::BG3);
+    }
     INIDISP = 0x0F;
 }
 
@@ -399,9 +426,18 @@ fn screen_blit() {
 // GAME_SCREEN is not GAME_PLAYING, so main runs neither the tick nor the
 // draw while one is showing.
 far fn screen_show(kind: u8) {
+    let was: u8 = screen_kind;
     screen_kind = kind;
+    // Into the title the picture goes up; out of it the field's art comes
+    // back, which every other page and the battle draw with.
+    INIDISP = FORCE_BLANK;
+    if kind == SCREEN_TITLE {
+        if was != SCREEN_TITLE { title_load(); }
+    } else if was == SCREEN_TITLE {
+        video_restore();
+    }
     screen_clear();
-    screen_frame();
+    if kind != SCREEN_TITLE { screen_frame(); }
     if kind == SCREEN_TITLE {
         title_mode = TITLE_MENU;          // the menu each time, NEW GAME picked
         title_sel = TITLE_NEW;
@@ -431,19 +467,25 @@ far fn screen_hide() {
     music_stop();               // the battle has its guns, not the theme
 }
 
-// screen_font - the console and its font. Force blank: boot_load only.
-far fn screen_font() {
+// screen_font_load - the font and its palette, into BG3. Force blank: at
+// boot, and again when the title gives VRAM back (video_restore).
+far fn screen_font_load() {
     set_cgram_addr!(SCREEN_FONT_PAL << 2);
     write_color!(Color::rgb!(0, 0, 0));          // transparent
     write_color!(Color::rgb!(4, 6, 14));         // unused by the font
     write_color!(Color::rgb!(18, 20, 24));       // the glyphs' edge
     write_color!(Color::rgb!(31, 31, 31));       // and their body
-    screen_con.init(SCREEN_FONT_PAL << 10);
     // By DMA rather than Console::upload_font, which writes the 1520
     // bytes a register store at a time: that is a frame of boot, and the
     // suite's movies are timed from a boot of a fixed length.
     dma_copy_vram(0, &CONSOLE_FONT as far *u8, VRAM_HUDC + (SCREEN_FONT_TILE << 3),
                   SCREEN_FONT_TILES << 4);
+}
+
+// screen_font - the console, writing the font's tiles. The priority bit is
+// the title's: in Mode 3 a BG2 tile without it draws behind all of BG1.
+far fn screen_font() {
+    screen_con.init((SCREEN_FONT_PAL << 10) | 0x2000);
     screen_con.set_tile_base(SCREEN_FONT_TILE);
     screen_con.set_align(ConsoleAlign::Center as u8);
 }
@@ -466,12 +508,13 @@ far fn screen_init() {
 
 // screen_flush - the code block to VRAM. Vblank only, and only the five
 // rows the typing touches: re-blitting the page would mean force blank
-// and a black frame on every keypress.
+// and a black frame on every keypress. Only the title types, so the block
+// goes to its map.
 far fn screen_flush() {
     if screen_dirty == 0 { return; }
     screen_dirty = 0;
     dma_copy_vram(1, &screen_page[SCREEN_CODE_ROW << 5] as far *u8,
-                  VRAM_HUD + (SCREEN_CODE_ROW << 5), SCREEN_CODE_ROWS << 6);
+                  TITLE_VRAM_TEXT + (SCREEN_CODE_ROW << 5), SCREEN_CODE_ROWS << 6);
 }
 
 // screen_type - the d-pad over the title's code field: left and right
@@ -588,4 +631,37 @@ far fn screen_tick(held: u16, trig: u16) {
         return;
     }
     screen_show(SCREEN_TITLE);
+}
+
+// ------------------------------------------------------- the title art ---
+#[bank(8)]
+
+// title_load - Mode 3 and the title's picture, over the field's VRAM and
+// CGRAM. Force blank. In bank 8 with the picture's second half, its map and
+// palette - which also gives the ROM its ninth bank: R65 sizes the ROM from
+// the banks with code or tables in them, and include_bytes! data alone
+// does not count. HDMA goes off: its two channels write BG1's and
+// BG2's horizontal scroll down the screen, which would shear the picture.
+far fn title_load() {
+    dma_set_hdma!(0);
+    dma_copy_cgram(0, &TITLE_PAL as far *u8, 0, TITLE_PAL_SIZE);
+    dma_copy_vram(0, &TITLE_CHR_1 as far *u8, 0, TITLE_CHR_1_SIZE);
+    dma_copy_vram(0, &TITLE_CHR_2 as far *u8, TITLE_CHR_1_SIZE >> 1, TITLE_CHR_2_SIZE);
+    dma_copy_vram(0, &TITLE_MAP as far *u8, TITLE_VRAM_MAP, TITLE_MAP_SIZE);
+    // The font, widened: each 2bpp glyph is a 4bpp tile's first half, and
+    // the second - bitplanes 2 and 3 - is zero.
+    let mut at: u16 = TITLE_VRAM_FONT + (SCREEN_FONT_TILE << 4);
+    for t in 0..SCREEN_FONT_TILES {
+        dma_copy_vram(0, &CONSOLE_FONT[t << 4] as far *u8, at, 16);
+        dma_copy_vram(0, &SCREEN_ZERO as far *u8, at + 8, 16);
+        at = at + 16;
+    }
+    set_bgmode!(3, 0);
+    set_bg1_map!(0x1C, 0);
+    set_bg2_map!(0x1F, 0);
+    set_bg12_chr!(0, 7);
+    set_bg1_hscroll!(0);
+    set_bg1_vscroll!(0xFFFF);
+    set_bg2_hscroll!(0);
+    set_bg2_vscroll!(0xFFFF);
 }

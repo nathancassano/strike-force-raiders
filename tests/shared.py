@@ -92,6 +92,30 @@ def screen_colour(snes, tmp_path, rgb, snes_colour=False):
     return colour_pct(snes.screenshot(tmp_path / "screen.png"), rgb, snes=snes_colour)
 
 
+# Mesen's screenshot is the 239-line overscan frame: picture line 0 is its 7th.
+OVERSCAN_TOP = 7
+
+
+def title_shot(snes, tmp_path):
+    """Screenshot now, and how many of the title's pixels match its picture:
+    (matching, the menu rows' pixels that do not match). The picture is
+    title.tilemap.bmp as the PPU shows it - each component cut to 5 bits
+    and expanded, since the bitmap's palette need not be in the PPU's steps.
+    The menu rows are screen.r65's SCREEN_CODE_ROW (19) to
+    SCREEN_TITLE_PROMPT (25)."""
+    shot = Image.open(snes.screenshot(tmp_path / "screen.png")).convert("RGB")
+    art = Image.open("assets/src/title.tilemap.bmp").convert("RGB")
+    art = art.point(lambda v: snes8(v >> 3))
+    same = menu = 0
+    for y in range(art.height):
+        for x in range(art.width):
+            if shot.getpixel((x, y + OVERSCAN_TOP)) == art.getpixel((x, y)):
+                same += 1
+            elif 19 * 8 <= y < 26 * 8:
+                menu += 1
+    return same, menu
+
+
 # ---- states ------------------------------------------------------------------
 
 @rom_state

@@ -159,7 +159,7 @@ rotor_raiders/
 │   ├── order.r65             # Funds, the L/R order ring, the order queue
 │   ├── cpu.r65               # The opponent: capability rows, convoy table, its purse and queue
 │   ├── mission.r65           # The campaign: one row per mission, the derived battlefield, the test rows
-│   ├── screen.r65            # The front end: title, briefing and after-action pages on BG3
+│   ├── screen.r65            # The front end: the Mode 3 title, briefing and after-action pages on BG3
 │   ├── intro.r65             # The power-on BubbleZap logo: hindstrike's Mode 7 spin-in (bank 2)
 │   ├── heli.r65              # The airframes: the #[soa] pool (Airframe, both sides' methods) and the player's (Player)
 │   ├── foe.r65               # The enemy's pilot (Pilot): its decisions, and the world against its airframe
@@ -239,10 +239,10 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
-`sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
+`sky_art.py` and `title_art.py` are the exceptions that already are final art (the title's is below). It paints the sky's two sheets from
 ComfyUI renders (`pixel_art_sdxl` with comfyui-seamless-tiling's `x_only` tiling, so they wrap).
 `sky_art.py mountains` takes a render's pixels: gimp crops, squashes to 512x44 and indexes it
 (the script-fu is in the file, `--scm`), then the tool keys the sky by silhouette (its bottom row
@@ -487,7 +487,27 @@ after-action - and they are all one mechanism: BG3 written as a full 32x28 page 
 `TM` naming BG3 alone, so the field behind is not hidden but simply not drawn, keeping its
 state and its registers. A page costs one 1792-byte DMA of the map in force blank when it goes
 up and nothing per frame; coming back restores the map from ROM and re-runs `hud_init` and
-`radar_init`, the page having written over the rows they own. `GAME_SCREEN` is a game state
+`radar_init`, the page having written over the rows they own. **The title is the exception: Mode
+3**, a 256-colour picture on BG1 (`assets/src/title.tilemap.bmp`, 8bpp, `-b8` in the Makefile)
+with the menu on BG2 in the same console font widened to 4bpp at load - Mode 3 has no BG3. The
+picture's tiles fill VRAM $0000-$6FFF (896, a whole screen's, so any picture fits; BG1's map at
+$7000 under BG2's never-named first 96 tiles, BG2's map at $7C00), so `title_load` loads over the
+field's VRAM and CGRAM and switches HDMA off (it would shear the picture), and leaving the title for
+any page runs `video_restore` - the boot's uploads again, Mode 1's registers and the HDMA - before
+the next page goes up. The font's two colours are entries 34 and 35 of the picture's palette (BG2
+palette 2, CGRAM 32-47, is BG1's too), and its map entries carry the priority bit, without which a
+BG2 tile draws behind all of BG1 in Mode 3; the code cursor is the font's caret, the HUD's box
+pieces being BG3's. `tools/title_art.py` paints the picture from a ComfyUI render
+(`pixelArtDiffusionXL_pixelWorld`, render, prompt and seed in its docstring): scaled to 256x224,
+the ROTOR RAIDERS logo lettered over the sky, a darkened panel under the menu rows (keep it on
+`SCREEN_CODE_ROW`..`SCREEN_TITLE_PROMPT`), one palette with those two entries fixed. The bitmap
+in git was edited by hand after that - no panel, its palette reordered and off the PPU's 5-bit
+steps (bmp2chr cuts each component), so the menu draws in whatever 34 and 35 now are - and
+re-running the tool would lose the edit; the title's tests compare at 5 bits. Its tiles are
+up to 56K, more than a LoROM bank, so the Makefile cuts `title.chr` at 32K into banks 7 and 8
+(`TITLE_CHR_1`/`_2`), as the sound driver is; `title_load` lives in bank 8 beside them, which is
+also what makes the ROM 512K - R65 sizes the ROM from the banks holding code or tables, and
+`include_bytes!` data alone does not count. `GAME_SCREEN` is a game state
 like the two battle-over ones, so `main` runs neither the tick nor the draw while one shows.
 **Progress between missions is a typed code, not a save file** (`code_*`): four letters
 carrying eleven bits of payload - four of mission, seven of purse - and five of check,

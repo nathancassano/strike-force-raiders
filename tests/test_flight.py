@@ -1,6 +1,6 @@
 """Phases 1-4: boot, the scrolling battlefield, the airframe and its weapons."""
 
-from shared import boot, read_snapshot, screen_colour
+from shared import boot, read_snapshot, title_shot
 
 
 # ---- Phase 1 - harness ------------------------------------------------------
@@ -8,12 +8,15 @@ from shared import boot, read_snapshot, screen_colour
 def test_boot(snes, tmp_path):
     """The ROM boots, enables NMI, runs its loop and reaches snapshot_point.
 
-    The sky backdrop must still dominate the frame - this catches a failed
-    palette DMA or a layer left enabled over the whole screen.
+    It opens on the title, and the frame must be the title's picture pixel
+    for pixel (title.tilemap.bmp, at the PPU's 5-bit colours) but for the
+    menu's text - this catches a failed palette or tile DMA, the wrong mode,
+    or a layer left enabled over the screen.
     """
     boot(snes)
     read_snapshot(snes)
-    assert screen_colour(snes, tmp_path, (57, 156, 239)) >= 40, "the sky dominates the frame"
+    same, _ = title_shot(snes, tmp_path)
+    assert same >= 0.95 * 256 * 224, "the title's picture is on screen"
 
 
 # ---- Phase 2 - scrolling battlefield ----------------------------------------

@@ -3,7 +3,7 @@
 These boot with nothing held, which is the campaign's first mission.
 """
 
-from shared import boot, campaign_lost, read_snapshot, screen_colour
+from shared import boot, campaign_lost, read_snapshot, screen_colour, title_shot
 
 GAME_PLAYING, GAME_SCREEN = 0, 3
 SCREEN_NONE, SCREEN_TITLE, SCREEN_BRIEF, SCREEN_AFTER = 0, 1, 2, 3
@@ -96,11 +96,24 @@ def test_start_again_goes_into_the_battle(snes):
     assert v.airframes__x_px.u16[0] == 321
 
 
+def test_the_field_comes_back_after_the_title(snes, tmp_path):
+    """The title is Mode 3 and loads its picture over the field's VRAM and
+    CGRAM; leaving it puts them back (video_restore), so the battle after
+    the briefing is drawn as ever - the sky most of the frame, as on a
+    mission booted straight into its battle."""
+    boot(snes).start().wait(10).start().wait(60)
+    read_snapshot(snes)
+    assert screen_colour(snes, tmp_path, (57, 156, 239)) >= 40, "the sky dominates the frame"
+
+
 def test_title_text_drawn(snes, tmp_path):
-    """The title's text is on screen: the console font's white body colour."""
+    """The title's text is on screen: the menu rows differ from the picture
+    where the console font's glyphs are drawn over it (in its entries 34 and
+    35, whatever colours the picture gives them)."""
     boot(snes).wait(30)
     read_snapshot(snes)
-    assert screen_colour(snes, tmp_path, (255, 255, 255)) > 0.3, "the title text is drawn"
+    _, menu = title_shot(snes, tmp_path)
+    assert menu > 300, "the title text is drawn"
 
 
 # The continue code. The title opens on a menu - NEW GAME, then ENTER CODE -
