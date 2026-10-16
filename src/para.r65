@@ -111,17 +111,30 @@ fn para_room(owner: u8) -> u8 {
     return 1;
 }
 
-// para_disembark - *n* men out of an airframe come down on a dry tank, at
-// *x* on the ground: each stands in the pool as a landed paratrooper does
-// (PARA_DOWN), so they go onto the field one at a time as unit_spawn makes
-// room beside the last. No chute, so no roll: the player's men take
+// para_disembark - *n* men - the pilot and the men aboard - out of an
+// airframe come down on a dry tank, on the ground at *x*: each stands in the
+// pool as a landed paratrooper does (PARA_DOWN) until unit_spawn takes him
+// onto the field. No chute, so no roll: the player's men take
 // nothing from rand(). Men the pool or the side's cap has no room for are
 // lost with it.
+//
+// They get out a convoy space apart (unit_spawn's spacing), the first at
+// *x* and the rest behind it - toward their own end - so each can go onto
+// the field at once rather than waiting, drawn in one heap, for the one
+// before to walk clear.
+const PARA_OUT_GAP: u16 = UNIT_W + UNIT_GAP;
+
 far fn para_disembark(x: u16, owner: u8, n: u8) {
     let mut left: u8 = n;
+    let mut at: u16 = x;
     for i in 0..PARA_MAX {
         if left != 0 && para_state[i] == PARA_FREE && para_room(owner) != 0 {
-            para_x[i] = x;
+            para_x[i] = at;
+            if owner == SIDE_PLAYER {
+                if at >= PARA_OUT_GAP { at = at - PARA_OUT_GAP; }
+            } else {
+                if at + PARA_OUT_GAP < WORLD_W - UNIT_W { at = at + PARA_OUT_GAP; }
+            }
             para_y[i] = PARA_GROUND_Y;
             para_owner[i] = owner;
             para_state[i] = PARA_DOWN;

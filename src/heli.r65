@@ -455,14 +455,12 @@ impl Player {
             if airframes[HELI].y == HELI_Y_MAX {
                 if airframes[HELI].fuel == 0
                    && pad_at(airframes[HELI].x_px + (HELI_W >> 1)) >= PAD_COUNT {
-                    // Out of fuel off a deck, down is the end - but the men
-                    // aboard get out and fight on as infantry, and it sits
-                    // there HELI_DRY_FUSE frames before it goes up.
-                    if player.men > 0 {
-                        para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
-                                       SIDE_PLAYER, player.men);
-                        player.men = 0;
-                    }
+                    // Out of fuel off a deck, down is the end - but the pilot
+                    // and the men aboard get out and fight on as infantry,
+                    // and it sits there HELI_DRY_FUSE frames before it goes up.
+                    para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
+                                   SIDE_PLAYER, player.men + 1);
+                    player.men = 0;
                     player.on_pad = 0;
                     airframes[HELI].landed = 1;
                     airframes[HELI].fuse = HELI_DRY_FUSE;

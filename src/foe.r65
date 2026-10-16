@@ -586,10 +586,10 @@ impl Pilot {
 
         if airframes[FOE].fuel == 0 {
             // Dead stick: the player's slow forced descent (HELI_SINK), and
-            // the ground ends it - only its own deck saves it. Its men get
-            // out as infantry - where it carries them at all: the campaign's
-            // rows (cpu_paras), as its drops, so a test mission's battle
-            // stays put.
+            // the ground ends it - only its own deck saves it. Its pilot
+            // and men get out as infantry - on the campaign's rows
+            // (cpu_paras), as its drops, so a test mission's battle stays
+            // put.
             airframes[FOE].vx = approach(airframes[FOE].vx, Q10(0), HELI_ACC);
             airframes[FOE].lean(2);
             airframes[FOE].vy = approach(airframes[FOE].vy, HELI_SINK, HELI_GRAVITY);
@@ -599,9 +599,9 @@ impl Pilot {
                     airframes[FOE].landed = 1;
                     return;
                 }
-                if cpu_paras != 0 && pilot.men > 0 {
+                if cpu_paras != 0 {                  // the pilot and the men aboard
                     para_disembark(airframes[FOE].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
-                                   SIDE_ENEMY, pilot.men);
+                                   SIDE_ENEMY, pilot.men + 1);
                     pilot.men = 0;
                 }
                 airframes[FOE].landed = 1;          // HELI_DRY_FUSE frames, then up

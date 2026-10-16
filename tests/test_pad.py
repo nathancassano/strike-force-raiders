@@ -162,21 +162,45 @@ def test_a_dry_tank_on_the_deck_is_saved(snes):
     assert v.airframes__fuel.u8[0] > 0
 
 
+def touch_down_dry(snes):
+    """From hover over open ground, the tank emptied: down to the touchdown."""
+    snes.write("airframes__fuel", 0, 1)
+    for _ in range(200):
+        snes.wait(1)
+        if snes.raw("airframes__landed").u8[0]:
+            break
+    return snes
+
+
+def our_infantry(v):
+    return sum(1 for i in range(32)
+               if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0)
+
+
 def test_the_men_aboard_walk_away_from_a_dry_tank(state):
-    """Five aboard, lifted off, flown clear of the deck and run dry: the men
-    get out where it comes down and go onto the field one at a time, as
-    five infantrymen."""
+    """Five aboard, lifted off, flown clear of the deck and run dry: the
+    pilot and the five get out where it comes down, a convoy space apart
+    behind it, and are on the field at once as six infantrymen - the
+    airframe still sitting there on its fuse."""
     snes = state(boarded)
     snes.up(10).right(40)
-    snes.write("airframes__fuel", 0, 1)
-    snes.wait(400)
+    touch_down_dry(snes).wait(5)
     v = read_snapshot(snes)
-    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__lives.u8[0] == 4
     assert v.player__men.u8[0] == 0
-    out = [i for i in range(32)
-           if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0]
-    assert len(out) == 5
+    assert our_infantry(v) == 6
     assert v.para_live == 0
+
+
+def test_an_empty_airframe_puts_its_pilot_out(snes):
+    """Nobody aboard, down dry on open ground: the pilot walks away, one
+    infantryman (the design's no-ejection holds in the air only)."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(100).wait(60)
+    touch_down_dry(snes).wait(5)
+    v = read_snapshot(snes)
+    assert v.airframes__landed.u8[0] == 1
+    assert v.player__on_pad.u8[0] == 0
+    assert our_infantry(v) == 1
 
 
 def test_down_dry_it_waits_then_goes_up(state):
@@ -197,7 +221,7 @@ def test_down_dry_it_waits_then_goes_up(state):
     assert v.airframes__lives.u8[0] == 4
     assert v.player__men.u8[0] == 0
     ours = sum(1 for i in range(32) if v.units__kind__tag.u8[i] == INFANTRY and v.units__owner.u8[i] == 0)
-    assert v.para_live + ours == 5
+    assert v.para_live + ours == 6
     snes.wait(40)
     v = read_snapshot(snes)
     assert v.airframes__lives.u8[0] == 3

@@ -140,7 +140,8 @@ man's pace that put five in a heap.)*
 
 - Max speed **5 px/frame** horizontal, ~4 vertical, 8.8 fixed point.
 - **No gravity while powered.** Gravity applies only at zero fuel. **No ejection** - the pilot
-  goes with the airframe.
+  goes with the airframe. *Amended:* in the air; down dry on open ground, the pilot walks away
+  as an infantryman with the men aboard.
 - **Zero fuel is a crash landing**: the dead-stick descent ends on ground contact with the
   airframe lost, a life gone. *Amended:* the descent is slow and forced (0.5 px/frame, no
   vertical control; left and right still steer), a deck under it saves it, and on open ground
