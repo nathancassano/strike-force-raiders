@@ -182,9 +182,11 @@ def test_unit_budget(state):
     less one for unit_spawn counting the men on their way down (measured
     3637 before the convoy change). Then 1 slower (3662/3649): the balloons'
     chains are tested at hover height too, on alternate frames (every
-    frame cost 5).
+    frame cost 5). Then 2 faster (3662/3651): the tanks last half as long
+    again (a fuel unit per 96 frames), which moves the enemy airframe's trips
+    home to refit.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3649
+    assert v.frames_loop == 3651

@@ -121,9 +121,9 @@ const HELI_GUN_DROP: Q10 = 64;            // 1 px/frame
 
 // ----------------------------------------------------------- fuel & pad ---
 // Fuel is a 0-100 gauge; the plan's AI reads "fuel < 30" as its low mark.
-// One unit per 64 frames is a little over 100 s of flight.
+// One unit per 96 frames is a little over 160 s of flight (it was 64).
 const HELI_FUEL_MAX:   u8 = 100;
-const HELI_FUEL_DRAIN: u8 = 64;           // frames per unit burned aloft
+const HELI_FUEL_DRAIN: u8 = 96;           // frames per unit burned aloft
 const HELI_FUEL_FILL:  u8 = 4;            // frames per unit on the deck
 
 // Reload rates. These are the gating mechanism, not tuning knobs. The

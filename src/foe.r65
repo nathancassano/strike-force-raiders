@@ -952,8 +952,8 @@ impl Pilot {
             if airframes[FOE].hp < FOE_HP_LOW { votes = votes + 1; }
             if cpu_level < 2 { votes = votes + 1; }
             // Fuel short is the original's 25, plus the trip home: a unit
-            // burns in 64 frames, and at the slowest row's 2.75 px/frame that
-            // is 176 px, so a unit per 256 px of distance with the margin.
+            // burns in 96 frames, and at the slowest row's 2.75 px/frame that
+            // is 264 px, so a unit per 256 px of distance is a margin.
             let trip: u16 = Pilot::apart(airframes[FOE].x_px, Pilot::pad_x());
             if airframes[FOE].fuel < FOE_FUEL_LOW + ((trip >> 8) as u8) || votes >= 2 { pilot.state = FOE_PAD; }
         }

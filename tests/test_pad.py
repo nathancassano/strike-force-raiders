@@ -99,18 +99,21 @@ def test_the_deck_rearms_and_refuels(snes):
     assert v.airframes__bombs.u8[0] == 10
 
 
-def test_fuel_burns_one_unit_per_64_frames(snes):
+def test_fuel_burns_one_unit_per_96_frames(snes):
+    """A unit every 97 frames (the countdown from 96, then the burn): about
+    162 s on a full tank. It was 64, 108 s."""
     boot(snes, "MISSION_TEST_QUIET").wait(20).right(240)
     v = read_snapshot(snes)
-    assert v.airframes__fuel.u8[0] == 96
+    assert v.airframes__fuel.u8[0] == 98
 
 
 def test_a_dry_tank_sinks_and_crashes(snes):
     """The tank runs dry at hover and the airframe sinks with no input;
     touching the ground on a dead stick is the loss - a life gone, and by
-    7200 frames the next airframe is up at hover height.
+    10400 frames the next airframe is up at hover height (the tank lasts
+    9700).
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(7200)
+    boot(snes, "MISSION_TEST_QUIET").wait(10400)
     v = read_snapshot(snes)
     assert v.airframes__lives.u8[0] == 3
     assert v.airframes__y.u16[0] == 112 * 256
