@@ -162,6 +162,36 @@ def test_a_dry_tank_on_the_deck_is_saved(snes):
     assert v.airframes__fuel.u8[0] > 0
 
 
+def test_a_dry_tank_on_the_enemy_deck_is_lost(snes):
+    """The enemy's deck (x 7072) is open ground to the player: come down dry
+    on it and the pilot gets out, the airframe on its fuse."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20)
+    snes.write("airframes__x_px", 7072, 2)
+    touch_down_dry(snes).wait(5)
+    v = read_snapshot(snes)
+    assert v.airframes__landed.u8[0] == 1
+    assert v.player__on_pad.u8[0] == 0
+    assert v.airframes__fuel.u8[0] == 0
+    assert v.airframes__fuse.u8[0] > 0
+
+
+def test_the_enemy_deck_does_not_refit_the_player(snes):
+    """A powered landing on the enemy's deck lands, but nothing is refilled:
+    fuel, hp and rounds planted low stay where they were."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20)
+    snes.write("airframes__x_px", 7072, 2)
+    snes.write("airframes__fuel", 20, 1)
+    snes.write("airframes__hp", 10, 1)
+    snes.write("airframes__gun", 5, 1)
+    snes.down(80).wait(150)
+    v = read_snapshot(snes)
+    assert v.airframes__landed.u8[0] == 1
+    assert v.player__on_pad.u8[0] == 0
+    assert v.airframes__fuel.u8[0] <= 20
+    assert v.airframes__hp.u8[0] <= 10
+    assert v.airframes__gun.u8[0] == 5
+
+
 def touch_down_dry(snes):
     """From hover over open ground, the tank emptied: down to the touchdown."""
     snes.write("airframes__fuel", 0, 1)

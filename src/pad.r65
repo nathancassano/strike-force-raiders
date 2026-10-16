@@ -1,4 +1,5 @@
-// pad - landing pads: the only place the helicopter refuels and rearms.
+// pad - landing pads: the only place the helicopter refuels and rearms -
+// each side at its own; the other side's is open ground to it.
 //
 // Two of them, one per side, placed per the plan's match layout:
 //   bank -> base -> landing pad -> open field -> enemy pad -> base -> bank

@@ -420,8 +420,8 @@ tilemap carries the tile priority bit for exactly this - see the Makefile). The 
 are off until it is up. **A dry tank is a slow forced descent**: the vertical speed goes to a
 steady `HELI_SINK` (0.5 px/frame - a dive or a climb is arrested within a second; from hover about
 two seconds down) whatever the stick says, while left and right still fly it - the player's; the
-enemy's way on just bleeds off. Touching down on a deck saves it (it lands and the deck refuels
-it; the enemy's, its own deck only), and open ground is the loss: the pilot and the men aboard
+enemy's way on just bleeds off. Touching down on its own deck saves it (it lands and the deck refuels
+it - each side's deck only: the other side's is open ground, no refuel, no repair), and open ground is the loss: the pilot and the men aboard
 get out at once, and the airframe sits there `HELI_DRY_FUSE` (60) frames (`Airframe::fuse`,
 landed, nothing picked up, no lift-off) before it goes up. They become infantry
 (`para_disembark`): already down in the para pool, a convoy space apart behind the airframe

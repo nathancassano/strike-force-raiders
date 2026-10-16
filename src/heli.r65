@@ -197,7 +197,7 @@ struct Airframe {
 // What only the player's airframe has.
 #[soa]
 struct Player {
-    on_pad:   u8,       // landed, and the ground is a deck
+    on_pad:   u8,       // landed, and the ground is its own deck
     men:      u8,       // aboard (para.r65)
     pause:    u8,       // frames left on the ground before the pan
     cam_step: u16,      // the pan home, px/frame, sized when it starts
@@ -456,15 +456,16 @@ impl Player {
             // at zero vertical speed does not count, which is what stops the
             // floor from catching an airframe that is merely skimming it. Open
             // ground takes a powered landing anywhere - that is how men are
-            // picked up in the field - and a deck takes any landing; a dead
-            // stick that meets open ground is lost. The crash test
+            // picked up in the field - and its own deck takes any landing; a
+            // dead stick that meets open ground, or the enemy's deck, is lost. The crash test
             // takes vx after the move (a copy before it cost the stress run 7
             // ticks): at a world edge the move has stopped it, so a dive into
             // the edge lands.
             if airframes[HELI].y == HELI_Y_MAX {
                 if airframes[HELI].fuel == 0
-                   && pad_at(airframes[HELI].x_px + (HELI_W >> 1)) >= PAD_COUNT {
-                    // Out of fuel off a deck, down is the end - but the pilot
+                   && pad_at(airframes[HELI].x_px + (HELI_W >> 1)) != 0 {
+                    // Out of fuel off its own deck (pad 0; the enemy's, pad 1,
+                    // is open ground to it), down is the end - but the pilot
                     // and the men aboard get out and fight on as infantry,
                     // and it sits there HELI_DRY_FUSE frames before it goes up.
                     para_disembark(airframes[HELI].x_px + ((HELI_W - UNIT_MAN_W) >> 1),
@@ -481,7 +482,8 @@ impl Player {
                 }
                 if descending != 0 {
                     player.on_pad = 0;
-                    if pad_at(airframes[HELI].x_px + (HELI_W >> 1)) < PAD_COUNT { player.on_pad = 1; }
+                    // Only its own deck, pad 0, refuels and repairs it.
+                    if pad_at(airframes[HELI].x_px + (HELI_W >> 1)) == 0 { player.on_pad = 1; }
                     airframes[HELI].landed = 1;
                 }
             }
