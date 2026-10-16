@@ -109,7 +109,11 @@ const SUPER_MEN_MAX:   u8 = 5;
 const BASE_W:     u16 = 64;
 const BASE_RANGE: u16 = 320;
 const BASE_RATE:  u8  = 45;
-const BASE_LAUNCHER_DX: u16 = 24;          // the tower's left edge in the base
+// The launcher stands on the hangar roof between the two towers
+// (tools/base_art.py), centred over the base's middle, where its missile
+// leaves from: its 16x16 cell this far in and this far below the box's top.
+const BASE_LAUNCHER_DX: u16 = 24;
+const BASE_LAUNCHER_DY: u8  = 2;
 
 // ---------------------------------------------------------------- bank ---
 // The end bunker holds the funds. Its gun covers BANK_RANGE like a
@@ -340,7 +344,7 @@ far fn struct_draw() {
                     if slot < OAM_SLOTS {
                         let mut tile: u16 = STRUCT_TILE_LAUNCHER_LOADED as u16;
                         if structs[i].t != 0 { tile = STRUCT_TILE_LAUNCHER_EMPTY as u16; }
-                        oam.set_full!(slot as u8, (sx + BASE_LAUNCHER_DX) & 0x01FF, structs[i].top - 16, tile | attr);
+                        oam.set_full!(slot as u8, (sx + BASE_LAUNCHER_DX) & 0x01FF, structs[i].top + BASE_LAUNCHER_DY, tile | attr);
                         oam.set_size!(slot as u8, 1);
                     }
                 }

@@ -19,9 +19,10 @@ drift apart. This adds rows 6-13:
                chain (8x8) at col 4       bunker (32x24 in 32x32) at cols 6-9
                bank   (32x24 in 32x32) at cols 10-13
     row 10-13  super bunker (40x24 in 48x32) at cols 0-5
-               base (64x32) at cols 6-13
+               base (64x32) at cols 6-13 - now tools/base_art.py's, from a
+               ComfyUI render: re-run that after this, or lose it
     row 14-15  cols 12-15: the base's missile launcher, loaded at tile 236
-               and empty at 238 (16x16 each), drawn on the base's tower
+               and empty at 238 (16x16 each), drawn on the base's roof
     row 1      cols 12-14: the missile heading E, NE, N (8x8 tiles 28-30)
                col 15: the radar's camera bracket (8x8 tile 31, radar.r65
                RADAR_BRACKET_TILE) - the window's edges, drawn as a sprite

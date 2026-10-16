@@ -239,7 +239,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` is the exception that already is final art. It paints the sky's two sheets from
@@ -375,7 +375,10 @@ inline in `struct_draw` behind the bunker test, since the stress movie sits on t
 and even a per-building compare cost it frames); the bank's gun falls silent after two shells and an enemy
 infantryman at the player's bank - or a paratrooper landing in its doorway - halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
-`tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp`; the airframe's
+`tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp` - but the home base,
+which `tools/base_art.py` stamps from a ComfyUI render (a hangar, its control tower and a flagged
+tower; the launcher on the roof between them, `BASE_LAUNCHER_DX`/`_DY`), fitted to the sheet's
+palette with the greens as the owner's colour and two extra entries (12, 13) of its own; the airframe's
 own sheet is drawn by `tools/heli_art.py`, and both write their 4-bit BMP through
 `tools/bmp4.py`, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
 
