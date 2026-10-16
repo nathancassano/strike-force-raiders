@@ -172,6 +172,21 @@ def test_the_hot_pilot_hunts_the_player(snes):
     assert v.airframes__lives.u8[1] == 4
 
 
+def test_the_hot_pilot_bombs_the_player_on_its_deck(snes):
+    """Landed on its own deck and left there, the player's airframe is no
+    refuge: the hunter flies over it at hover height, gun or no gun, and
+    bombs it - lost by frame 1300, the pilot's lives untouched. The quiet
+    row (no CPU_KILL_COPTER) leaves a landed airframe alone.
+    """
+    boot(snes, "MISSION_TEST_HUNTER").wait(20).right(180).wait(60).down(30).wait(40)
+    v = read_snapshot(snes)
+    assert v.player__on_pad.u8[0] == 1
+    snes.wait(1300)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[0] == 3
+    assert v.airframes__lives.u8[1] == 4
+
+
 def test_the_pilot_steps_out_of_a_hover(snes):
     """Avoidance on both airframes' closing speed: the player hovers in the
     wander's path at x 989 and the pilot steps out of its plane on every pass.

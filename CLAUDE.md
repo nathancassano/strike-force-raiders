@@ -588,7 +588,9 @@ one on the first two rows) → the pad; **dodge** the nearest opposing round wit
 two heights - a round from the ground gets the jink (`foe_jink`, four heights every 16 frames),
 one from the air a step over or under, and the spot flown to stays what it was; **hunt** the
 player's airframe when `pilot.hunt` and it is within 512 px and not landed - a standoff off it,
-level, for the gun, or two heights above it for a bomb once the gun is dry; **bomb** the nearest
+level, for the gun, or two heights above it for a bomb once the gun is dry - or when it sits on
+its own deck (`pilot.deck`: any `CPU_KILL_COPTER` row with bombs aboard, mood or not), from hover
+height over it, bombs whatever the gun holds; **bomb** the nearest
 player unit the row's `kill_*` flags allow within 512 px (from a hover over it), then the
 nearest player turret or bunker on a **pass** - `FOE_PASS` (192 px) beyond it, since a bomb
 from a hover falls straight down the turret's own stream of rounds; a turret only with hp ≥

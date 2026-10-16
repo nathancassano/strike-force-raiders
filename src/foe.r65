@@ -161,6 +161,7 @@ struct Pilot {
     steal:    u8,       // the 1-in-4 window in which a raid may start (the original's stealB)
     raid:     u8,       // a raid under way: held until its men are out
     robbing:  u8,       // the drop under way is the raid's: no room needed (para_drop)
+    deck:     u8,       // the hunt is a landed player airframe on its deck: bomb it, gun or no gun
 }
 #[lowram] static mut pilot: Pilot;
 
@@ -182,6 +183,7 @@ impl Pilot {
         pilot.drop = 0;
         pilot.gap = 0;
         pilot.state = FOE_WANDER;
+        pilot.deck = 0;
         pilot.high = 0;
         pilot.avoid = 0;
         pilot.seen = 0;
@@ -494,8 +496,9 @@ impl Pilot {
         let mut ty: u16 = 0;
         let mut tgt: u8 = pilot.tgt;
         if pilot.state == FOE_HUNT {
-            // Bombing the player's airframe: its centre, and it has to be below.
-            if airframes[FOE].gun > 0 || airframes[HELI].dead != 0 { return; }
+            // Bombing the player's airframe: its centre, and it has to be
+            // below - once the gun is dry, or at once on its deck.
+            if (airframes[FOE].gun > 0 && pilot.deck == 0) || airframes[HELI].dead != 0 { return; }
             tx = airframes[HELI].x_px + (HELI_W >> 1);
             ty = airframes[HELI].y >> 8;
             tgt = FOE_TGT_NONE;
@@ -1001,12 +1004,24 @@ impl Pilot {
         }
 
         // Hunt: level with the player's airframe a standoff away for the
-        // gun; above it for a bomb once the gun is dry.
-        if pilot.hunt != 0 && airframes[HELI].dead == 0 && airframes[HELI].rising == 0 && airframes[HELI].landed == 0 {
+        // gun; above it for a bomb once the gun is dry. Sitting on its own
+        // deck it is bombed from hover height whatever the gun holds, on any
+        // row that hunts airframes, mood or not - the deck is no refuge.
+        // (The pad is 240 px clear of the base's missiles.)
+        pilot.deck = 0;
+        if airframes[HELI].landed != 0 && player.on_pad != 0 && airframes[FOE].bombs > 0
+           && (cpu_stats[cpu_level as u16].flags & CPU_KILL_COPTER) != 0 {
+            pilot.deck = 1;
+        }
+        if airframes[HELI].dead == 0 && airframes[HELI].rising == 0
+           && (pilot.deck != 0 || (pilot.hunt != 0 && airframes[HELI].landed == 0)) {
             let hx: u16 = airframes[HELI].x_px;
             if Pilot::apart(hx, airframes[FOE].x_px) < FOE_VIEW {
                 pilot.state = FOE_HUNT;
-                if airframes[FOE].gun > 0 || airframes[FOE].bombs == 0 {
+                if pilot.deck != 0 {
+                    pilot.tx = hx;
+                    pilot.ty = HELI_Y_HOVER;
+                } else if airframes[FOE].gun > 0 || airframes[FOE].bombs == 0 {
                     if airframes[FOE].x_px > hx { pilot.tx = hx + FOE_STANDOFF; } else {
                         if hx > FOE_STANDOFF { pilot.tx = hx - FOE_STANDOFF; } else { pilot.tx = 0; }
                     }
