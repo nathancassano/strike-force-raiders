@@ -13,11 +13,13 @@ ENEMY, NOBODY = 1, 2           # owners
 CANOPY = (14, 22, 28)          # the airframe's canopy, BGR555 components
 
 
-# ---- the balloon over the player's own bunker (x=2048) ----------------------
+# ---- the balloon over the neutral bunker (x=3072) -------------------------------
 #
-# It kills the airframe on contact at frame 421 of this climb: a life gone, the
-# airframe back at the start but hidden. The camera - 1945 at the loss - stays
-# on the wreck as it falls (~35 frames) and for a second after it goes up on
+# A balloon is a danger to every side's airframe but its owner's: the player's
+# own at 2048 lets it by, and the neutral one kills it on contact at frame 803
+# of this climb: a life gone, the airframe back at the start but hidden. The
+# camera - 2964 at the loss - stays
+# on the wreck as it falls (~28 frames) and for a second after it goes up on
 # the ground, then pans home in HELI_PAN (72) frames at camera_x/72+1 a frame
 # on top of the follow's 6. 167 frames on the view is home and the next
 # airframe starts rising out of the ground at a pixel a frame from the ground
@@ -29,28 +31,28 @@ def test_balloon_kill(state):
     assert v.airframes__lives.u8[0] == 3
     assert v.airframes__x_px.u16[0] == 64
     assert v.airframes__dead.u8[0] == 72              # HELI_PAN: the pan home is all still to come
-    assert v.camera_x == 1945
+    assert v.camera_x == 2964
 
 
 def test_balloon_pan(state, tmp_path):
     """The camera stays on the wreck while it falls, and for a second
     (HELI_GROUND_PAUSE) after it goes up on the ground, before the pan
     home. Lost at full speed to the right, the wreck kept half that speed
-    all the way down, ~85 px, landing ~35 frames on: 60 frames after the
-    loss it is 35 frames into its second, the camera still on it.
+    all the way down, landing ~27 frames on: 60 frames after the loss it is
+    33 frames into its second, the camera still on it.
     """
     snes = state(balloon_hit)
     snes.wait(60)
     v = read_snapshot(snes)
     assert v.airframes__x_px.u16[0] == 64
     assert v.airframes__dead.u8[0] == 72
-    assert v.player__pause.u8[0] == 35
-    assert v.camera_x == 1991
+    assert v.player__pause.u8[0] == 33
+    assert v.camera_x == 3023
     assert screen_colour(snes, tmp_path, CANOPY, snes_colour=True) == 0, "the canopy is nowhere on screen"
 
 
 def test_balloon_rise(state):
-    """The next airframe rises once the wreck has fallen (~35 frames), had
+    """The next airframe rises once the wreck has fallen (~28 frames), had
     its second on the ground (60) and the camera has panned home (72).
     """
     snes = state(balloon_hit)
@@ -59,7 +61,7 @@ def test_balloon_rise(state):
     assert v.airframes__x_px.u16[0] == 64
     assert v.airframes__dead.u8[0] == 0
     assert v.airframes__rising.u8[0] == 1
-    assert v.airframes__y.u16[0] == 174 * 256
+    assert v.airframes__y.u16[0] == 172 * 256
     assert v.camera_x == 0
 
 
@@ -99,10 +101,11 @@ def test_the_enemy_bases_missiles_down_an_airframe(snes):
     """An airframe pushed into the base's 320 px is lost inside two hundred
     frames and comes back at the start with a life gone.
 
-    The push is held to 1520 vblanks: at 1500 the run coasts to a stop just
-    outside.
+    It climbs first, over the balloons: at hover height the chains of the
+    neutral and enemy bunkers (3072, 5120, 6144) are across its way, and
+    take it long before the base does.
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(20).right(1520).wait(300)
+    boot(snes, "MISSION_TEST_QUIET").wait(20).up(30).right(1520).wait(300)
     v = read_snapshot(snes)
     assert v.airframes__lives.u8[0] == 3
     assert v.airframes__hp.u8[0] == 20

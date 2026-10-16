@@ -129,5 +129,6 @@ def campaign_lost(s):
 
 @rom_state
 def balloon_hit(s):
-    """Climbed into the player's own bunker's balloon (x=2048), frame 421."""
-    boot(s, "MISSION_TEST_QUIET").up(20).right(401)
+    """Climbed past the player's own balloon (x=2048), which is no danger to
+    it, and into the neutral bunker's (x=3072), frame 803."""
+    boot(s, "MISSION_TEST_QUIET").up(20).right(609)

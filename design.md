@@ -280,7 +280,9 @@ convoys, paratroopers and bank raid.
 - **Parachutes fail ~10% of the time** and the man splats. Present in both 1984 and 1991.
 - **Barrage balloons kill helicopters on contact**. ~~A *detached* chain is neutral and
   dangerous to both sides.~~ *Dropped after phase 9: the balloon is shot down and regrows; the
-  chain never detaches.*
+  chain never detaches.* *Amended:* as Armor Alley's, only the other side's balloon and chain
+  are dangerous (a neutral bunker's to both); the chain takes 18 of the airframe's 20 and snaps,
+  the balloon going with it, and the enemy pilot goes over a player balloon rather than under.
 - **Landing next to friendly infantry picks them up** (max 5, within 5 px of the airframe's middle).
   This is the "rescue" the title descends from, and the reason to airlift men to forward bunkers
   rather than walk them across.

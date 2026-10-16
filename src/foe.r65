@@ -70,8 +70,11 @@ const FOE_EDGE:     u16 = 128;            // turn this far from the world's far 
 const FOE_WEST:     u16 = 900;            // ... and here at the player's, short of the
                                           // base's 320 px no-fly zone (400 + 64 + 320):
                                           // no decision sends the airframe west of it
-const FOE_BALLOON_X: u16 = 320;           // keep under a balloon this near: from a jink's top the
-                                          // descent on the player's thrust takes ~48 frames, 240 px
+const FOE_BALLOON_X: u16 = 512;           // keep over a player's balloon this near: the climb from
+                                          // hover height is ~30 frames, but from a descent it is more,
+                                          // and the field's bunkers are 800-1500 px apart - at 320 the
+                                          // gap between two let it sink, and the next chain caught it
+const FOE_OVER_Y:  u16 = (BALLOON_Y - HELI_H - 8) << 8;   // ... at this height or higher
 const FOE_STANDOFF: u16 = HELI_W + 16;    // gun range: sit this far off the target
 const FOE_CLOSE:    u16 = HELI_W + 160;   // ... and clear its plane inside this when it closes:
                                           // a charge closes 8.75 px a frame and the climb takes
@@ -121,10 +124,9 @@ const FOE_PARA:    u8 = 6;                // to a bunker to drop men on it
 const FOE_RAID:    u8 = 7;                // to the player's bank, to rob it
 // The raid's flight, at hover height and the men out once the airframe's
 // middle is this near the bank's. The original flies it high (`y =
-// min(96, y)`), steering round balloons with its whiskers; here a balloon is
-// only ducked under, and climbing back up between the field's balloons
-// carried the airframe into the next one - hover height is under them all,
-// and the base's missiles home in at any height.
+// min(96, y)`), steering round balloons with its whiskers; here it goes
+// over each of the player's balloons as it comes to it (over_balloons), and
+// the base's missiles home in at any height.
 const FOE_RAID_Y:    u16 = HELI_Y_HOVER;
 const FOE_RAID_NEAR: u16 = 16;
 // A bomb target: a unit slot, or a structure index with the top bit set.
@@ -146,7 +148,7 @@ struct Pilot {
     respond:  u8,       // throttle on the chase coin toss
     pass:     u16,      // a bombing pass's far end; AIR_NONE between passes
     pass_tgt: u8,       // ... and what it is over
-    low:      u8,       // a balloon is near: no height above hover, dodge or not
+    high:     u8,       // a player balloon is near: no lower than FOE_OVER_Y, dodge or not
     avoid:    u8,       // frames left of a step out of the other airframe's plane
     seen:     u8,       // 1 while an encounter with it lasts
     blind:    u8,       // frames left of not seeing it
@@ -180,7 +182,7 @@ impl Pilot {
         pilot.drop = 0;
         pilot.gap = 0;
         pilot.state = FOE_WANDER;
-        pilot.low = 0;
+        pilot.high = 0;
         pilot.avoid = 0;
         pilot.seen = 0;
         pilot.blind = 0;
@@ -236,10 +238,13 @@ impl Pilot {
         if airframes[FOE].dead > 0 || airframes[FOE].rising != 0 { return; }
         let fx: u16 = airframes[FOE].x_px;
         let fy: u16 = airframes[FOE].y >> 8;
-        if struct_balloon_at(fx, fy) != 0 {
+        let mut hit: u8 = HIT_NONE;                // odd frames: the player's are even
+        if (frames_loop & 1) != 0 { hit = struct_balloon_at(SIDE_ENEMY, fx, fy); }
+        if hit == HIT_BALLOON || (hit == HIT_CHAIN && airframes[FOE].hp <= CHAIN_DMG) {
             Pilot::lost();
             return;
         }
+        if hit == HIT_CHAIN { airframes[FOE].hp = airframes[FOE].hp - CHAIN_DMG; }
         if fy > RAM_LOW {
             if unit_ram(SIDE_ENEMY, fx, fy) != 0 {
                 Pilot::lost();
@@ -602,11 +607,11 @@ impl Pilot {
         // frame's opportunity.
         if (frames_loop & (FOE_THINK - 1)) == 0 {
             Pilot::think();
-            Pilot::under_balloons();
+            Pilot::over_balloons();
         }
         Pilot::evade();                          // every frame: a round, or the other airframe, is quick
-        // ... but never up into a balloon: a jink's top is above it.
-        if pilot.low != 0 && pilot.ty < HELI_Y_HOVER { pilot.ty = HELI_Y_HOVER; }
+        // ... but never down into a balloon or its chain: a jink's foot is below it.
+        if pilot.high != 0 && pilot.ty > FOE_OVER_Y { pilot.ty = FOE_OVER_Y; }
         Pilot::steer(pilot.tx, pilot.ty);
         Pilot::fire();
 
@@ -1018,7 +1023,7 @@ impl Pilot {
                 pilot.state = FOE_PARA;
                 let bx: u16 = structs[b].x + (structs[b].w >> 1);
                 if bx > (HELI_W >> 1) { pilot.tx = bx - (HELI_W >> 1); } else { pilot.tx = 0; }
-                pilot.ty = HELI_Y_HOVER;          // under the bunker's balloon
+                pilot.ty = HELI_Y_HOVER;          // over_balloons lifts it over a player balloon
                 return;
             }
         }
@@ -1075,21 +1080,22 @@ impl Pilot {
         pilot.ty = foe_weave[(frames_loop >> 6) & 3];
     }
 
-    // Pilot::under_balloons - after every decision: a balloon near enough to
-    // fly into keeps the airframe at hover height, under it, and sets pilot.low
-    // so the every-frame dodge cannot jink it back up. The original
-    // steers around chains and balloons with its whiskers; here the chain
-    // is vertical and the balloon's bottom is above hover height, so under
-    // is always clear.
-    fn under_balloons() {
-        pilot.low = 0;
+    // Pilot::over_balloons - after every decision: a balloon of the player's
+    // near enough to fly into keeps the airframe above it, at FOE_OVER_Y or
+    // higher, and sets pilot.high so the every-frame dodge cannot jink it
+    // back down. Its chain hangs from the balloon to the bunker's roof,
+    // across hover height, so over is the only clear way past; its own
+    // side's balloons are no danger to it (struct_balloon_at). The
+    // original steers around chains and balloons with its whiskers.
+    fn over_balloons() {
+        pilot.high = 0;
         let cx: u16 = airframes[FOE].x_px + (HELI_W >> 1);
         for n in 0..bunker_count {
             let i: u16 = bunker_idx[n] as u16;
-            if structs[i].bal > 0 {
+            if structs[i].bal > 0 && structs[i].owner != SIDE_ENEMY {
                 if Pilot::apart(structs[i].x + BALLOON_DX + (BALLOON_W >> 1), cx) < FOE_BALLOON_X {
-                    pilot.low = 1;
-                    if pilot.ty < HELI_Y_HOVER { pilot.ty = HELI_Y_HOVER; }
+                    pilot.high = 1;
+                    if pilot.ty > FOE_OVER_Y { pilot.ty = FOE_OVER_Y; }
                     return;
                 }
             }

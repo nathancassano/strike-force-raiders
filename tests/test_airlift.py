@@ -44,10 +44,11 @@ def test_field(snes):
 
 def test_lost(state):
     """Men aboard go down with the airframe: five aboard, then a balloon (the
-    player's own bunker's, at x=2048) and the next airframe has none.
+    neutral bunker's, at x=3072 - the player's own at 2048 lets it by) and
+    the next airframe has none.
     """
     snes = state(boarded)
-    snes.upright(36).right(220)
+    snes.upright(36).right(384)
     v = read_snapshot(snes)
     assert v.player__men.u8[0] == 0
     assert v.airframes__lives.u8[0] == 3
@@ -59,7 +60,7 @@ def test_bail(state):
     frames on.
     """
     snes = state(boarded)
-    snes.upright(36).right(220).wait(10)
+    snes.upright(36).right(384).wait(10)
     v = read_snapshot(snes)
     assert v.para_live == 1
     assert v.player__men.u8[0] == 0

@@ -362,7 +362,11 @@ Ownership is an OBJ palette: 0 the sheet's greens, 1 enemy (red-brown), 2 nobody
 palette each sheet carries (it runs in bank 2: boot-only code, and bank 0 is full). Enemy units
 wear palette 1 and the enemy airframe palette 4; the red-brown is one list of colours, so a
 tank and an airframe of the same side match. Turrets and the super bunker loft rounds at the helicopter along the line to it; bunkers
-moor a balloon on a chain that kills any helicopter on contact (a bunker shelled to 0 hp is nobody's
+moor a balloon on a chain, a danger only to a helicopter of another side - Armor Alley's rule
+(`struct_balloon_at`): the balloon ends it on contact, the chain (from the balloon's foot to the
+roof, across hover height) takes `CHAIN_DMG` (18 of 20, the original's) and snaps, the balloon going
+with it; a neutral bunker's is everyone's danger. Both airframes test them on alternate frames,
+each its own parity - flat out an airframe overlaps even the 4 px chain for 7 (a bunker shelled to 0 hp is nobody's
 and balloonless but still capturable - the man who takes it restores it); a manned super bunker also fires
 along the ground at units of any other side outside its box; the base fires homing missiles
 (`MUNI_MISSILE`) inside 320 px, from a launcher on its tower that shows the reload - a missile
@@ -546,7 +550,7 @@ bank 3 to keep room in bank 0, with a bank-3 copy of `unit_apart` (`Pilot::apart
 
 **The enemy airframe** is `airframes[FOE]` with the player's physics, loadout, fuel, pad and
 loss rules - the same methods. It starts hovering at the far edge, facing the player. It is lost to a bomb outright, to 20 points
-of gunfire or two missiles, to a balloon, to contact with the player's airframe (both go), and to
+of gunfire or two missiles, to a balloon not its own (or a chain, with 18 hp or less left), to contact with the player's airframe (both go), and to
 flying into the player's ground (`unit_ram`, either airframe's rule);
 the next one comes after the row's `regen_time`, rising out of the ground at the far edge, and
 the last one is the player's win.
@@ -569,8 +573,10 @@ weave (`foe_weave`, four heights every 64 frames), turning at `FOE_WEST` (900, s
 base's missiles) and 128 px from the far edge. `FOE_WEST` bounds every mode but the bank raid, not just the
 wander: `Pilot::think` clamps the chosen spot to it (a hunt that follows the player home stops
 at the edge), and the bomb pickers skip a unit west of it or a building whose pass would end
-west of it. After every decision `Pilot::under_balloons` pins
-the height to hover within 224 px of a balloon, and every frame `Pilot::evade` overrides the
+west of it. After every decision `Pilot::over_balloons` holds it at `FOE_OVER_Y` (48) or higher
+within `FOE_BALLOON_X` (512) of a balloon not its own - the chain under it rules out going
+beneath, and at 320 px the gap between two bunkers let it sink into the next chain - and every
+frame `Pilot::evade` overrides the
 height only: a round from the ground gets the jink (`foe_jink`, four heights every 16 frames,
 asking full vertical speed - on the player's thrust and drag, like every other move: the two
 airframes carry the same inertia on both axes), one from the air a step over or under, and the
@@ -592,7 +598,7 @@ drop per 30 s, the men 12 frames apart, their chutes failing on the frame count 
 `rand()` (the player's sequence) or `cpu_rand` (the purchases). With men aboard and a drop
 allowed it flies to the nearest bunker or super bunker in view that is not its own
 (`Pilot::para_target`, the `FOE_PARA` mode, after refit, dodge and hunt, before bombing) and
-hovers over it - under the balloon - until they go: not the original's, whose steering leaves
+hovers over it - over the balloon, if the bunker is the player's - until they go: not the original's, whose steering leaves
 buildings alone, but carrying men is for that. **The bank raid** (`FOE_RAID`, campaign missions
 only) is the original's maybeTakeOutEndBunker: with men aboard, in its 1-in-4 steal window
 (`pilot.steal`, rolled with the mode roll on the frame count, not `cpu_rand`), and the player's
@@ -600,8 +606,8 @@ purse over `fund_min` on a `CPU_ROB_BANK` row (the last three missions, the orig
 `killEndB`) or over `fund_max` on any - the original's `fund_max` never fires on its own - and a
 purse paying for the distance (each unit 64 px: `Pilot::raid_wanted`), it flies first after
 refit, through the base's missiles (`think` lifts `FOE_WEST` for it), to the player's bank, and
-within 16 px puts every man out. At hover height, not the original's high flight: climbing back
-up between the field's balloons carried it into the next one. A man who lands in a bank's
+within 16 px puts every man out. At hover height, but over each balloon not its own on the way,
+as `over_balloons` holds it. A man who lands in a bank's
 doorway robs it as he touches down (`struct_bank_rob_at`, from `para_update`), so a raid works
 with the enemy's units at their cap: the raid's drop (`pilot.robbing`, set as it begins and
 cleared when its men are out) skips `para_drop`'s room check. One who lands short of the door

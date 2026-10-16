@@ -216,8 +216,9 @@ def test_the_enemy_raids_the_bank(snes):
     """Blind Spot is a CPU_ROB_BANK mission (cpu.r65): with the player's
     purse over its fund_min and the pilot's 1-in-4 steal window open (both
     planted), the pilot raids - from ~x 6350, where 99 of purse pays for the
-    distance, through the base's missiles at hover height, under the
-    balloons - and over the bank (~frame 1820) puts its men out. Two land in
+    distance, through the base's missiles at hover height, climbing over
+    each balloon not its own (their chains hang across hover height) - and
+    over the bank puts its men out. Two land in
     the doorway and rob it as they touch down (struct_bank_rob_at): 99 ->
     49 -> 24. The third lands short of the door and goes onto the field -
     the raid's drop takes no room, but his own is there once the robbers

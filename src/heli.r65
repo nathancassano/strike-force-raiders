@@ -251,16 +251,23 @@ impl Player {
     }
 
     // Player::collide - enemy rounds against the airframe's box, the
-    // barrage balloons, which end it outright, and the enemy's ground
-    // (unit_ram), which goes with it.
+    // enemy's barrage balloons, which end it outright, and their chains,
+    // which take CHAIN_DMG and snap, and the enemy's ground (unit_ram),
+    // which goes with it.
     fn collide() {
         if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { return; }   // nothing there to hit
         let hx: u16 = airframes[HELI].x_px;
         let hy: u16 = airframes[HELI].y >> 8;
-        if struct_balloon_at(hx, hy) != 0 {
+        // Balloons and chains every other frame, the enemy's airframe on the
+        // other: an airframe flat out overlaps even a 4 px chain for 7 frames,
+        // and the scan at hover height every frame cost the stress run 5 ticks.
+        let mut hit: u8 = HIT_NONE;
+        if (frames_loop & 1) == 0 { hit = struct_balloon_at(SIDE_PLAYER, hx, hy); }
+        if hit == HIT_BALLOON || (hit == HIT_CHAIN && airframes[HELI].hp <= CHAIN_DMG) {
             Player::lost();
             return;
         }
+        if hit == HIT_CHAIN { airframes[HELI].hp = airframes[HELI].hp - CHAIN_DMG; }
         if hy > RAM_LOW {
             if unit_ram(SIDE_PLAYER, hx, hy) != 0 {
                 Player::lost();

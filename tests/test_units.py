@@ -180,9 +180,11 @@ def test_unit_budget(state):
     Then 12 faster (3662/3650): ENEMY CONVOY is announced for the first
     convoy only, so the run's other four no longer bring the portrait up -
     less one for unit_spawn counting the men on their way down (measured
-    3637 before the convoy change).
+    3637 before the convoy change). Then 1 slower (3662/3649): the balloons'
+    chains are tested at hover height too, on alternate frames (every
+    frame cost 5).
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3650
+    assert v.frames_loop == 3649

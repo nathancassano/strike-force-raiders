@@ -69,9 +69,12 @@ const STRUCT_TILE_LAUNCHER_EMPTY:  u8 = 238;
 // bombs wear it down; at zero it is rubble that nobody can hold, drawn
 // with nobody's colours until phase 12 gives it art of its own.
 //
-// Each standing bunker moors a barrage balloon on a chain. The balloon
-// kills a helicopter of either side on contact - the plan's quirk worth
-// keeping - and gunfire brings it down; it regrows after a while.
+// Each standing bunker moors a barrage balloon on a chain. As in Armor
+// Alley (Helicopter.js collides only with the other side's balloons and
+// chains), they are a danger to the other side's helicopter alone: the
+// balloon ends it on contact, the chain takes CHAIN_DMG and snaps, the
+// balloon going with it. Gunfire brings a balloon down; it regrows after a
+// while.
 const BUNKER_W:       u16 = 32;
 const BUNKER_ROOF_Y:  u16 = GROUND_Y - 24;
 const BUNKER_DMG_SHELL: u8 = 8;
@@ -123,6 +126,15 @@ const BALLOON_DX:     u16 = 8;            // over the bunker's centre
 const BALLOON_Y:      u16 = 72;
 const BALLOON_W:      u16 = 16;
 const BALLOON_H:      u16 = 16;
+// The chain hangs from the balloon's foot to the bunker's roof, its links'
+// drawn pixels columns 2-5 of the 8x8 tile set 4 px into the balloon.
+const CHAIN_DX:       u16 = BALLOON_DX + 6;
+const CHAIN_W:        u16 = 4;
+const CHAIN_DMG:      u8  = 18;           // Armor Alley's damagePoints, of the airframe's 20
+// struct_balloon_at's answers.
+const HIT_NONE:       u8  = 0;
+const HIT_BALLOON:    u8  = 1;
+const HIT_CHAIN:      u8  = 2;
 
 static struct_stats: [StructStat; 5] = [
     // Turret: hit points are the plan's 31, doubled so tank fire's 8 and
@@ -756,25 +768,31 @@ fn struct_balloon_hit(i: u16) {
     }
 }
 
-// struct_balloon_at - is the airframe's box on a balloon? Any bunker's:
-// a balloon does not care whose helicopter it is.
-far fn struct_balloon_at(hx: u16, hy: u16) -> u8 {
-    // An airframe at hover height is under every balloon: no scan.
-    if hy >= BALLOON_Y + BALLOON_H { return 0; }
+// struct_balloon_at - is *side*'s airframe, its box at (hx, hy), on a
+// balloon or a chain of the other side's (or nobody's)? HIT_BALLOON,
+// HIT_CHAIN - the chain snapped, its balloon gone to regrow - or HIT_NONE.
+// Its own side's are no danger to it.
+far fn struct_balloon_at(side: u8, hx: u16, hy: u16) -> u8 {
+    // Above the balloons, or below the chains' foot on the roofs: no scan.
+    if hy + HELI_H <= BALLOON_Y || hy >= BUNKER_ROOF_Y { return HIT_NONE; }
     for n in 0..bunker_count {
         let i: u16 = bunker_idx[n] as u16;
-        if structs[i].bal > 0 {
+        if structs[i].bal > 0 && structs[i].owner != side {
             let bx: u16 = structs[i].x + BALLOON_DX;
-            if hx + HELI_W > bx {
-                if hx < bx + BALLOON_W {
-                    if hy + HELI_H > BALLOON_Y {
-                        if hy < BALLOON_Y + BALLOON_H { return 1; }
-                    }
+            if hy < BALLOON_Y + BALLOON_H {
+                if hx + HELI_W > bx && hx < bx + BALLOON_W { return HIT_BALLOON; }
+            }
+            if hy + HELI_H > BALLOON_Y + BALLOON_H {
+                let cx: u16 = structs[i].x + CHAIN_DX;
+                if hx + HELI_W > cx && hx < cx + CHAIN_W {
+                    structs[i].bal = 0;              // snapped: the balloon goes
+                    structs[i].t = BALLOON_REGROW;
+                    return HIT_CHAIN;
                 }
             }
         }
     }
-    return 0;
+    return HIT_NONE;
 }
 
 // ------------------------------------------------------- super bunker ---
