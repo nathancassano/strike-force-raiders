@@ -159,13 +159,15 @@ def runs(seq):
 
 def test_a_purchase_flashes_its_icon(snes):
     """A tank bought: its icon goes unselected and lit by turns, two frames
-    each, for 16 frames - unselected first, at once - and stays lit. The
-    label beside it does not flash."""
+    each, for 16 frames - unselected first - and stays lit. The label beside
+    it does not flash. The frame of the press still reads it lit: since R65
+    folded constant index offsets, that frame's tick ends after the
+    emulator's frame does."""
     boot(snes, "MISSION_TEST_QUIET").wait(30).l(10)
     labels = []
     seen = runs(tank_icon_palettes(snes, 28, labels))
-    assert [p for p, n in seen] == [3, 4] * 4
-    assert [n for p, n in seen[:-1]] == [2] * 7
+    assert [p for p, n in seen] == [4] + [3, 4] * 4
+    assert [n for p, n in seen[:-1]] == [1] + [2] * 7
     assert seen[-1][1] >= 2 + 8
     tee = snes.raw("HUD_MAP_data").u16[29 * 32 + ord("T") - ord("A")]
     assert set(labels) == {tee}

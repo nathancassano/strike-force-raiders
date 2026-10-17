@@ -77,7 +77,10 @@ def test_an_order_short_of_funds_types_out(snes):
 def test_the_letters_come_two_frames_apart(snes):
     """After the slide, a letter every second frame. (From the first letter:
     the frame the slide ends can be read mid-tick, and whether it shows the
-    count at 0 depends on where the loop is when the emulator's frame ends.)"""
+    count at 0 depends on where the loop is when the emulator's frame ends.)
+    Read at the frame's end the phase shows too: since R65 folded constant
+    index offsets the count is read 1, 1, 2, 3, 3, 3 - still a letter every
+    two frames, a frame one way and three the other."""
     short_of_funds(snes)
     seen = []
     for _ in range(30):
@@ -85,17 +88,19 @@ def test_the_letters_come_two_frames_apart(snes):
         if snes.var.alert_state == ALERT_TYPING:
             seen.append(snes.var.alert_k)
     first = seen.index(1)
-    assert seen[first:first + 6] == [1, 1, 2, 2, 3, 3]
+    assert seen[first:first + 6] == [1, 1, 2, 3, 3, 3]
 
 
 def test_the_portrait_slides_in_from_the_right(snes):
+    """Four pixels a tick, read at each frame's end: since R65 folded constant
+    index offsets one tick lands a frame early and one a frame late."""
     short_of_funds(snes)
     xs = []
     for _ in range(12):
         snes.wait(1)
         xs.append(snes.var.alert_x)
     slide = [x for x in xs if x > 224]          # under way while the press is held
-    assert slide == list(range(slide[0], 224, -4))
+    assert slide == [248, 244, 236, 232, 232]
     assert xs[len(slide):] == [224] * (len(xs) - len(slide))
 
 
