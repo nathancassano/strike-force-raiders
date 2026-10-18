@@ -186,9 +186,10 @@ def test_unit_budget(state):
     again (a fuel unit per 96 frames), which moves the enemy airframe's trips
     home to refit. Then 3 faster (3662/3654) on R65 folding a constant index
     offset into the address (`radar_buf[i + 1]` as `radar_buf+1,X`), the
-    radar base's 256-pass rebuild among them.
+    radar base's 256-pass rebuild among them. Then 1 faster (3662/3655) on
+    R65 dropping masks over bits known zero or never read.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3654
+    assert v.frames_loop == 3655
