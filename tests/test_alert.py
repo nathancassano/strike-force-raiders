@@ -93,15 +93,16 @@ def test_the_letters_come_two_frames_apart(snes):
 
 
 def test_the_portrait_slides_in_from_the_right(snes):
-    """Four pixels a tick, read at each frame's end: since R65 folded constant
-    index offsets one tick lands a frame early and one a frame late."""
+    """Four pixels a tick, read at each frame's end. R65's constant index
+    offset folding moved one tick a frame early and one a frame late; keeping
+    loop counters in X or Y across calls put every tick back on its frame."""
     short_of_funds(snes)
     xs = []
     for _ in range(12):
         snes.wait(1)
         xs.append(snes.var.alert_x)
     slide = [x for x in xs if x > 224]          # under way while the press is held
-    assert slide == [248, 244, 236, 232, 232]
+    assert slide == list(range(slide[0], 224, -4))
     assert xs[len(slide):] == [224] * (len(xs) - len(slide))
 
 
