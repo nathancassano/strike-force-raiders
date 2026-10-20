@@ -243,8 +243,10 @@ fn main() -> ! {
 
         if sfx_mask != 0 { sound_flush(); }     // what this tick queued, up to one more
 
-        // Draw order is the OAM drop policy: airframe, munitions in flight,
-        // buildings, then ground units from the camera centre outward.
+        // Draw order is the OAM drop policy and the sprites' stacking (a
+        // lower slot draws on top): airframe, munitions in flight, ground
+        // units from the camera centre outward, then buildings and decks -
+        // so a unit stands in front of a building it passes.
         if game_state != GAME_SCREEN {
             oam_begin();
             airframes[HELI].draw();
@@ -254,9 +256,9 @@ fn main() -> ! {
             muni_draw();
             if fx_live != 0 { fx_draw(); }
             para_draw();
+            unit_draw();
             struct_draw();
             pad_draw();
-            unit_draw();
             oam_end();
         }
         frames_loop = frames_loop + 1;

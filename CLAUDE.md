@@ -351,7 +351,8 @@ column with one entry per variant in tag order. Three rules come out of it:
   matches on it.
 
 OAM slots come from `oam_begin`/`oam_take`/`oam_end` in draw order - airframe, munitions,
-buildings, units from the camera centre out - because the PPU drops what it evaluates last.
+units from the camera centre out, then buildings and decks - because the PPU drops what it
+evaluates last, and a lower slot draws on top: a unit stands in front of a building it passes.
 `tools/oamstat.py oam.bin` reads a `--dump oam` and reports peak sprites and tiles per scanline
 against the 32 / 34 hardware limits. `oam_end` parks only up to last frame's high-water mark.
 
