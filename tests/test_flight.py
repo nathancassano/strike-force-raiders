@@ -205,10 +205,10 @@ def test_turn_wound_back_never_changes_facing(snes):
 FREE, BULLET, BOMB = 0, 1, 2
 
 
-def test_loadout_is_64_rounds_and_10_bombs(snes):
+def test_loadout_is_96_rounds_and_10_bombs(snes):
     boot(snes, "MISSION_CAKE_WALK")
     v = read_snapshot(snes)
-    assert v.airframes__gun.u8[0] == 64
+    assert v.airframes__gun.u8[0] == 96
     assert v.airframes__bombs.u8[0] == 10
 
 
@@ -216,7 +216,7 @@ def test_30_frames_of_fire_is_5_rounds(snes):
     """HELI_GUN_RATE is 6, so 30 frames of held fire is exactly 5 rounds."""
     boot(snes, "MISSION_TEST_QUIET").wait(10).b(30)
     v = read_snapshot(snes)
-    assert v.airframes__gun.u8[0] == 59
+    assert v.airframes__gun.u8[0] == 91
 
 
 def test_holding_a_drops_one_bomb(snes):
@@ -233,8 +233,12 @@ def test_two_presses_drop_two_bombs(snes):
 
 
 def test_firing_past_empty_stops_at_zero(snes):
-    """Firing past empty must stop at zero, not wrap to 255."""
-    boot(snes, "MISSION_TEST_QUIET").wait(10).b(400)
+    """Firing past empty must stop at zero, not wrap to 255.
+
+    Three rounds in the air hold the trigger until the first runs out
+    (GUN_LIFE, 20 frames), so a round every 6.7 frames: 96 take ~640.
+    """
+    boot(snes, "MISSION_TEST_QUIET").wait(10).b(700)
     v = read_snapshot(snes)
     assert v.airframes__gun.u8[0] == 0
 
@@ -249,8 +253,8 @@ def test_the_nose_follows_the_stick(snes):
 
 
 # Pool lifecycle. A bomb falls to the ground in ~25 frames and retires on
-# contact; a round retires on BULLET_LIFE, which is what stops sustained fire
-# from starving the pool.
+# contact; a round retires on GUN_LIFE (a building's on BULLET_LIFE), which is
+# what stops sustained fire from starving the pool.
 
 def test_a_dropped_bomb_is_live(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(10).a(1)
@@ -274,6 +278,31 @@ def test_a_fired_round_is_live(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(10).b(1)
     v = read_snapshot(snes)
     assert v.muni_kind.u8[0] == BULLET
+
+
+def test_a_round_flies_16_px_a_frame(snes):
+    """The airframes' gun, GUN_SPEED: twice a building's 8 px/frame (Q10)."""
+    boot(snes, "MISSION_CAKE_WALK").wait(10).b(1)
+    v = read_snapshot(snes)
+    assert v.muni_vx.u16[0] == 16 * 64
+
+
+def test_three_rounds_are_in_the_air_at_most(snes):
+    """Held fire settles at three rounds up - a round every 6 frames and
+    GUN_LIFE 20 would carry a fourth for two frames in every six."""
+    boot(snes, "MISSION_TEST_QUIET").wait(10).b(60)
+    v = read_snapshot(snes, "b")
+    assert [v.muni_kind.u8[i] for i in range(16)].count(BULLET) == 3
+    assert v.airframes__gun.u8[0] == 86
+
+
+def test_the_third_round_holds_the_trigger(snes):
+    """The fourth round waits for the first to run out, so the gun fires a
+    round every 6.7 frames rather than every 6: 400 frames fire 60 rounds
+    of the 96, where without the cap they fired 67."""
+    boot(snes, "MISSION_TEST_QUIET").wait(10).b(400)
+    v = read_snapshot(snes)
+    assert v.airframes__gun.u8[0] == 36
 
 
 def test_a_round_retires_at_the_end_of_its_range(snes):

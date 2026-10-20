@@ -114,7 +114,7 @@ def test_engineers_board_and_rearm(snes):
     re-arm the airframe on the way in: half the hull, an eighth of the tank,
     a bomb and half the rounds each, capped at a full load. Two bought, the
     airframe landed on open ground ahead of them (x 664, where no deck
-    refills anything), run down by hand: both board, and the load is 0+32+32
+    refills anything), run down by hand: both board, and the load is 0+48+48
     rounds, 2 bombs, 4+10+10 hp capped at 20, 50+12+12 fuel."""
     boot(snes, "MISSION_TEST_QUIET").press("l", "down", frames=3).wait(3)
     snes.press("l", "down", frames=3).wait(3).press("l", "a", frames=3).wait(20)
@@ -127,7 +127,7 @@ def test_engineers_board_and_rearm(snes):
     v = read_snapshot(snes)
     assert v.player__on_pad.u8[0] == 0
     assert v.player__men.u8[0] == 2
-    assert (v.airframes__gun.u8[0], v.airframes__bombs.u8[0]) == (64, 2)
+    assert (v.airframes__gun.u8[0], v.airframes__bombs.u8[0]) == (96, 2)
     assert (v.airframes__hp.u8[0], v.airframes__fuel.u8[0]) == (20, 74)
 
 

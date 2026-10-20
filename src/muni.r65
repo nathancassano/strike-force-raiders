@@ -39,6 +39,14 @@ const BULLET_SPEED: Q10 = 8 * 64;         // 8 px/frame
 // would outlive a hundred later ones and sustained fire would starve the
 // pool. 40 frames is ~320 px, a little over a screen width.
 const BULLET_LIFE: u8 = 40;
+// The airframes' gun is twice as quick as the buildings', 16 px/frame,
+// living half as long for the same ~320 px. One airframe has at most
+// GUN_ROUNDS of its rounds in the air: the trigger waits for one to land
+// or run out (muni_gun_rounds). A round this fast steps over a man, 8 px
+// wide, so unit_collide tests it at the middle of its step as well.
+const GUN_SPEED: Q10 = 16 * 64;
+const GUN_LIFE: u8 = 20;
+const GUN_ROUNDS: u8 = 3;
 const BOMB_GRAVITY: Q10 = 12;             // ~0.19 px/frame^2
 const BOMB_VY_MAX:  Q10 = 6 * 64;
 
@@ -123,6 +131,29 @@ far fn muni_spawn(kind: u8, x_px: u16, y: u16, vx: Q10, vy: Q10, life: u8,
             n = n + 1;
         }
     }
+}
+
+// muni_gun_rounds - how many of *side*'s airframe's rounds are in the air.
+// An airframe's round is told from a building's by its speed, GUN_SPEED
+// either way: nothing else fires a bullet at it.
+fn muni_gun_rounds(side: u8) -> u8 {
+    let mut n: u8 = 0;
+    for i in 0..MUNI_MAX {
+        if muni_kind[i] == MUNI_BULLET && muni_owner[i] == side {
+            if muni_vx[i] == GUN_SPEED || muni_vx[i] == Q10(0) - GUN_SPEED { n = n + 1; }
+        }
+    }
+    return n;
+}
+
+// muni_mid - where a round was half a step back: an airframe's round moves
+// GUN_SPEED, two of a man's widths, so testing only where it ends up would
+// let it pass through him. Anything slower, its own x.
+fn muni_mid(m: u16) -> u16 {
+    let mx: u16 = muni_x_px[m];
+    if muni_vx[m] == GUN_SPEED { return mx - 8; }
+    if muni_vx[m] == Q10(0) - GUN_SPEED { return mx + 8; }
+    return mx;
 }
 
 // muni_move_x - the same 16.8 advance the airframe uses, on a pool slot.

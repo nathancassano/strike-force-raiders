@@ -658,7 +658,12 @@ bunker, the bases and launchers all go through it, and a missile homes on the ai
 side that did not fire it. The CPU's purse reads its real position, and the radar plots it red.
 
 Munitions are 8x8 sprites from a 16-slot struct-of-arrays pool with a rotating free cursor
-(`src/muni.r65`). One kind homes: `MUNI_MISSILE`, the buildings' and the launchers'
+(`src/muni.r65`). **The airframes' gun is its own**: rounds at `GUN_SPEED` (16 px/frame, the
+buildings' `BULLET_SPEED` is 8) living `GUN_LIFE` (20 frames, the same ~320 px), at most
+`GUN_ROUNDS` (3) of one airframe's in the air - the trigger waits on `muni_gun_rounds`, which
+tells them from a building's by that speed - and nose down at `HELI_GUN_DROP` (5 px/frame,
+~17 degrees). A round that fast steps over a man (8 px), so `unit_collide` also tests it half a
+step back (`muni_mid`). One kind homes: `MUNI_MISSILE`, the buildings' and the launchers'
 anti-air missile, which steers at the other side's airframe and does 10 of its 20 points.
 **Neither airframe carries a missile**: the smart missile (Y, `MUNI_SMART`, kind 6) was built
 and then removed - Y does nothing in battle, kind 6 is unused, and bit 0x40 of the CPU rows'

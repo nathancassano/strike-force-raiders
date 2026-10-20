@@ -106,18 +106,18 @@ const HELI_ATTR_RISING: u16 = 0x2000 | HELI_PAGE | OBJ_PAL_HELI;   // 2: see Air
 // The plan's loadout. Ammo is the real bottleneck by design - roughly 21 s to
 // refill from empty once the landing pad arrives - so these are not knobs to
 // loosen without re-reading the economy section.
-const HELI_GUN_MAX:  u8 = 64;
+const HELI_GUN_MAX:  u8 = 96;
 const HELI_BOMB_MAX: u8 = 10;
 const HELI_GUN_RATE: u8 = 6;              // frames between rounds while held
 
 // Where a round leaves the airframe: the nose when facing right, the tail
 // end of the same box when facing left, and level with the cabin.
 const HELI_MUZZLE_Y: u16 = 7;
-// Driving forward the nose drops and the gun fires along it: 1 px down for
-// every 8 forward, about 7 degrees, so a strafing run walks rounds into the
-// ground ahead instead of over everything. While the nose is drawn down at
+// Driving forward the nose drops and the gun fires along it: 5 px down
+// for every 16 forward, about 17 degrees, so a strafing run walks rounds into
+// the ground ahead instead of over everything. While the nose is drawn down at
 // all (tilt from HELI_LEAN_DIP), so the rounds follow the stick as it does.
-const HELI_GUN_DROP: Q10 = 64;            // 1 px/frame
+const HELI_GUN_DROP: Q10 = 320;           // 5 px/frame, at GUN_SPEED's 16
 
 // ----------------------------------------------------------- fuel & pad ---
 // Fuel is a 0-100 gauge; the plan's AI reads "fuel < 30" as its low mark.
@@ -324,20 +324,20 @@ impl Player {
 
         if (held & JOY_B) != 0 {
             if airframes[HELI].gun_cd == 0 {
-                if airframes[HELI].gun > 0 {
+                if airframes[HELI].gun > 0 && muni_gun_rounds(SIDE_PLAYER) < GUN_ROUNDS {
                     airframes[HELI].gun = airframes[HELI].gun - 1;
                     airframes[HELI].gun_cd = HELI_GUN_RATE;
                     let mut mx: u16 = airframes[HELI].x_px + HELI_W;
-                    let mut v: Q10 = BULLET_SPEED;
+                    let mut v: Q10 = GUN_SPEED;
                     if airframes[HELI].face_left != 0 {
                         mx = airframes[HELI].x_px;
-                        v = Q10(0) - BULLET_SPEED;
+                        v = Q10(0) - GUN_SPEED;
                     }
                     // Nose down: the round leaves at a slight downward angle.
                     let mut vy: Q10 = 0;
                     if airframes[HELI].tilt >= HELI_LEAN_DIP { vy = HELI_GUN_DROP; }
                     muni_spawn(MUNI_BULLET, mx, airframes[HELI].y + (HELI_MUZZLE_Y << 8),
-                               v, vy, BULLET_LIFE, SIDE_PLAYER);
+                               v, vy, GUN_LIFE, SIDE_PLAYER);
                     sfx_at(SFX_CHN_GUN, SFX_PLAYER_GUN1, mx);
                 }
             }

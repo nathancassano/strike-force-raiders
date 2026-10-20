@@ -903,6 +903,7 @@ far fn unit_collide() {
         if mk != MUNI_FREE {
             let mx: u16 = muni_x_px[m];
             let my: u16 = muni_y[m] >> 8;
+            let mid: u16 = muni_mid(m);
 
             // A blast reaches everything standing near where the bomb fell,
             // friend included - a bomb does not check sides.
@@ -939,6 +940,7 @@ far fn unit_collide() {
                             if bx > mx { dx = bx - mx; } else { dx = mx - bx; }
                             let mut dy: u16 = 0;
                             if by > my { dy = by - my; } else { dy = my - by; }
+                            if bx > mid { if bx - mid < dx { dx = bx - mid; } } else { if mid - bx < dx { dx = mid - bx; } }
                             if dx < 8 {
                                 if dy < 8 {
                                     muni_drop_bomb(b);
@@ -968,12 +970,12 @@ far fn unit_collide() {
                                 if units[i].owner != muni_owner[m] {
                                     let ux: u16 = units[i].x_px;
                                     // The band was tested once above; the
-                                    // x extent is all that is left.
-                                    if mx >= ux {
-                                        if mx < ux + unit_stats[units[i].kind as u16].width {
-                                            unit_hit(i, unit_damage_for(mk, i));
-                                            muni_kind[m] = MUNI_FREE;
-                                        }
+                                    // x extent is all that is left - at the
+                                    // round and half a step back (muni_mid).
+                                    let w: u16 = unit_stats[units[i].kind as u16].width;
+                                    if mx - ux < w || mid - ux < w {
+                                        unit_hit(i, unit_damage_for(mk, i));
+                                        muni_kind[m] = MUNI_FREE;
                                     }
                                 }
                             }

@@ -148,7 +148,7 @@ man's pace that put five in a heap.)*
   the men aboard get out as infantry. So is **touching down flat out on both axes** - the top descent
   rate and the top horizontal speed (`Airframe::crashes`) - deck or not; anything slower lands.
 - Tilt is cosmetic, derived from vX — not simulated. Damage shake below ~70% health.
-- Ammo: **64 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
+- Ammo: **96 rounds, 10 bombs, up to 5 men.** No smart missiles: they were built (phase 10,
   slice (d)) and then removed from the game, for both airframes.
 - Reload while landed: +8 gun/20f, +1 bomb/10f. Ammo is the real bottleneck
   (~21 s from empty) — that gating is deliberate, keep it.

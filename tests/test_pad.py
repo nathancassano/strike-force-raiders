@@ -91,7 +91,7 @@ def test_the_deck_rearms_and_refuels(snes):
     first, the gun has had seven refills by the snapshot (it had seven
     single rounds when they came back one at a time).
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(20).b(400).a(1).right(180).wait(60).down(30).wait(40).wait(120)
+    boot(snes, "MISSION_TEST_QUIET").wait(20).b(660).a(1).right(180).wait(60).down(30).wait(40).wait(120)
     v = read_snapshot(snes)
     assert v.airframes__landed.u8[0] == 1
     assert v.airframes__fuel.u8[0] == 100
