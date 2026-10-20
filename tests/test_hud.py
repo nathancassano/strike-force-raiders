@@ -229,8 +229,8 @@ def test_a_bombed_van_stops_jamming_the_radar(snes):
     """A bomb dropped straight onto a van goes off on the ground under it and
     kills it, and the next redraw moves the jam to the van behind.
 
-    The hunter's column has its first van (slot 8) at x 3474 by frame 9174,
-    jamming from radar tile 13, and the next at 6788. The airframe is planted
+    The hunter's column has its first van (slot 8) at x 3530 by frame 9174,
+    jamming from radar tile 13, and the next at 6920 (tile 27). The airframe is planted
     20 px ahead of the van at hover height - flying there would meet the
     column's missile truck - and drops one bomb.
     """
@@ -247,4 +247,4 @@ def test_a_bombed_van_stops_jamming_the_radar(snes):
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[8] == FREE
     snes.until("radar_blank")
-    assert snes.u16("radar_jam") == 26
+    assert snes.u16("radar_jam") == 27

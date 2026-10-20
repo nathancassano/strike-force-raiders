@@ -599,7 +599,8 @@ one from the air a step over or under, and the spot flown to stays what it was; 
 player's airframe when `pilot.hunt` and it is within 512 px and not landed - a standoff off it,
 level, for the gun, or two heights above it for a bomb once the gun is dry - or when it sits on
 its own deck (`pilot.deck`: any `CPU_KILL_COPTER` row with bombs aboard, mood or not), from hover
-height over it, bombs whatever the gun holds; **bomb** the nearest
+height over it, bombs whatever the gun holds - wherever it can reach it: the player's deck is
+beside its base now, west of `FOE_WEST`, so in practice it is a refuge; **bomb** the nearest
 player unit the row's `kill_*` flags allow within 512 px (from a hover over it), then the
 nearest player turret or bunker on a **pass** - `FOE_PASS` (192 px) beyond it, since a bomb
 from a hover falls straight down the turret's own stream of rounds; a turret only with hp ≥
@@ -797,7 +798,9 @@ by turns, `MENU_BLINK` (2) frames each for `MENU_FLASH` (16), unselected first, 
 label stays put. A move or letting go of L ends it; a refused order does not flash.
 
 Funds (`src/order.r65`) accumulate `airframes[HELI].x_px >> 4` per frame against `ECON_THRESH`; that
-threshold is the pace knob. Orders go
+threshold is the pace knob. Units come out of the middle of their side's base (`BASE_X_PLAYER`
+420, `BASE_X_ENEMY` 7748) and across the deck beside it: each side's
+deck (`PAD_X`, `src/pad.r65`) sits 8 px off its base's field side, 472 and 7672. Orders go
 through an eight-deep queue that lets the next man out once the last has cleared the gate by a
 convoy space (`unit_spawn`'s spacing test), holding him when the pool is full rather than dropping him. Caps count men on the field plus men queued, and
 infantry and engineers share one cap.

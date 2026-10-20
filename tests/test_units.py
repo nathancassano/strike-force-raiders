@@ -3,9 +3,9 @@
 The player's base sends only what is ordered (phase 7); the enemy's sends the
 CPU's convoys (phase 10). On the quiet row (MISSION_TEST_QUIET) the first
 buy, at frame 64, is I - five men - so the first unit out is an infantryman
-marching west from x=7680; the pool is a tagged enum, so slot 0's kind is its tag. Every unit
+marching west from x=7748, the middle of its base; the pool is a tagged enum, so slot 0's kind is its tag. Every unit
 walks half a pixel a frame - a pixel on each odd frame - so at loop frame
-615 (a wait of 600 plus the movie's lead-in) he is at 7405. `tools/poolstat.py
+615 (a wait of 600 plus the movie's lead-in) he is at 7473. `tools/poolstat.py
 --brief` on a WRAM dump shows the column's shape at any frame; every figure
 below came from that.
 
@@ -28,7 +28,7 @@ def test_the_enemys_first_unit_is_an_infantryman(snes):
 def test_infantry_march_half_a_pixel_a_frame(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(600)
     v = read_snapshot(snes)
-    assert v.units__x_px.u16[0] == 7405
+    assert v.units__x_px.u16[0] == 7473
 
 
 def test_each_kind_takes_its_hit_points_from_unit_stats(snes):
@@ -59,7 +59,7 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     follower halts only behind a halted unit ahead.
 
     Three bought tanks (slots 0, 2, 4) cross the field a convoy space apart;
-    the lead holds 117 px short of the bunker at 5120 to shell it, and the two
+    the lead holds 112 px short of the bunker at 5120 to shell it, and the two
     behind pack up at exactly width + gap (31 px) and halt in turn - every
     flag set. The column is halted from frame 9050 to past 9800 (10000 to
     10600 before FastROM: a faster loop shells the bunker down sooner), so
@@ -72,25 +72,29 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     snes.press("l", "a", frames=3).wait(9450)
     v = read_snapshot(snes)
     assert v.units__block.u8[0] == 1
-    assert v.units__x_px.u16[0] == 5003
+    assert v.units__x_px.u16[0] == 5008
     assert v.units__block.u8[2] == 1
-    assert v.units__x_px.u16[2] == 4972
+    assert v.units__x_px.u16[2] == 4977
     assert v.units__block.u8[4] == 1
-    assert v.units__x_px.u16[4] == 4941
+    assert v.units__x_px.u16[4] == 4946
 
 
 def test_a_man_killed_lies_where_he_fell(snes):
-    """A bomb on the quiet row's first infantryman leaves him down for two
-    seconds: an FX_MAN effect (fx.r65), tile 76 in the enemy palette and
-    mirrored, a hair east of where he stood (his centre, x + 5, less 8).
+    """A bomb on the quiet row's infantry leaves a man down for two seconds:
+    an FX_MAN effect (fx.r65), tile 76 in the enemy palette and mirrored, a
+    hair east of where he stood (his centre, x + 5, less 8). By frame 600
+    he has marched far enough from the enemy base that the airframe, 40 px
+    west of him, is just out of its missiles' 320: planted nearer, it is
+    shot down before it can bomb.
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    boot(snes, "MISSION_TEST_QUIET").wait(600)
     snes.write("airframes__x_px", snes.raw("units__x_px").u16[0] - 40, 2)
     snes.wait(90).a(4).wait(30)
     v = read_snapshot(snes)
-    assert v.fx_kind.u8[3] == 3
-    assert v.fx_attr.u16[3] == 0x724C          # hflip, priority 3, enemy palette, tile 76
-    assert v.fx_x.u16[3] == 7578
+    down = [i for i in range(8) if v.fx_kind.u8[i] == 3]
+    assert len(down) == 1
+    assert v.fx_attr.u16[down[0]] == 0x724C    # hflip, priority 3, enemy palette, tile 76
+    assert v.fx_x.u16[down[0]] == 7446
 
 
 # ---- ramming ------------------------------------------------------------------

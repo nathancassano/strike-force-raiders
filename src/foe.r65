@@ -1017,8 +1017,10 @@ impl Pilot {
         // Hunt: level with the player's airframe a standoff away for the
         // gun; above it for a bomb once the gun is dry. Sitting on its own
         // deck it is bombed from hover height whatever the gun holds, on any
-        // row that hunts airframes, mood or not - the deck is no refuge.
-        // (The pad is 240 px clear of the base's missiles.)
+        // row that hunts airframes, mood or not - wherever the pilot can
+        // reach it: the decks now sit beside the bases, and the player's,
+        // under its base's missiles, is west of FOE_WEST, which think holds
+        // the pilot to. So it is a refuge, until a deck moves out again.
         pilot.deck = 0;
         if airframes[HELI].landed != 0 && player.on_pad != 0 && airframes[FOE].bombs > 0
            && (cpu_stats[cpu_level as u16].flags & CPU_KILL_COPTER) != 0 {

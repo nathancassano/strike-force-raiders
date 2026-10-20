@@ -26,9 +26,9 @@ const PAD_ATTR:  u16 = 0x3000;            // priority 3, OBJ palette 0
 // Three 16x16 cells per deck.
 const PAD_CELLS:    u16 = 3;
 
-// Left edges, in world pixels. The player's pad sits a few screens in from
-// the west bank; the enemy's mirrors it at the far end.
-static PAD_X: [u16; 2] = [1024, 7072];
+// Left edges, in world pixels: each side's deck right beside its base, 8 px
+// off the base's field side (mission.r65's LAYOUT_BASE_W/E, 64 px wide).
+static PAD_X: [u16; 2] = [400 + 64 + 8, 7728 - 8 - 48];
 
 // pad_at - the pad a point is over, or PAD_COUNT for none.
 //

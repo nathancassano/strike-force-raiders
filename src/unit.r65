@@ -642,9 +642,11 @@ fn unit_launch(i: u16) {
 
 // ---------------------------------------------------------------- spawn ---
 // Units come out of each side's base: the player's from orders
-// (order.r65), the CPU's from its convoys (cpu.r65).
-const BASE_X_PLAYER: u16 = 512;
-const BASE_X_ENEMY:  u16 = 7680;
+// (order.r65), the CPU's from its convoys (cpu.r65). From its middle - a
+// 24 px vehicle centred on the 64 px base (mission.r65's LAYOUT_BASE_W/E)
+// - so a unit rolls out of the base and across the side's deck beside it.
+const BASE_X_PLAYER: u16 = 400 + 20;
+const BASE_X_ENEMY:  u16 = 7728 + 20;
 
 // unit_update - one tick for the whole pool.
 far fn unit_update() {

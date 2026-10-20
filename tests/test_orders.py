@@ -27,7 +27,7 @@ def test_the_opening_purse_and_selection(snes):
 
 
 def test_one_press_buys_one_tank(snes):
-    """It comes out of the player's base at x=512 marching east, and the cost
+    """It comes out of the player's base at x=420 marching east, and the cost
     comes off at once.
     """
     boot(snes, "MISSION_TEST_QUIET").press("l", "a", frames=3).wait(30)
@@ -35,7 +35,7 @@ def test_one_press_buys_one_tank(snes):
     assert v.funds == 28
     assert v.units__kind__tag.u8[0] == TANK
     assert v.units__owner.u8[0] == 0
-    assert v.units__x_px.u16[0] == 529
+    assert v.units__x_px.u16[0] == 437
 
 
 def test_infantry_leave_the_gate_one_at_a_time(snes):
