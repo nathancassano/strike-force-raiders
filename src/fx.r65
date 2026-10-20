@@ -10,7 +10,9 @@
 // A fourth is not hindstrike's: a man down (FX_MAN, fx_man), the unit
 // sheet's UNIT_TILE_MAN_DOWN held one long frame where he fell, in his
 // side's palette and facing - so a dead man stays a moment without the
-// unit pool keeping him.
+// unit pool keeping him. A fifth, FX_HIT (fx_hit), is a round striking the
+// ground: obj.bmp's two impact tiles (tools/muni_art.py), a spark and then
+// its dust - 8x8, the one small effect.
 //
 // The sheet sits in the second OBJ name block straight after the airframe
 // sheet (video.r65), so its tiles are FX_TILE0 on with HELI_PAGE set, and
@@ -24,9 +26,11 @@ const FX_BIG:   u8 = 0;            // fx.bmp row 0: SPR_EXPLODE_1, 8 frames
 const FX_SMALL: u8 = 1;            // row 1: SPR_EXPLODE_2, 4 frames
 const FX_SMOKE: u8 = 2;            // row 2: SPR_SMOKE, 8 frames
 const FX_MAN:   u8 = 3;            // obj.bmp's UNIT_TILE_MAN_DOWN, 1 frame
+const FX_HIT:   u8 = 4;            // obj.bmp's FX_HIT_TILE, 2 frames
 const FX_FREE:  u8 = 0xFF;
-static FX_FRAMES: [u8; 4] = [8, 4, 8, 1];
-static FX_RATE:   [u8; 4] = [6, 6, 6, 120];  // ticks a frame: hindstrike's 6; a man lies two seconds
+static FX_FRAMES: [u8; 5] = [8, 4, 8, 1, 2];
+static FX_RATE:   [u8; 5] = [6, 6, 6, 120, 4];  // ticks a frame: hindstrike's 6; a man lies two seconds
+const FX_HIT_TILE: u16 = 224;      // obj.bmp row 14, cols 0-1: 8x8, a frame a tile
 
 const FX_MAX:  u16 = 8;            // effects alive at once; a ninth takes the oldest slot
 
@@ -52,10 +56,21 @@ far fn fx_init() {
 
 // fx_put - start effect *kind* centred on world x *x*, its top at screen
 // y *y*, its first frame *attr* (tile and attribute). Slots are taken in
-// turn, so with all eight running the oldest gives way - it is the nearest
-// to finishing anyway.
+// turn, passing over a running one, so only with all eight running does
+// one give way - the next in turn, the oldest bar what was passed over.
+// (Strafing the ground puts up an impact every few frames; taken strictly
+// in turn they cut a man down's two seconds short.)
 fn fx_put(kind: u8, x: u16, y: u16, attr: u16) {
-    let i: u16 = fx_next;
+    let mut i: u16 = fx_next;
+    let mut n: u16 = 0;
+    while n < FX_MAX {
+        if fx_kind[i] == FX_FREE {
+            n = FX_MAX;
+        } else {
+            i = (i + 1) & (FX_MAX - 1);
+            n = n + 1;
+        }
+    }
     fx_next = (i + 1) & (FX_MAX - 1);
     if fx_kind[i] == FX_FREE { fx_live = fx_live + 1; }
     fx_kind[i] = kind;
@@ -82,6 +97,13 @@ far fn fx_man(x: u16, side: u8) {
     let mut attr: u16 = (UNIT_TILE_MAN_DOWN as u16) | UNIT_ATTR;
     if side == SIDE_ENEMY { attr = attr | 0x4000 | OBJ_PAL_ENEMY; }
     fx_put(FX_MAN, x + 5, UNIT_BASE_Y, attr);
+}
+
+// fx_hit - a round into the ground at world x *x*: the impact's column 4
+// on it (fx_put centres a 16 px cell, so 4 more), its foot on the dirt
+// above the alert box (scanline 184 on). Flipped on odd frames.
+far fn fx_hit(x: u16) {
+    fx_put(FX_HIT, x + 4, GROUND_Y - 8, FX_HIT_TILE | MUNI_ATTR | ((frames_loop & 1) << 14));
 }
 
 // fx_burst - an explosion with smoke after it, at the centre *x* and top
@@ -129,9 +151,14 @@ far fn fx_draw() {
             if sx < 256 || sx >= 0xFFF0 {
                 let slot: u16 = oam_take();
                 if slot < OAM_SLOTS {
-                    let tile: u16 = fx_attr[i] + ((fx_frame[i] as u16) << 1);
-                    oam.set_full!(slot, sx & 0x01FF, fx_y[i], tile);
-                    oam.set_size!(slot, 1);        // 16x16
+                    if k == FX_HIT {               // 8x8, the next tile a frame
+                        oam.set_full!(slot, sx & 0x01FF, fx_y[i], fx_attr[i] + (fx_frame[i] as u16));
+                        oam.set_size!(slot, 0);
+                    } else {
+                        let tile: u16 = fx_attr[i] + ((fx_frame[i] as u16) << 1);
+                        oam.set_full!(slot, sx & 0x01FF, fx_y[i], tile);
+                        oam.set_size!(slot, 1);    // 16x16
+                    }
                 }
             }
         }

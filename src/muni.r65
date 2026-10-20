@@ -51,7 +51,8 @@ const BOMB_GRAVITY: Q10 = 12;             // ~0.19 px/frame^2
 const BOMB_VY_MAX:  Q10 = 6 * 64;
 
 // OBJ tiles, 8x8 (OBSEL small size), from the free slots after the
-// helicopter's three frames.
+// helicopter's three frames. A round is a 3x3 cross in the middle of its
+// tile (tools/muni_art.py).
 const MUNI_TILE_BULLET: u8 = 12;
 const MUNI_TILE_BOMB:   u8 = 13;
 const MUNI_TILE_SHELL:  u8 = 14;
@@ -252,6 +253,9 @@ far fn muni_update() {
                         fx_spawn(FX_BIG, muni_x_px[i], GROUND_Y - 16);
                         muni_y[i] = GROUND_Y << 8;  // on the line, where the buildings' test looks
                     } else {
+                        // A round kicks up the dirt where it lands - its
+                        // cross's middle, 4 px into the tile.
+                        if muni_kind[i] == MUNI_BULLET { fx_hit(muni_x_px[i] + 4); }
                         muni_kind[i] = MUNI_FREE;
                     }
                 } else {

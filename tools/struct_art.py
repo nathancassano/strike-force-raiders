@@ -13,7 +13,8 @@ tile r*16 + c, and a cell's right neighbour is +2, its lower neighbour +32.
 Rows 0-5 hold the munitions, the decks and the units; the airframe has a
 sheet of its own (tools/heli_art.py), and the cells it used to occupy -
 rows 0-1 and 14-15, columns 0-11 - are cleared here so the two cannot
-drift apart. This adds rows 6-13:
+drift apart, all but rows 14-15's columns 0-3, which are muni_art.py's
+(the round's ground impact, tiles 224-225; it draws the round, tile 12, too). This adds rows 6-13:
 
     row  6-7   turret (16x16) at col 0    balloon (16x16) at col 2
                chain (8x8) at col 4       bunker (32x24 in 32x32) at cols 6-9
@@ -376,7 +377,7 @@ def main():
     px = im.load()
 
     clear(px, 0, 0, 96, 16)                     # the airframe's flight frames
-    clear(px, 0, 112, 96, 16)                   # ... and its turn frames
+    clear(px, 32, 112, 64, 16)                  # ... and its turn frames (cols 0-3: muni_art.py's)
     stamp(px, 0, 48, TURRET)
     stamp(px, 16, 48, BALLOON)
     stamp(px, 32, 48, CHAIN)

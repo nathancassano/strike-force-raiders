@@ -241,7 +241,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art,status_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,muni_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art,status_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` and `title_art.py` are the exceptions that already are final art (the title's is below). It paints the sky's two sheets from
@@ -393,7 +393,12 @@ A bomb on the ground is a big blast; a lost airframe and a falling turret or bun
 with a smoke ring after it (`fx_burst`); a destroyed tank, van or launcher a small one with
 smoke; a man killed, `FX_MAN` - not hindstrike's: `obj.bmp`'s man down held one 120-tick frame
 in his side's palette and facing (`fx_man`), each slot carrying its own tile and attribute
-(`fx_attr`). Eight slots, taken in turn, so a ninth replaces the oldest; an explosion's flip is
+(`fx_attr`); a round of gunfire into the dirt, `FX_HIT` (`fx_hit`, from `muni_update`) -
+`obj.bmp`'s two 8x8 impact tiles at 224, a spark then its dust, 4 ticks each - the one
+effect `fx_draw` sizes small (art by
+`tools/muni_art.py`, which also draws the round, a 3x3 cross at tile 12). Eight slots, taken in
+turn but passing over a running one, so only a ninth replaces anything (strafing puts up an
+impact every few frames, and strictly in turn they cut a man down's two seconds short); an explosion's flip is
 from the frame count, never `rand()`. `main` calls `fx_update`/`fx_draw` only while `fx_live` is set - called
 idle every frame they cost `unit_budget` ten ticks.
 

@@ -305,6 +305,18 @@ def test_the_third_round_holds_the_trigger(snes):
     assert v.airframes__gun.u8[0] == 36
 
 
+def test_a_round_into_the_ground_kicks_up_dirt(snes):
+    """Strafing nose down from low, the rounds reach the dirt on screen and
+    each puts up an impact (fx.r65's FX_HIT, kind 4): obj.bmp's 8x8 tile
+    224, the spark, then 225, the dust."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).down(14).wait(30).right(20).press("right", "b", frames=26)
+    v = read_snapshot(snes, "right", "b")
+    hits = [i for i in range(8) if v.fx_kind.u8[i] == 4]
+    assert hits
+    assert {v.fx_attr.u16[i] & 0x1FF for i in hits} == {224}
+    assert {v.fx_y.u8[i] for i in hits} == {184 - 8}
+
+
 def test_a_round_retires_at_the_end_of_its_range(snes):
     boot(snes, "MISSION_CAKE_WALK").wait(10).b(1).wait(45)
     v = read_snapshot(snes)
