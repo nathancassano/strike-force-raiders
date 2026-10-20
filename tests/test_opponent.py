@@ -231,21 +231,22 @@ def test_the_enemy_raids_the_bank(snes):
     """Blind Spot is a CPU_ROB_BANK mission (cpu.r65): with the player's
     purse over its fund_min and the pilot's 1-in-4 steal window open (both
     planted), the pilot raids - from ~x 6350, where 99 of purse pays for the
-    distance, through the base's missiles at hover height, climbing over
-    each balloon not its own (their chains hang across hover height) - and
-    over the bank puts its men out. Two land in
-    the doorway and rob it as they touch down (struct_bank_rob_at): 99 ->
+    distance, through the base's missiles at hover height, its afterburner
+    lit past FOE_WEST, climbing over each balloon not its own (their chains
+    hang across hover height) - and over the bank puts its men out. Two land
+    in the doorway and rob it as they touch down (struct_bank_rob_at): 99 ->
     49 -> 24. The third lands short of the door and goes onto the field -
     the raid's drop takes no room, but his own is there once the robbers
-    are gone - and walks in: 24 -> 12. (He used to stand where he landed,
-    the enemy's units at their cap.) The raider is shot down on its way out.
+    are gone - and walks for the door, where the bank's gun drops him in two
+    rounds (3 a man): he used to take three and walk in, 24 -> 12. The
+    raider is shot down on its way out.
     """
     boot(snes, "MISSION_BLIND_SPOT")
     snes.write("funds", 99, 1)
     snes.write("pilot__steal", 1, 1)
     snes.wait(2100)
     v = read_snapshot(snes)
-    assert v.funds == 12
+    assert v.funds == 24
 
 
 def test_a_purse_under_fund_max_is_not_raided(snes):

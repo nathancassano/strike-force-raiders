@@ -28,8 +28,17 @@ const MUNI_BLAST:  u8 = 4;
 // frames. It is the buildings' and the missile trucks' weapon; the
 // airframes carry none (kind 6, the old smart missile, is unused).
 const MUNI_MISSILE: u8 = 5;
-const MISSILE_SPEED: Q10 = 3 * 64;        // 3 px/frame along either axis
-const MISSILE_LIFE:  u8  = 180;           // 3 s: slow enough to dodge, long enough to chase
+// A missile truck's flies MISSILE_SPEED along either axis: past the
+// airframe's 5 px/frame (HELI_VX_MAX), short of the afterburner's 6 - it
+// runs one down, unless it burns. A base's flies the old 3 (struct.r65
+// BASE_MISSILE_SPEED): at 5.5 the player's base met the enemy's bank
+// raider head-on, before speed could matter, burner or not. Each keeps
+// its launch speed, carried in its vertical speed, which steering never
+// zeroes. Either goes MISSILE_RANGE and then blows itself up: its life is
+// that distance at its speed.
+const MISSILE_SPEED: Q10 = 352;           // 5.5 px/frame
+const MISSILE_RANGE: u16 = 512;           // px flown before it self-destructs
+const MISSILE_LIFE:  u8  = (MISSILE_RANGE * 64 / 352) as u8;   // 93 frames at 5.5
 
 // Gunfire crosses the screen fast and flat; a bomb inherits the airframe's
 // horizontal speed and accelerates downward from rest.
@@ -198,7 +207,14 @@ far fn muni_update() {
             if muni_life[i] > 0 {
                 muni_life[i] = muni_life[i] - 1;
                 if muni_life[i] == 0 {
-                    muni_kind[i] = MUNI_FREE;   // out of range
+                    // Out of range: a missile self-destructs - the small
+                    // explosion, centred on its 8x8 - and a round just goes.
+                    if kind == MUNI_MISSILE {
+                        let cx: u16 = muni_x_px[i] + 4;
+                        sfx_at(SFX_CHN_BLAST, SFX_EXPLODE_1, cx);
+                        fx_spawn(FX_SMALL, cx, (muni_y[i] >> 8) - 4);
+                    }
+                    muni_kind[i] = MUNI_FREE;
                 }
             }
 
@@ -217,10 +233,12 @@ far fn muni_update() {
                     lock = up;
                 }
                 if up != 0 {
-                    muni_vx[i] = MISSILE_SPEED;
-                    if tx < muni_x_px[i] { muni_vx[i] = Q10(0) - MISSILE_SPEED; }
-                    muni_vy[i] = MISSILE_SPEED;
-                    if ty < muni_y[i] { muni_vy[i] = Q10(0) - MISSILE_SPEED; }
+                    let mut sp: Q10 = muni_vy[i];      // its launch speed
+                    if sp < Q10(0) { sp = Q10(0) - sp; }
+                    muni_vx[i] = sp;
+                    if tx < muni_x_px[i] { muni_vx[i] = Q10(0) - sp; }
+                    muni_vy[i] = sp;
+                    if ty < muni_y[i] { muni_vy[i] = Q10(0) - sp; }
                 }
             }
 

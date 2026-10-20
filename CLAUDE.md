@@ -670,7 +670,13 @@ buildings' `BULLET_SPEED` is 8) living `GUN_LIFE` (20 frames, the same ~320 px),
 tells them from a building's by that speed - and nose down at `HELI_GUN_DROP` (5 px/frame,
 ~17 degrees). A round that fast steps over a man (8 px), so `unit_collide` also tests it half a
 step back (`muni_mid`). One kind homes: `MUNI_MISSILE`, the buildings' and the launchers'
-anti-air missile, which steers at the other side's airframe and does 10 of its 20 points.
+anti-air missile, which steers at the other side's airframe and does 10 of its 20 points. A truck's
+flies `MISSILE_SPEED` (5.5 px/frame each axis: past the airframe's 5, short of the afterburner's
+6), a base's `BASE_MISSILE_SPEED` (3 - at 5.5 the player's base stopped the enemy's bank raid
+head-on, burner or not); each keeps its launch speed in its vertical speed, which steering never
+zeroes. Either flies `MISSILE_RANGE` (512 px, its life at its speed) and then self-destructs in
+the small explosion. The enemy's raider lights its own afterburner (`pilot.burn`, the player's
+rules) past `FOE_WEST`.
 **Neither airframe carries a missile**: the smart missile (Y, `MUNI_SMART`, kind 6) was built
 and then removed - Y is the afterburner now, kind 6 is unused, and bit 0x40 of the CPU rows'
 flags (the original's `useMissile`) is now `CPU_ROB_BANK`, the bank raid's. OAM order follows the plan's importance rule: the helicopter takes slots 0-1

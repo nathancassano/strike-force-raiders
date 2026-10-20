@@ -109,6 +109,10 @@ const SUPER_MEN_MAX:   u8 = 5;
 const BASE_W:     u16 = 64;
 const BASE_RANGE: u16 = 320;
 const BASE_RATE:  u8  = 45;
+// Its missiles fly 3 px/frame, slower than a missile truck's (muni.r65's
+// MISSILE_SPEED says why), for the same MISSILE_RANGE.
+const BASE_MISSILE_SPEED: Q10 = 3 * 64;
+const BASE_MISSILE_LIFE:  u8  = (MISSILE_RANGE / 3) as u8;    // 170 frames
 // The launcher stands on the hangar roof between the two towers
 // (tools/base_art.py), centred over the base's middle, where its missile
 // leaves from: its 16x16 cell this far in and this far below the box's top.
@@ -928,8 +932,8 @@ fn struct_base_tick(i: u16) {
     }
     let bx: u16 = structs[i].x + (BASE_W >> 1);
     if air_target(structs[i].owner, bx, BASE_RANGE) != AIR_NONE {
-        muni_spawn(MUNI_MISSILE, bx, (GROUND_Y - 32) << 8, Q10(0), Q10(0) - MISSILE_SPEED,
-                   MISSILE_LIFE, structs[i].owner);
+        muni_spawn(MUNI_MISSILE, bx, (GROUND_Y - 32) << 8, Q10(0), Q10(0) - BASE_MISSILE_SPEED,
+                   BASE_MISSILE_LIFE, structs[i].owner);
         sfx_missile(structs[i].owner, bx);
         structs[i].t = BASE_RATE;
     }

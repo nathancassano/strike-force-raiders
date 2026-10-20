@@ -162,6 +162,7 @@ struct Pilot {
     raid:     u8,       // a raid under way: held until its men are out
     robbing:  u8,       // the drop under way is the raid's: no room needed (para_drop)
     deck:     u8,       // the hunt is a landed player airframe on its deck: bomb it, gun or no gun
+    burn:     u16,      // the afterburner, as player.burn: lit on a raid, past FOE_WEST
 }
 #[lowram] static mut pilot: Pilot;
 
@@ -179,6 +180,7 @@ impl Pilot {
         airframes[FOE].init(FOE_START_X, 1);
         pilot.raid = 0;                     // a lost airframe's raid goes with it
         pilot.robbing = 0;
+        pilot.burn = 0;
         pilot.men = FOE_MEN;                // a new airframe's men; the last one's went with it
         pilot.drop = 0;
         pilot.gap = 0;
@@ -313,16 +315,18 @@ impl Pilot {
     near fn steer(tx: u16, ty: u16) {
         let mut want: u8 = 2;
         let mut vx: Q10 = Q10(0);
+        let mut top: Q10 = HELI_VX_MAX;         // or the afterburner's, on a raid
+        if pilot.burn > HELI_BURN_RECHARGE { top = HELI_BURN_VX; }
         let x: u16 = airframes[FOE].x_px;
         if tx > x + FOE_NEAR {
             let mut stop: u16 = 0;
             if airframes[FOE].vx > Q10(0) { stop = Pilot::stop(airframes[FOE].vx); }
-            if tx - x > stop { vx = HELI_VX_MAX; want = 0; }
+            if tx - x > stop { vx = top; want = 0; }
         } else {
             if x > tx + FOE_NEAR {
                 let mut stop: u16 = 0;
                 if airframes[FOE].vx < Q10(0) { stop = Pilot::stop(Q10(0) - airframes[FOE].vx); }
-                if x - tx > stop { vx = Q10(0) - HELI_VX_MAX; want = 1; }
+                if x - tx > stop { vx = Q10(0) - top; want = 1; }
             }
         }
         airframes[FOE].turn_step(want);
@@ -616,6 +620,7 @@ impl Pilot {
         // The pilot: where to fly, decided every FOE_THINK frames and flown
         // every frame; the gun and the bombs every frame, since a shot is a
         // frame's opportunity.
+        if pilot.burn != 0 { pilot.burn = pilot.burn - 1; }
         if (frames_loop & (FOE_THINK - 1)) == 0 {
             Pilot::think();
             Pilot::over_balloons();
@@ -990,6 +995,12 @@ impl Pilot {
         if bank < STRUCT_MAX {
             pilot.raid = 1;
             pilot.state = FOE_RAID;
+            // Into the base's missiles it lights the afterburner, as the
+            // player can: a missile (MISSILE_SPEED, 5.5 px/frame) outruns
+            // the airframe's 5, not the burner's 6.
+            if pilot.burn == 0 && airframes[FOE].x_px < FOE_WEST {
+                pilot.burn = HELI_BURN + HELI_BURN_RECHARGE;
+            }
             let mid: u16 = structs[bank].x + (structs[bank].w >> 1);
             if mid > (HELI_W >> 1) { pilot.tx = mid - (HELI_W >> 1); } else { pilot.tx = 0; }
             pilot.ty = FOE_RAID_Y;

@@ -197,3 +197,26 @@ def test_the_super_bunker_is_crashed_on(snes):
     assert v.airframes__lives.u8[0] == 3
     assert v.structs__owner.u8[7] == NOBODY
     assert v.structs__men.u8[7] == 0
+
+
+def test_a_missile_self_destructs_at_the_end_of_its_range(snes):
+    """A base's missile flies MISSILE_RANGE (512 px) - 170 frames at its
+    3 px/frame - and then blows itself up: the small explosion (fx kind 1,
+    FX_SMALL) where it was, and the slot free. The airframe is planted in
+    the enemy base's range until one is up, then moved far off, where the
+    missile chases it to the end of its life."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20)
+    snes.write("airframes__x_px", 7500, 2)
+    snes.wait(20)
+    v = read_snapshot(snes)
+    up = [i for i in range(16) if v.muni_kind.u8[i] == 5]
+    assert len(up) == 1
+    m = up[0]
+    assert v.muni_vy.u16[m] == 0x10000 - 3 * 64 or v.muni_vy.u16[m] == 3 * 64   # a base's 3 px/frame
+    life = v.muni_life.u8[m]
+    snes.write("airframes__x_px", 5000, 2)
+    snes.wait(life + 2)
+    v = read_snapshot(snes)
+    assert v.muni_kind.u8[m] == 0
+    assert 1 in [v.fx_kind.u8[i] for i in range(8)]
+    assert v.airframes__lives.u8[0] == 4
