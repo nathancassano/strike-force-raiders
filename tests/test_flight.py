@@ -384,3 +384,36 @@ def test_the_afterburner_keeps_the_airframe_in_place_on_screen(snes):
     v = read_snapshot(snes, "right")
     assert v.airframes__vx.u16[0] == 6 * 64
     assert v.airframes__x_px.u16[0] - v.camera_x == 80
+
+
+def _burn_flames(v):
+    """OAM entries showing the afterburner's flame (obj.bmp tiles 226-227,
+    BURN_TILE), on screen: [(x, y, attr)]."""
+    o = v.oam.u8
+    return [(o[4 * i], o[4 * i + 1], o[4 * i + 3]) for i in range(128)
+            if o[4 * i + 2] in (226, 227) and (o[4 * i + 3] & 1) == 0 and o[4 * i + 1] < 224]
+
+
+def test_the_afterburner_shows_a_flame_off_the_tail(snes):
+    """Burning and facing right, one flame sprite sits 4 px left of the
+    airframe (its right edge on the tail boom's end) and 3 px down, behind
+    it in OAM order, unmirrored."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).right(60)
+    v = read_snapshot(snes, "right")
+    sx = v.airframes__x_px.u16[0] - v.camera_x
+    sy = v.airframes__y.u16[0] >> 8
+    assert _burn_flames(v) == [(sx - 4, sy + 3, 0x30)]
+
+
+def test_the_flame_is_mirrored_facing_left(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(200).y(1).left(80)
+    v = read_snapshot(snes, "left")
+    sx = v.airframes__x_px.u16[0] - v.camera_x
+    sy = v.airframes__y.u16[0] >> 8
+    assert _burn_flames(v) == [(sx + 28, sy + 3, 0x70)]
+
+
+def test_no_flame_without_the_afterburner(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(20).right(60)
+    v = read_snapshot(snes, "right")
+    assert _burn_flames(v) == []

@@ -35,7 +35,13 @@ Layout (tile columns of row 0, then the meter rows) - the contract with
 hud.r65's STAT_* constants:
 
   row 0  0-9 digits, 10 $, 11 H, 12 F, 13 the gun, 14 a bomb, 15 airframe, 16 man,
-         17 the meter's left cap, 18 its right cap; 31 is blank
+         17 the meter's left cap, 18 its right cap, 19 the afterburner's flame;
+         31 is blank
+
+The flame is drawn gold, its tones by pixel rather than by row - yellow
+inside, orange round the edge - and hud.r65 swaps its tile palette to the
+white one (7) while the afterburner recharges, which turns
+the same two tones white and grey.
   row 1+c  meter cell c (0-5), fills 0, 2, 4, 6, 8 px at columns 0-4
 
     python3 tools/status_art.py && make
@@ -81,6 +87,17 @@ ICONS = {
 }
 LIGHT_ROWS = 4                  # the top tone's rows; the deep one below
 
+# The afterburner's flame, toned by pixel: y the light tone, o the deep.
+BURN = [
+    "   o   ",
+    "  oo  o",
+    " ooyo o",
+    " oyyooo",
+    "ooyyyoo",
+    "oyyyyyo",
+    " ooooo ",
+]
+
 # The meters: each cell's palette and pattern - A the light tone, B the
 # deep one, D the two in a checker.
 CELLS = [('red', 'A'), ('red', 'D'), ('red', 'B'), ('gold', 'D'), ('gold', 'A'), ('white', 'A')]
@@ -97,6 +114,19 @@ def glyph(px, col, row, rows, pal):
             px[x0 + x + 1, y0 + y + 1] = base + 1
     for x, y in ink:
         px[x0 + x, y0 + y] = base + (2 if y < LIGHT_ROWS else 3)
+
+
+def toned(px, col, row, rows, pal):
+    """A glyph at tile (col, row) toned pixel by pixel - y light, o deep -
+    with the shadow under-right, as glyph() draws it."""
+    base = PALETTES[pal][0]
+    x0, y0 = col * 8, row * 8
+    ink = {(x, y): ch for y, line in enumerate(rows) for x, ch in enumerate(line) if ch != ' '}
+    for x, y in ink:
+        if (x + 1, y + 1) not in ink:
+            px[x0 + x + 1, y0 + y + 1] = base + 1
+    for (x, y), ch in ink.items():
+        px[x0 + x, y0 + y] = base + (2 if ch == 'y' else 3)
 
 
 def meter_cell(px, col, row, pal, pattern, fill):
@@ -143,6 +173,7 @@ def main():
     glyph(px, 16, 0, ICONS['man'], 'white')
     cap(px, 17, 0, False)
     cap(px, 18, 0, True)
+    toned(px, 19, 0, BURN, 'gold')
     for c, (p, pattern) in enumerate(CELLS):
         for k in range(5):
             meter_cell(px, k, 1 + c, p, pattern, k * 2)

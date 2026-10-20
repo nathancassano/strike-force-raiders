@@ -68,6 +68,7 @@ const STAT_HELI:   u16 = 15;
 const STAT_MAN:    u16 = 16;
 const STAT_CAP_L:  u16 = 17;              // a meter's ends
 const STAT_CAP_R:  u16 = 18;
+const STAT_BURN:   u16 = 19;              // the afterburner's flame, drawn gold
 const STAT_BLANK:  u16 = 31;              // transparent
 const STAT_METER:  u16 = 1;               // + cell: that cell's row, fills 0-8 px at columns 0-4
 const STAT_TILE0:  u16 = ICON_TILE0 + (ICONS_CHR_SIZE >> 4);
@@ -81,14 +82,20 @@ const HUD_COL_LIVES:  u16 = 4;
 const HUD_COL_MEN:    u16 = 7;
 // The bottom row (map row HUD_BOTTOM_ROW, the shadow's second 32 words):
 // "H[......]" and "F[......]" - six-cell meters, 48 px each - then the
-// gun's icon and "NN", and the bomb's and "NN". (Columns 30-31 held the smart missiles' "MN" until they were
-// taken out of the game.)
+// gun's icon and "NN", the bomb's and "NN", and at column 30 the
+// afterburner's flame: gold while Y would light it and on through the burn,
+// its tile palette swapped to the white one (greys) while it recharges. (Columns
+// 30-31 held the smart missiles' "MN" until they were taken out of the
+// game.)
 const HUD_BOTTOM_ROW: u16 = 27;
 const HUD_COL_HEALTH: u16 = 0;
 const HUD_COL_FUEL:   u16 = 10;
 const HUD_BAR_CELLS:  u16 = 6;
 const HUD_COL_GUN:    u16 = 20;
 const HUD_COL_BOMBS:  u16 = 25;
+const HUD_COL_BURN:   u16 = 30;
+const HUD_PAL_BITS:   u16 = 0x1C00;       // a map word's palette, bits 10-12
+const HUD_PAL_GREY:   u16 = 7 << 10;      // the status rows' white
 
 // The HUD art's blank tile is whatever the art has at (0,0): plain navy -
 // the order menu's and the alert box's background. It carries the priority
@@ -107,6 +114,7 @@ const HUD_BLANK: u16 = 0x2000;
 #[lowram] static mut hud_gun:   u8;
 #[lowram] static mut hud_bombs: u8;
 #[lowram] static mut hud_men:   u8;
+#[lowram] static mut hud_burn:  u8;          // 1 the afterburner is ready or burning, 0 recharging
 
 // hud_glyph - the tile word for glyph *n*, out of the map row in ROM.
 fn hud_glyph(n: u16) -> u16 {
@@ -165,6 +173,7 @@ far fn hud_init() {
     hud_gun = 0xFF;
     hud_bombs = 0xFF;
     hud_men = 0xFF;
+    hud_burn = 0xFF;
     hud_dirty = 0;
     hud_clear2 = 1;
     hud_msg_dirty = 0;
@@ -227,6 +236,16 @@ far fn hud_update() {
     if hud_men != player.men {
         hud_men = player.men;
         hud_row[HUD_COL_MEN + 1] = hud_stat(STAT_DIGIT + (player.men as u16));
+        hud_dirty = 1;
+    }
+    // Gold until the burn is spent: ready, or burning; grey recharging.
+    let mut ready: u8 = 0;
+    if player.burn == 0 || player.burn > HELI_BURN_RECHARGE { ready = 1; }
+    if hud_burn != ready {
+        hud_burn = ready;
+        let mut w: u16 = hud_stat(STAT_BURN);
+        if ready == 0 { w = (w & ~HUD_PAL_BITS) | HUD_PAL_GREY; }
+        hud_row[32 + HUD_COL_BURN] = w;
         hud_dirty = 1;
     }
 }

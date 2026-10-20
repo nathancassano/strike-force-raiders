@@ -253,6 +253,7 @@ fn main() -> ! {
             airframes[FOE].draw();
             radar_draw();
             if alert_up != 0 { alert_draw(); }
+            if player.burn > HELI_BURN_RECHARGE { Player::burn_draw(); }
             muni_draw();
             if fx_live != 0 { fx_draw(); }
             para_draw();

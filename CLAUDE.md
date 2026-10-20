@@ -397,7 +397,7 @@ in his side's palette and facing (`fx_man`), each slot carrying its own tile and
 (`fx_attr`); a round of gunfire into the dirt, `FX_HIT` (`fx_hit`, from `muni_update`) -
 `obj.bmp`'s two 8x8 impact tiles at 224, a spark then its dust, 4 ticks each - the one
 effect `fx_draw` sizes small (art by
-`tools/muni_art.py`, which also draws the round, a 3x3 cross at tile 12). Eight slots, taken in
+`tools/muni_art.py`, which also draws the round, a 3x3 cross at tile 12, and the afterburner's flame). Eight slots, taken in
 turn but passing over a running one, so only a ninth replaces anything (strafing puts up an
 impact every few frames, and strictly in turn they cut a man down's two seconds short); an explosion's flip is
 from the frame count, never `rand()`. `main` calls `fx_update`/`fx_draw` only while `fx_live` is set - called
@@ -679,7 +679,7 @@ culled rather than parked off-screen.
 
 The HUD is BG3 rows 0-1 at the top and row 27 at the bottom. Row 0 (`src/hud.r65`: `$` purse,
 lives, men aboard) and row 27 (the airframe: H and F meters, the gun's rounds and the bombs, each
-behind its icon - over the dirt, the last visible row in 224-line mode, where nothing else is
+behind its icon, and the afterburner's flame - over the dirt, the last visible row in 224-line mode, where nothing else is
 drawn) are composed into one 64-word shadow and DMA'd in vblank, 64 bytes each, when a shown
 value changes; row 2, navy in the art, is cleared once at boot. **These two status rows have a
 sheet of their own**, `status.tilemap.bmp` (`tools/status_art.py`, after
@@ -764,15 +764,20 @@ and A do not reach the airframe while L is down; B gun, A bomb, X drop (or, land
 Start pauses and resumes; Y lights the **afterburner** (`player.burn`, heli.r65): 180 frames
 at 6 px/frame against the stick's 5 (`HELI_BURN_VX`), then 300 of recharge before it lights again,
 fuel needed to light it; `CAM_STEP` (8) has to stay above that speed or the camera falls behind,
-and the view's lead stops at top speed's 40 px, so the airframe holds its place on screen while it burns. **Start acts on release, everywhere**: `pad_read_ports`
+and the view's lead stops at top speed's 40 px, so the airframe holds its place on screen while it burns.
+Its flame is an 8x8 off the tail (`Player::burn_draw`, `obj.bmp` tiles 226-227 from `tools/muni_art.py`,
+flickering on `player.burn`), drawn after the radar bracket and the alert so it sits behind the
+airframe; `main` tests the burn before calling it, and it is hidden landed and mid-turn. The HUD's
+bottom row shows whether Y would light it: the status sheet's flame (`STAT_BURN`) at column 30, gold
+when ready and through the burn, its palette bits swapped to the white sub-palette (greys) while it recharges. **Start acts on release, everywhere**: `pad_read_ports`
 reports it in the trigger mask as it comes up (`PAD_PREV` holds the pad with Start's bit
 inverted, so that costs one EOR), and the intro's skip reads the trigger too.
 The menu (`hud_overlay`) is a column of six 32x32 icons, one per order in ring order, down the
 left edge of BG3: map rows 2-25, four apiece, columns 1-4. The selected icon is on a brighter
 panel (BG3 sub-palette 4, the rest 3: CGRAM 12-19), with its name and cost beside it on its top
 row. The icons are BG3 tiles, 2bpp, from `icons.tilemap.bmp`, de-duplicated by the build, and
-uploaded at boot past the front end's font (`ICON_TILE0`, 160; 44 tiles, the status rows' 32
-after them, 20 of BG3's 256 left).
+uploaded at boot past the front end's font (`ICON_TILE0`, 160; 44 tiles, the status rows' 33
+after them, 19 of BG3's 256 left).
 `tools/icon_art.py` derives them from the units' own sprites in two tones.
 The menu is composed once at init into a 24-row shadow and a transparent twin, both `#[ram]`
 (composing it on the press cost a frame). Showing and hiding flush all of it. A move rewrites the

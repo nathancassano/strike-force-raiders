@@ -105,6 +105,24 @@ def palette(word):
     return (word >> 10) & 7
 
 
+def test_the_afterburner_icon_is_gold_until_the_burn_is_spent(snes):
+    """Column 30 of the bottom row: the flame, in its own gold (sub-palette
+    5) while Y would light it and on through the 180-frame burn, and the
+    same tile in the white one (7) - white and grey - while it recharges,
+    gold again once it has."""
+    boot(snes, "MISSION_TEST_QUIET").wait(16)
+    ready = read_snapshot(snes).hud_row.u16[32 + 30]
+    assert palette(ready) == 5
+    snes.y(1).wait(150)
+    assert palette(read_snapshot(snes).hud_row.u16[32 + 30]) == 5, "still burning"
+    snes.wait(60)
+    spent = read_snapshot(snes).hud_row.u16[32 + 30]
+    assert palette(spent) == 7
+    assert spent & 0x03FF == ready & 0x03FF, "the same tile"
+    snes.wait(300)
+    assert palette(read_snapshot(snes).hud_row.u16[32 + 30]) == 5
+
+
 def test_the_menu_shows_six_icons_the_tank_lit(snes):
     boot(snes, "MISSION_TEST_QUIET").wait(30).l(20)
     read_snapshot(snes, "l")

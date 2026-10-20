@@ -44,6 +44,13 @@ const HELI_VX_MAX: Q10 = 5 * 64;          // 5 px/frame, the plan's cap
 const HELI_BURN_VX: Q10 = 6 * 64;         // 6 px/frame
 const HELI_BURN: u16 = 180;               // 3 s
 const HELI_BURN_RECHARGE: u16 = 300;      // 5 s
+// Its flame (Player::burn_draw): obj.bmp's two 8x8 flickers, out of the
+// tail - the tile's right edge on the boom's end, x+3, mirrored to x+28
+// facing left - and on the boom's height, y+3.
+const BURN_TILE: u16 = 226;
+const BURN_DX: u16 = 4;                   // left of the airframe's x, facing right
+const BURN_DX_LEFT: u16 = 28;             // right of it, facing left
+const BURN_DY: u16 = 3;
 const HELI_VY_MAX: Q10 = 4 * 64;          // ~4 px/frame
 // Inertia. Thrust is how fast the stick builds speed; drag is how fast
 // speed bleeds off with the stick released - slower, so the airframe
@@ -254,6 +261,26 @@ impl Player {
         player.pause = 0;
         player.cam_step = 0;
         player.burn = 0;
+    }
+
+    // Player::burn_draw - the afterburner's flame off the tail, while it
+    // burns (main tests player.burn first, so an idle frame costs no call).
+    // Drawn after the airframe, in a later OAM slot, so it is behind it;
+    // flickering on the burn's own count, which a pause freezes. Not on the
+    // ground, and not mid-turn, when the tail is nowhere near the boom's end.
+    fn burn_draw() {
+        if airframes[HELI].dead > 0 || airframes[HELI].landed != 0 || airframes[HELI].turn != 0 { return; }
+        let d: u16 = airframes[HELI].x_px - camera_x;
+        let mut sx: u16 = d - BURN_DX;
+        let mut attr: u16 = MUNI_ATTR;
+        if airframes[HELI].face_left != 0 { sx = d + BURN_DX_LEFT; attr = attr | 0x4000; }
+        if sx >= 256 && sx < 0xFFF8 { return; }
+        let slot: u16 = oam_take();
+        if slot < OAM_SLOTS {
+            let tile: u16 = BURN_TILE + ((player.burn >> 1) & 1);
+            oam.set_full!(slot as u8, sx & 0x01FF, ((airframes[HELI].y >> 8) + BURN_DY) as u8, tile | attr);
+            oam.set_size!(slot as u8, 0);        // 8x8
+        }
     }
 
     // Player::reset - a match's start: Player::init, and no wreck.
