@@ -94,7 +94,7 @@ Costs are the 1984/1991 values, unchanged across both games — strong evidence 
 | Van | 2 | 1 | 12 | **6** (10) | Unarmed. Win condition. Jams enemy radar by proximity. |
 | Missile Launcher | 3 | 1 | 8 | **4** (6) | AA only. Self-destructs on firing. |
 | Tank | 4 | 1 | 25 | **8** (15) | Main line. Only unit that can damage super/end bunkers. |
-| Infantry | 5 | 5 men | 5 ea | **16** (30) | Captures bunkers, mans super bunkers, robs the bank. |
+| Infantry | 5 | 5 men | 5 ea | **16** (30) | Captures bunkers, mans super bunkers, robs the bank. Gunfire does 3 to a man (Armor Alley's 2), so two rounds drop him. |
 | Engineer | 5 | 2 men | 5 ea | shared 16 | Repairs and claims turrets only. |
 | Helicopter | 20 | 1 | 20 | — | Extra life. |
 

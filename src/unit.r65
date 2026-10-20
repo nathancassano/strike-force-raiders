@@ -169,11 +169,12 @@ static unit_stats: [UnitStat; 6] = [
     UnitStat { width: UNIT_W,     tile: UNIT_TILE_VAN, max_hp: 12, cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
     // Launcher: AA only, once aircraft exist
     UnitStat { width: UNIT_W,     tile: UNIT_TILE_LAUNCHER, max_hp: 8,  cells: 2, bullet_dmg: 2, rifle_dmg: 2 },
-    // Infantry
-    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
+    // Infantry: 5 hp as Armor Alley's, but a round does 3 (its 2 took three
+    // hits), so gunfire drops a man in two
+    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_INFANTRY, max_hp: 5,  cells: 1, bullet_dmg: 3, rifle_dmg: 2 },
     // Engineer: an infantryman who repairs and claims turrets instead of
     // capturing bunkers - the same body, a different job, and no rifle
-    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 2, rifle_dmg: 2 },
+    UnitStat { width: UNIT_MAN_W, tile: UNIT_TILE_ENGINEER, max_hp: 5,  cells: 1, bullet_dmg: 3, rifle_dmg: 2 },
 ];
 
 // ---------------------------------------------------------------- state ---

@@ -198,3 +198,20 @@ def test_unit_budget(state):
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
     assert v.frames_loop == 3662
+
+
+def test_two_rounds_drop_a_man(snes):
+    """Gunfire does 3 to a man (unit_stats' bullet_dmg; Armor Alley's 2 took
+    three of his 5 hp). The airframe is planted landed (y 168, the muzzle in
+    the units' band) 60 px west of the quiet row's first infantryman and
+    facing him: one round leaves him 2, the next drops him."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    snes.write("airframes__x_px", snes.raw("units__x_px").u16[0] - 60, 2)
+    snes.write("airframes__y", 168 * 256, 2)
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.units__hp.u8[0] == 2
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[0] == 0
+    assert v.fx_kind.u8[0] == 3                      # FX_MAN: he lies where he fell
