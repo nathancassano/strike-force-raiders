@@ -189,9 +189,12 @@ def test_unit_budget(state):
     radar base's 256-pass rebuild among them. Then 1 faster (3662/3655) on
     R65 dropping masks over bits known zero or never read. Then 6 faster
     (3662/3661) on R65 keeping a loop counter in X or Y when it is passed to
-    a call.
+    a call. Then 1 faster (3662/3662), first seen after OamBuffer.set! bound
+    its chr once (e045d48) - with the HUD's status sheet and the airframes'
+    faster, capped gunfire on top it reads the same, so this run now keeps
+    up with every vblank.
     """
     snes = state(eight_tanks)
     v = read_snapshot(snes)
     assert v.frames_nmi == 3662
-    assert v.frames_loop == 3661
+    assert v.frames_loop == 3662
