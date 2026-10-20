@@ -36,6 +36,14 @@ const HELI_Y_MAX: u16 = (GROUND_Y - HELI_H) << 8;
 // velocity: the stick picks a speed, the airframe takes a few frames to reach
 // it. No gravity while powered - that only arrives with fuel-out and ejection.
 const HELI_VX_MAX: Q10 = 5 * 64;          // 5 px/frame, the plan's cap
+// The afterburner (Y, the player's only): HELI_BURN frames at a fifth over
+// the cap, then HELI_BURN_RECHARGE before Y lights it again, so it is a
+// sprint and not a new top speed. player.burn counts both down in one:
+// burning while it is above the recharge. It needs fuel to light, and
+// flat out under it is still a crash at touchdown (Airframe::crashes).
+const HELI_BURN_VX: Q10 = 6 * 64;         // 6 px/frame
+const HELI_BURN: u16 = 180;               // 3 s
+const HELI_BURN_RECHARGE: u16 = 300;      // 5 s
 const HELI_VY_MAX: Q10 = 4 * 64;          // ~4 px/frame
 // Inertia. Thrust is how fast the stick builds speed; drag is how fast
 // speed bleeds off with the stick released - slower, so the airframe
@@ -201,6 +209,7 @@ struct Player {
     men:      u8,       // aboard (para.r65)
     pause:    u8,       // frames left on the ground before the pan
     cam_step: u16,      // the pan home, px/frame, sized when it starts
+    burn:     u16,      // the afterburner: burning above HELI_BURN_RECHARGE, recharging below
 }
 #[lowram] static mut player: Player;
 
@@ -244,6 +253,7 @@ impl Player {
         player.men = 0;                         // the men left aboard went with it
         player.pause = 0;
         player.cam_step = 0;
+        player.burn = 0;
     }
 
     // Player::reset - a match's start: Player::init, and no wreck.
@@ -375,7 +385,7 @@ impl Player {
     }
 
     // Player::update - one tick of input, physics and world clamping.
-    fn update(held: u16) {
+    fn update(held: u16, trig: u16) {
         if airframes[HELI].dead > 0 {
             Player::dead_tick();                 // lost: the stick does nothing
             return;
@@ -418,11 +428,19 @@ impl Player {
         } else {
             airframes[HELI].burn();
 
+            // The afterburner: Y lights it, once it has recharged.
+            if player.burn != 0 { player.burn = player.burn - 1; }
+            if (trig & JOY_Y) != 0 && player.burn == 0 && airframes[HELI].fuel > 0 {
+                player.burn = HELI_BURN + HELI_BURN_RECHARGE;
+            }
+            let mut top: Q10 = HELI_VX_MAX;
+            if player.burn > HELI_BURN_RECHARGE { top = HELI_BURN_VX; }
+
             let mut tx: Q10 = Q10(0);
             // 2 = no direction held; the turn stalls on that.
             let mut want: u8 = 2;
-            if (held & JOY_RIGHT) != 0 { tx = HELI_VX_MAX; want = 0; }
-            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - HELI_VX_MAX; want = 1; }
+            if (held & JOY_RIGHT) != 0 { tx = top; want = 0; }
+            if (held & JOY_LEFT)  != 0 { tx = Q10(0) - top; want = 1; }
             airframes[HELI].turn_step(want);
             let mut ax: Q10 = HELI_THRUST_X;
             if tx == Q10(0) { ax = HELI_DRAG_X; }
@@ -493,13 +511,19 @@ impl Player {
         // the view opens up ahead of it: Armor Alley's lookahead of 0.4 of a
         // half-screen at top speed, taken here as vx/8 - 40 px at 5 px/frame.
         // `>>` is logical, so the sign is a branch. The deadzone in
-        // camera_update is what keeps a turn from snapping the view.
+        // camera_update is what keeps a turn from snapping the view. The
+        // lead stops at top speed's: the afterburner's extra would slide
+        // the airframe back across the screen while it burns.
         let mut f: u16 = airframes[HELI].x_px + (HELI_W >> 1);
         if airframes[HELI].vx >= Q10(0) {
-            f = f + ((airframes[HELI].vx.0 as u16) >> 3);
+            let mut v: u16 = airframes[HELI].vx.0 as u16;
+            if v > HELI_VX_MAX.0 as u16 { v = HELI_VX_MAX.0 as u16; }
+            f = f + (v >> 3);
             if f > WORLD_W { f = WORLD_W; }
         } else {
-            let back: u16 = ((0 - airframes[HELI].vx.0) as u16) >> 3;
+            let mut v: u16 = (0 - airframes[HELI].vx.0) as u16;
+            if v > HELI_VX_MAX.0 as u16 { v = HELI_VX_MAX.0 as u16; }
+            let back: u16 = v >> 3;
             if f > back { f = f - back; } else { f = 0; }
         }
         focus_x = f;

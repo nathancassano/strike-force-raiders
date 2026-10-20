@@ -131,8 +131,9 @@ const WORLD_W:   u16 = 8192;              // 32 screens
 const CAM_MAX:   u16 = 8192 - 256;        // left edge upper bound
 const CAM_MID:   u16 = 128;               // half a screen
 const CAM_DEAD:  u16 = 8;                 // deadzone half-width, px
-const CAM_STEP:  u16 = 6;                 // max catch-up px/frame; must exceed
-                                          // the tracked object's top speed or
+const CAM_STEP:  u16 = 8;                 // max catch-up px/frame; must exceed
+                                          // the tracked object's top speed - the
+                                          // afterburner's 6 (HELI_BURN_VX) - or
                                           // the camera falls behind for good
 
 #[lowram] static mut camera_x: u16;       // left edge of the view, 0..CAM_MAX

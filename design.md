@@ -174,7 +174,7 @@ man's pace that put five in a heap.)*
 | D-pad | Fly (Up also lifts off a deck) |
 | B | Gun (held) |
 | A | Bomb (per press) |
-| Y | — (unassigned; was the smart missile, removed) |
+| Y | Afterburner: 3 s at a fifth over top speed, then 5 s to recharge (was the smart missile, removed) |
 | X | Drop a paratrooper (per press) |
 | L (held) | Order overlay: d-pad highlights a unit type, A buys |
 | R | *(free)* |

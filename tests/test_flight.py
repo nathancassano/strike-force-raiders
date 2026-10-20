@@ -335,10 +335,52 @@ def test_a_round_leaves_at_muzzle_height(snes):
 
 
 def test_y_fires_nothing(snes):
-    """The smart missile is out of the game.
+    """The smart missile is out of the game - Y is the afterburner now - and
+    Y is not the gun: held for 30 frames, nothing is in flight and no round
+    has gone (a round lives 20 frames, so the count is the real check).
 
     muni_up is a [u8; 2]; side 0's count is the player's munitions in flight.
     """
-    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).wait(20)
-    read_snapshot(snes)
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(30)
+    v = read_snapshot(snes)
     assert snes.raw("muni_up").u8[0] == 0
+    assert v.airframes__gun.u8[0] == 96
+
+
+# The afterburner: Y lights it for HELI_BURN (180) frames at 6 px/frame
+# (Q10 384) against the stick's usual 5 (320), then HELI_BURN_RECHARGE (300)
+# before it lights again. player.burn counts the two down in one, burning
+# above 300.
+
+def test_the_afterburner_flies_a_fifth_faster(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).right(40)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__vx.u16[0] == 6 * 64
+
+
+def test_the_afterburner_burns_out_after_three_seconds(snes):
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).right(220)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__vx.u16[0] == 5 * 64
+    assert 0 < v.player__burn.u16[0] < 300               # recharging
+
+
+def test_the_afterburner_waits_to_recharge(snes):
+    """Y again 200 frames in - burnt out, recharging - does nothing; Y once
+    the 480 have run lights it again."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).wait(200).y(1).right(40)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__vx.u16[0] == 5 * 64
+    snes.wait(260).y(1).right(40)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__vx.u16[0] == 6 * 64
+
+
+def test_the_afterburner_keeps_the_airframe_in_place_on_screen(snes):
+    """The view's lead stops at top speed's 40 px, so 150 frames right under
+    the afterburner leave the airframe at screen x 80, where plain full speed
+    does - it is farther along the world, not across the screen."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).right(150)
+    v = read_snapshot(snes, "right")
+    assert v.airframes__vx.u16[0] == 6 * 64
+    assert v.airframes__x_px.u16[0] - v.camera_x == 80

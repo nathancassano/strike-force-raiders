@@ -671,7 +671,7 @@ tells them from a building's by that speed - and nose down at `HELI_GUN_DROP` (5
 step back (`muni_mid`). One kind homes: `MUNI_MISSILE`, the buildings' and the launchers'
 anti-air missile, which steers at the other side's airframe and does 10 of its 20 points.
 **Neither airframe carries a missile**: the smart missile (Y, `MUNI_SMART`, kind 6) was built
-and then removed - Y does nothing in battle, kind 6 is unused, and bit 0x40 of the CPU rows'
+and then removed - Y is the afterburner now, kind 6 is unused, and bit 0x40 of the CPU rows'
 flags (the original's `useMissile`) is now `CPU_ROB_BANK`, the bank raid's. OAM order follows the plan's importance rule: the helicopter takes slots 0-1
 and munitions in flight take the slots straight after, with anything outside the visible 256 px
 culled rather than parked off-screen.
@@ -760,7 +760,10 @@ field the d-pad types the continue code, Start takes it and B goes back to the m
 Start goes on from the briefing and the after-action page. In the battle, hold L for the order
 menu - Up/Down move the highlight, wrapping, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop (or, landed, step out), Up lifts off a deck;
-Start pauses and resumes; Y is unassigned. **Start acts on release, everywhere**: `pad_read_ports`
+Start pauses and resumes; Y lights the **afterburner** (`player.burn`, heli.r65): 180 frames
+at 6 px/frame against the stick's 5 (`HELI_BURN_VX`), then 300 of recharge before it lights again,
+fuel needed to light it; `CAM_STEP` (8) has to stay above that speed or the camera falls behind,
+and the view's lead stops at top speed's 40 px, so the airframe holds its place on screen while it burns. **Start acts on release, everywhere**: `pad_read_ports`
 reports it in the trigger mask as it comes up (`PAD_PREV` holds the pad with Start's bit
 inverted, so that costs one EOR), and the intro's skip reads the trigger too.
 The menu (`hud_overlay`) is a column of six 32x32 icons, one per order in ring order, down the

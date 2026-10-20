@@ -31,7 +31,9 @@ def test_balloon_kill(state):
     assert v.airframes__lives.u8[0] == 3
     assert v.airframes__x_px.u16[0] == 64
     assert v.airframes__dead.u8[0] == 72              # HELI_PAN: the pan home is all still to come
-    assert v.camera_x == 2964
+    # On the wreck, which has lost the airframe's lead; 2964 when CAM_STEP
+    # was 6 - at 8 (the afterburner's speed needs it) it closes 4 px more.
+    assert v.camera_x == 2960
 
 
 def test_balloon_pan(state, tmp_path):

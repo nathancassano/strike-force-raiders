@@ -204,7 +204,7 @@ fn main() -> ! {
                     fly_held = held & ~(JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT);
                     fly_trig = trig & ~JOY_A;
                 }
-                Player::update(fly_held);
+                Player::update(fly_held, fly_trig);
                 Player::fire(fly_held, fly_trig);
                 Pilot::update();
                 econ_tick();
