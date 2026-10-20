@@ -372,7 +372,8 @@ impl Player {
             }
         }
 
-        if (trig & JOY_A) != 0 {
+        // A: a bomb, in the air only - landed, it would go off under the skids.
+        if (trig & JOY_A) != 0 && airframes[HELI].landed == 0 {
             if airframes[HELI].bombs > 0 {
                 airframes[HELI].bombs = airframes[HELI].bombs - 1;
                 // A bomb keeps the airframe's horizontal speed and starts at
