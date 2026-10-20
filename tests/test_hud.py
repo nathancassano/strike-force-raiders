@@ -45,11 +45,28 @@ def test_the_radar_after_flying_east(snes):
     assert v.oam.u8[8] == 37, "the camera bracket is at camera_x/32"
 
 
-def test_strip_drawn(snes, tmp_path):
-    """The two white gauges are what put this much white across the screen."""
+# The status rows (rows 0 and 27) are drawn from status.tilemap.bmp in BG3
+# sub-palettes 5-7 (tools/status_art.py): each of a meter's six cells takes
+# its own, so the fill runs red (6), orange-yellow (5), white (7).
+METER_PALETTES = [6, 6, 6, 5, 5, 7]
+
+
+def test_the_meters_are_drawn(snes, tmp_path):
+    """Two full meters' red cells - a solid one and the red of a dithered
+    one, 48 px each - are the only red of that shade on screen."""
     boot(snes, "MISSION_TEST_QUIET").wait(16)
     read_snapshot(snes)
-    assert screen_colour(snes, tmp_path, (28, 30, 31), snes_colour=True) >= 0.9, "the white gauges are drawn"
+    assert screen_colour(snes, tmp_path, (26, 4, 2), snes_colour=True) >= 0.15, "the meters' red is drawn"
+
+
+def test_each_meter_cell_has_its_own_palette(snes):
+    """The health meter's cells, full, in the bottom row's shadow: one
+    sub-palette a cell, red to white; the label is gold, the digits white."""
+    boot(snes, "MISSION_TEST_QUIET").wait(16)
+    row = read_snapshot(snes).hud_row.u16
+    assert [palette(row[32 + 2 + c]) for c in range(6)] == METER_PALETTES
+    assert palette(row[32]) == 5, "H is gold"
+    assert palette(row[1]) == 7, "the purse's digits are white"
 
 
 # The order menu: shown while L is held. Down with L down moves the
@@ -66,10 +83,10 @@ def test_the_overlay_shows_while_l_is_held(snes):
 
 
 # What the menu puts on screen, read out of VRAM: BG3's map at word $7800.
-# Icon k is map rows 2+4k..5+4k, columns 1-4, BG3 tiles from 191 (past the
+# Icon k is map rows 2+4k..5+4k, columns 1-4, BG3 tiles from 160 (past the
 # front end's font) on sub-palette 3, or 4 for the selected one, whose name
 # and cost are on its top row from column 6.
-MENU_ROW, ICON_TILE0, TANK, INFANTRY, HELI = 2, 191, 2, 3, 5
+MENU_ROW, ICON_TILE0, TANK, INFANTRY, HELI = 2, 160, 2, 3, 5
 
 
 def bg3_map(snes):
@@ -160,14 +177,17 @@ def runs(seq):
 def test_a_purchase_flashes_its_icon(snes):
     """A tank bought: its icon goes unselected and lit by turns, two frames
     each, for 16 frames - unselected first - and stays lit. The label beside
-    it does not flash. The frame of the press still reads it lit: since R65
-    folded constant index offsets, that frame's tick ends after the
-    emulator's frame does."""
+    it does not flash. The frame of the press may still read it lit or
+    already unselected, by whether that frame's tick ends before the
+    emulator's frame does - which moves with the tick's cost, so either is
+    taken."""
     boot(snes, "MISSION_TEST_QUIET").wait(30).l(10)
     labels = []
     seen = runs(tank_icon_palettes(snes, 28, labels))
-    assert [p for p, n in seen] == [4] + [3, 4] * 4
-    assert [n for p, n in seen[:-1]] == [1] + [2] * 7
+    if seen[0] == [4, 1]:
+        seen = seen[1:]                    # the press frame, still lit
+    assert [p for p, n in seen] == [3, 4] * 4
+    assert [n for p, n in seen[:-1]] == [2] * 7
     assert seen[-1][1] >= 2 + 8
     tee = snes.raw("HUD_MAP_data").u16[29 * 32 + ord("T") - ord("A")]
     assert set(labels) == {tee}

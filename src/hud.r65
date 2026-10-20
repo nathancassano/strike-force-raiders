@@ -14,6 +14,12 @@
 // something on them changed - 64 bytes each, so the cost is nothing, but
 // there is no reason to pay it on a frame where nothing moved.
 //
+// Those two rows are the status rows, drawn from their own sheet (STAT_*
+// below): a bold two-tone font with a drop shadow and gradient meters, in
+// BG3 sub-palettes 5-7, transparent around the ink so they float over the
+// sky and the dirt. Everything else on BG3 - the radar, the order menu,
+// the alert box, the battle-over line - is the HUD art's.
+//
 // Glyphs live on map row HUD_GLYPH_ROW of hud.tilemap.bmp, below the 224 scanlines
 // the screen shows. bmp2chr de-duplicates tiles, so their IDs are whatever
 // it decided; rather than hard-code them, the strip is read back out of the
@@ -45,14 +51,37 @@ const BOX_R:  u16 = 7;
 const BOX_CURSOR: u16 = 8;
 const BOX_BAR:    u16 = 9;                // + 0..4: a cell 0/2/4/6/8 px full
 
+// The status rows' sheet, status.tilemap.bmp (tools/status_art.py, which
+// keeps these positions): 8-bit art in CGRAM indices, so each tile's map
+// word carries its sub-palette - gold (5, CGRAM 20-23) for the labels, red
+// (6) and white (7, the digits and icons) - and the meters' cells take
+// theirs in turn, red to white, which is the gradient. Its tiles go up past
+// the order menu's icons (the Makefile names them from there); its palette
+// is entries 20-31 of its .pal.
+const STAT_DIGIT:  u16 = 0;               // 0..9
+const STAT_DOLLAR: u16 = 10;
+const STAT_H:      u16 = 11;
+const STAT_F:      u16 = 12;
+const STAT_GUN:    u16 = 13;              // the gun's rounds, an icon
+const STAT_BOMB:   u16 = 14;              // and the bombs'
+const STAT_HELI:   u16 = 15;
+const STAT_MAN:    u16 = 16;
+const STAT_CAP_L:  u16 = 17;              // a meter's ends
+const STAT_CAP_R:  u16 = 18;
+const STAT_BLANK:  u16 = 31;              // transparent
+const STAT_METER:  u16 = 1;               // + cell: that cell's row, fills 0-8 px at columns 0-4
+const STAT_TILE0:  u16 = ICON_TILE0 + (ICONS_CHR_SIZE >> 4);
+const STAT_CGRAM:  u16 = 20;              // sub-palettes 5-7
+const STAT_COLORS: u16 = 12;
+
 // Row 0 layout, in tile columns: "$NN", the airframe icon and lives, the
 // man icon and the men aboard.
 const HUD_COL_FUNDS:  u16 = 0;
 const HUD_COL_LIVES:  u16 = 4;
 const HUD_COL_MEN:    u16 = 7;
 // The bottom row (map row HUD_BOTTOM_ROW, the shadow's second 32 words):
-// "H[......]" and "F[......]" - six-cell bars, 48 px each - then "G NN"
-// and "B NN". (Columns 30-31 held the smart missiles' "MN" until they were
+// "H[......]" and "F[......]" - six-cell meters, 48 px each - then the
+// gun's icon and "NN", and the bomb's and "NN". (Columns 30-31 held the smart missiles' "MN" until they were
 // taken out of the game.)
 const HUD_BOTTOM_ROW: u16 = 27;
 const HUD_COL_HEALTH: u16 = 0;
@@ -61,9 +90,10 @@ const HUD_BAR_CELLS:  u16 = 6;
 const HUD_COL_GUN:    u16 = 20;
 const HUD_COL_BOMBS:  u16 = 25;
 
-// The blank tile is whatever the art has at (0,0): plain navy. It carries
-// the priority bit every word read out of the map does (the Makefile sets
-// it on the HUD's tilemap): on BG3 without it the dirt would show through.
+// The HUD art's blank tile is whatever the art has at (0,0): plain navy -
+// the order menu's and the alert box's background. It carries the priority
+// bit every word read out of the map does (the Makefile sets it on the
+// HUD's tilemap): on BG3 without it the dirt would show through.
 const HUD_BLANK: u16 = 0x2000;
 
 #[lowram] static mut hud_row:   [u16; 64];    // row 0, then the bottom row
@@ -84,41 +114,49 @@ fn hud_glyph(n: u16) -> u16 {
     return (HUD_MAP[i] as u16) | ((HUD_MAP[i + 1] as u16) << 8);
 }
 
+// hud_stat - the tile word at position *n* of the status sheet's map.
+fn hud_stat(n: u16) -> u16 {
+    let i: u16 = n << 1;
+    return (STATUS_MAP[i] as u16) | ((STATUS_MAP[i + 1] as u16) << 8);
+}
+
 // hud_put2 - two decimal digits at *col*. Values are capped at 99 upstream.
 fn hud_put2(col: u16, v: u8) {
     let tens: u8 = div8(v, 10);
-    hud_row[col]     = hud_glyph(GLYPH_DIGIT + (tens as u16));
-    hud_row[col + 1] = hud_glyph(GLYPH_DIGIT + ((v - mul8(tens, 10)) as u16));
+    hud_row[col]     = hud_stat(STAT_DIGIT + (tens as u16));
+    hud_row[col + 1] = hud_stat(STAT_DIGIT + ((v - mul8(tens, 10)) as u16));
 }
 
-// hud_bar - six bar cells at *col*, *px* of 48 filled.
+// hud_bar - a meter's six cells at *col*, *px* of 48 filled: each cell its
+// own row of the sheet, so its own palette.
 fn hud_bar(col: u16, px: u16) {
     let mut left: u16 = px;
     if left > (HUD_BAR_CELLS << 3) { left = HUD_BAR_CELLS << 3; }
     for c in 0..HUD_BAR_CELLS {
         let mut n: u16 = left;
         if n > 8 { n = 8; }
-        hud_row[col + c] = hud_box(BOX_BAR + (n >> 1));
+        hud_row[col + c] = hud_stat(((STAT_METER + c) << 5) + (n >> 1));
         left = left - n;
     }
 }
 
 far fn hud_init() {
+    let blank: u16 = hud_stat(STAT_BLANK);
     for c in 0..64 {
-        hud_row[c] = HUD_BLANK;
+        hud_row[c] = blank;
     }
-    // The fixed parts: labels, brackets, icons.
-    hud_row[HUD_COL_FUNDS] = hud_glyph(GLYPH_DOLLAR);
-    hud_row[HUD_COL_LIVES] = hud_glyph(GLYPH_ICON + (Order::Heli as u16));
-    hud_row[HUD_COL_MEN] = hud_glyph(GLYPH_ICON + (Order::Infantry as u16));
-    hud_row[32 + HUD_COL_HEALTH] = hud_letter(0x48);            // H
-    hud_row[32 + HUD_COL_HEALTH + 1] = hud_glyph(GLYPH_LBRACKET);
-    hud_row[32 + HUD_COL_HEALTH + 2 + HUD_BAR_CELLS] = hud_glyph(GLYPH_RBRACKET);
-    hud_row[32 + HUD_COL_FUEL] = hud_letter(0x46);              // F
-    hud_row[32 + HUD_COL_FUEL + 1] = hud_glyph(GLYPH_LBRACKET);
-    hud_row[32 + HUD_COL_FUEL + 2 + HUD_BAR_CELLS] = hud_glyph(GLYPH_RBRACKET);
-    hud_row[32 + HUD_COL_GUN] = hud_letter(0x47);               // G
-    hud_row[32 + HUD_COL_BOMBS] = hud_letter(0x42);             // B
+    // The fixed parts: labels, meter ends, icons.
+    hud_row[HUD_COL_FUNDS] = hud_stat(STAT_DOLLAR);
+    hud_row[HUD_COL_LIVES] = hud_stat(STAT_HELI);
+    hud_row[HUD_COL_MEN] = hud_stat(STAT_MAN);
+    hud_row[32 + HUD_COL_HEALTH] = hud_stat(STAT_H);
+    hud_row[32 + HUD_COL_HEALTH + 1] = hud_stat(STAT_CAP_L);
+    hud_row[32 + HUD_COL_HEALTH + 2 + HUD_BAR_CELLS] = hud_stat(STAT_CAP_R);
+    hud_row[32 + HUD_COL_FUEL] = hud_stat(STAT_F);
+    hud_row[32 + HUD_COL_FUEL + 1] = hud_stat(STAT_CAP_L);
+    hud_row[32 + HUD_COL_FUEL + 2 + HUD_BAR_CELLS] = hud_stat(STAT_CAP_R);
+    hud_row[32 + HUD_COL_GUN] = hud_stat(STAT_GUN);
+    hud_row[32 + HUD_COL_BOMBS] = hud_stat(STAT_BOMB);
     // Force the first compose: no real state matches these.
     hud_funds = 0xFF;
     hud_lives = 0xFF;
@@ -153,7 +191,7 @@ far fn hud_update() {
         hud_lives = airframes[HELI].lives;
         let mut n: u8 = airframes[HELI].lives;
         if n > 9 { n = 9; }
-        hud_row[HUD_COL_LIVES + 1] = hud_glyph(GLYPH_DIGIT + (n as u16));
+        hud_row[HUD_COL_LIVES + 1] = hud_stat(STAT_DIGIT + (n as u16));
         hud_dirty = 1;
     }
     if hud_hp != airframes[HELI].hp {
@@ -188,7 +226,7 @@ far fn hud_update() {
     }
     if hud_men != player.men {
         hud_men = player.men;
-        hud_row[HUD_COL_MEN + 1] = hud_glyph(GLYPH_DIGIT + (player.men as u16));
+        hud_row[HUD_COL_MEN + 1] = hud_stat(STAT_DIGIT + (player.men as u16));
         hud_dirty = 1;
     }
 }
@@ -277,9 +315,13 @@ fn hud_box(n: u16) -> u16 {
     return (HUD_MAP[i] as u16) | ((HUD_MAP[i + 1] as u16) << 8);
 }
 
-// hud_icons_load - the icons' tiles and both their palettes: boot, in
-// force blank. The selected palette is the sheet's with a brighter panel.
+// hud_icons_load - the icons' tiles and both their palettes, and the status
+// rows' tiles and three palettes after them: boot, in force blank. The
+// selected palette is the sheet's with a brighter panel.
 far fn hud_icons_load() {
+    dma_copy_vram(0, &STATUS_CHR as far *u8, VRAM_HUDC + (STAT_TILE0 << 3), STATUS_CHR_SIZE);
+    let pal: far *u8 = &STATUS_PAL as far *u8;
+    dma_copy_cgram(0, pal + (STAT_CGRAM << 1), STAT_CGRAM, STAT_COLORS << 1);
     dma_copy_vram(0, &ICONS_CHR as far *u8, VRAM_HUDC + (ICON_TILE0 << 3), ICONS_CHR_SIZE);
     dma_copy_cgram(0, &ICONS_PAL as far *u8, ICON_PAL << 2, 8);
     dma_copy_cgram(0, &ICONS_PAL as far *u8, ICON_PAL_SEL << 2, 8);

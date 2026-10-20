@@ -183,6 +183,19 @@ assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/ground.tilemap --pal 2 --priority
 assets/gfx/hud.chr assets/gfx/hud.pal assets/gfx/hud.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/hud.tilemap --priority
+# - The status rows' glyphs (status, tools/status_art.py) are BG3 tiles
+#   too, drawn in sub-palettes 5-7 - an 8-bit bitmap of CGRAM indices, so
+#   bmp2chr names each tile's palette itself. They go up past the order
+#   menu's icons: the front end's font ends at tile 160 (hud.r65
+#   ICON_TILE0), so their map names them 160 + the icons' tile count on
+#   (hence the extra prerequisite), and the lot must fit BG3's 256 tiles.
+assets/gfx/status.tilemap: assets/gfx/icons.chr
+assets/gfx/status.chr assets/gfx/status.pal assets/gfx/status.tilemap: \
+	BMP2CHR_POST = off=$$(( 160 + $$(stat -c%s assets/gfx/icons.chr) / 16 )); \
+	  python3 tools/tilemap_attr.py assets/gfx/status.tilemap --priority --tile-offset $$off && \
+	  { n=$$(( off + $$(stat -c%s assets/gfx/status.chr) / 16 )); [ $$n -le 256 ] || \
+	    { echo "icons.chr + status.chr end at BG3 tile $$n: past the 256 that BG3 VRAM 0x7000-0x77FF holds" >&2; \
+	      rm -f assets/gfx/status.chr; exit 1; }; }
 
 # A sheet that carries a tilemap: tiles de-duplicated (-t), and the map
 # names them back in the bitmap's order. The depths and the tilemap

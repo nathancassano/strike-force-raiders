@@ -199,7 +199,7 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 |---|---|---|---|---|
 | BG1 | `ground` | dirt, rows 179-223 | per-scanline HDMA ch6, eight bands | 4bpp $0000 / $6000 (64x32) |
 | BG2 | `sky` + `mountains` | stratus clouds rows 16-91; mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp $1000-$3FFF (clouds' tiles, then mountains') / $6800 (64x32) |
-| BG3 | `hud` + `icons` | HUD strip, radar, order menu, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
+| BG3 | `hud` + `icons` + `status` | status rows, radar, order menu, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
 | OBJ | `fx` | explosions and smoke, from hindstrike | camera-relative | after `heli` (4bpp, `FX_TILE0` on) |
@@ -220,7 +220,9 @@ carry the bit as well, so an airframe rising out of it at OBJ priority 2 is behi
 in front of the mountains.
 
 **CGRAM**: BG1 and BG2 draw 16-colour palettes from 0-127, and BG3's eight 4-colour ones are the
-first 32 of those. So the HUD keeps 0-31 (CGRAM 0 is also the backdrop - the sky, #3d9aec, the clouds' art drawn against it),
+first 32 of those. So the HUD keeps 0-31 (CGRAM 0 is also the backdrop - the sky, #3d9aec, the clouds' art drawn against it):
+BG3 sub-palette 0 the HUD art, 1 the radar, 2 the front end's font, 3-4 the order menu's icons, and
+5-7 (CGRAM 20-31) the status rows' gold, red and white;
 the ground is palette 2 (32-47), the clouds 3 (48-63), the mountains 4 (64-79), 5-7 are free,
 and sprites get 128-255. Every 4bpp sheet is one palette, drawn as palette 0 in its bitmap and
 moved up by `tools/tilemap_attr.py --pal` in the Makefile; `CGRAM_GROUND`/`CGRAM_SKY`/
@@ -239,7 +241,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art,status_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` and `title_art.py` are the exceptions that already are final art (the title's is below). It paints the sky's two sheets from
@@ -529,7 +531,8 @@ taken. Typing redraws only the five rows the
 field occupies, DMA'd from the page shadow in vblank (`screen_flush`); everything else about a
 page is composed once. The text goes through the stdlib console (`lib/console.r65`, buffer mode
 into the page shadow, its area the inside of the frame) in the stdlib's default font, DMA'd at
-boot to BG3 tile 96 (past the art and the radar) on BG3 sub-palette 2 - by DMA, not
+boot to BG3 tile 96 (past the art and the radar) on BG3 sub-palette 2 - only ASCII 32-95, the
+capitals and the code cursor's `^`, 64 tiles, since nothing prints lowercase - by DMA, not
 `Console::upload_font`, whose register-at-a-time loop costs a frame of boot and shifts every
 suite movie. The border and code cursor are still the HUD's box pieces. **The front
 end is the campaign's**: a test mission boots straight into its battle and its Start
@@ -664,14 +667,26 @@ and munitions in flight take the slots straight after, with anything outside the
 culled rather than parked off-screen.
 
 The HUD is BG3 rows 0-1 at the top and row 27 at the bottom. Row 0 (`src/hud.r65`: `$` purse,
-lives, men aboard) and row 27 (the airframe: H and F gauges of six bar cells, G rounds, B
-bombs - over the dirt, the last visible row in 224-line mode, where nothing else is
+lives, men aboard) and row 27 (the airframe: H and F meters, the gun's rounds and the bombs, each
+behind its icon - over the dirt, the last visible row in 224-line mode, where nothing else is
 drawn) are composed into one 64-word shadow and DMA'd in vblank, 64 bytes each, when a shown
-value changes; row 2, navy in the art, is cleared once at boot. Their glyphs (digits, `$`, brackets, six unit icons on **map row 28
-of `hud.tilemap.bmp`**, capitals on 29, the dialog's box/cursor/bar cells on 30 - all below the
-224 visible scanlines) are read back out of `HUD_MAP` at runtime by position, so bmp2chr's
-de-duplicated IDs never appear in code. The glyph *order* is the contract; `tools/hud_glyphs.py`
-stamps them and is the place to edit them.
+value changes; row 2, navy in the art, is cleared once at boot. **These two status rows have a
+sheet of their own**, `status.tilemap.bmp` (`tools/status_art.py`, after
+`assets/reference/hud.png`): a bold font in two tones with a drop shadow - the labels gold, the
+digits white - the icons, and the meters, all transparent around the ink so the rows float over
+the sky and the dirt with no strip behind them. **It uses BG3's tile palettes**: the bitmap is
+8-bit, its pixels CGRAM indices, and bmp2chr names each tile's sub-palette from them (5 gold,
+6 red, 7 white, sharing one dark for the shadow, the meters' rim and their empty part), so the
+palette rides in the map words `hud_stat` reads back. A meter is six cells and each cell is its
+own row of the sheet in its own palette - red, red/orange dithered, orange, orange/yellow,
+yellow, white - which is the gradient: three colours a cell, six steps across. Its tiles go up
+past the order menu's icons (the Makefile offsets its map from there and stops the build past
+BG3's 256 tiles). Everything else on BG3 - the alert box, the order menu, the battle-over line -
+draws from the HUD art: its glyphs (digits, `$`, six unit icons on **map row 28
+of `hud.tilemap.bmp`**, capitals on 29, the dialog's box/cursor pieces on 30 - all below the
+224 visible scanlines; the strip's old brackets and bar cells there are unused now) are read back
+out of `HUD_MAP` at runtime by position, so bmp2chr's de-duplicated IDs never appear in code. The
+glyph *order* is the contract; `tools/hud_glyphs.py` stamps them and is the place to edit them.
 
 Row 1 is the radar (`src/radar.r65`): 32 tiles past the art's (`RADAR_TILE = HUD_CHR_SIZE/16`)
 mapped in order, so the row is a 256x8 bitmap - 32 world px per pixel - drawn into a 512-byte
@@ -742,7 +757,8 @@ The menu (`hud_overlay`) is a column of six 32x32 icons, one per order in ring o
 left edge of BG3: map rows 2-25, four apiece, columns 1-4. The selected icon is on a brighter
 panel (BG3 sub-palette 4, the rest 3: CGRAM 12-19), with its name and cost beside it on its top
 row. The icons are BG3 tiles, 2bpp, from `icons.tilemap.bmp`, de-duplicated by the build, and
-uploaded at boot past the front end's font (`ICON_TILE0`, 191; 44 of the 65 tiles left there).
+uploaded at boot past the front end's font (`ICON_TILE0`, 160; 44 tiles, the status rows' 32
+after them, 20 of BG3's 256 left).
 `tools/icon_art.py` derives them from the units' own sprites in two tones.
 The menu is composed once at init into a 24-row shadow and a transparent twin, both `#[ram]`
 (composing it on the press cost a frame). Showing and hiding flush all of it. A move rewrites the

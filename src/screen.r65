@@ -42,8 +42,11 @@ const SCREEN_END:   u8 = 4;               // the campaign, won
 // The font, in BG3's tileset after the art (HUD_CHR_SIZE / 16 tiles) and
 // the radar's 32, on a sub-palette of its own: CGRAM 8-11, white with a
 // grey edge. Colour 0 is transparent, so the page's navy is the backdrop.
+// Only ASCII 32-95 - space to '_', the capitals and the code cursor's '^':
+// the pages print no lowercase, and the tiles past them are the order
+// menu's icons and the status rows' glyphs (hud.r65).
 const SCREEN_FONT_TILE:  u16 = 96;
-const SCREEN_FONT_TILES: u16 = 95;
+const SCREEN_FONT_TILES: u16 = 64;
 const SCREEN_FONT_PAL:   u16 = 2;
 // The console's area: inside the frame's two border columns.
 const SCREEN_TEXT_COL:   u16 = 2;
