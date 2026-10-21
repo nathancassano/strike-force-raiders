@@ -734,7 +734,11 @@ share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_
 starting to jam the radar (`radar_jammed`, `radar_update`); fuel crossing 25 and 10, hp 5 and the
 last airframe (in `hud_update`'s existing change branches); an order short of funds or over its
 cap (`order_place`); the CPU buying its first convoy (`cpu_buy`, once a battle: `cpu_told`); its paratroopers (`Pilot::maybe_drop`)
-and its bank raid (`Pilot::choose`); an engineer boarding (`para_refit`). **Idle it costs nothing** - one byte test in `hud_update`
+and its bank raid (`Pilot::choose`); an engineer boarding (`para_refit`); and a player hint,
+UNITS NEEDED / DEPLOY TO FIELD (`alert_hint`, from `hud_update` on campaign
+rows only): with nothing of the player's on the field, under a canopy or ordered, and the purse
+paying for the cheapest order, after `HINT_DELAY` (600 frames) and every `HINT_REPEAT` (1800) while
+that lasts - anything bought restarts it. **Idle it costs nothing** - one byte test in `hud_update`
 (`alert_busy`, which ticks the queue) and one in `main`'s draw (`alert_up`) - measured with every
 push suppressed, the stress run did not move; while one is up the portrait and the tick cost it
 11 ticks a minute, when every convoy was announced and kept one up a quarter of that run. `alert_draw` claims

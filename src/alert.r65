@@ -1,7 +1,9 @@
 // alert - the radio operator: a portrait that slides in at the bottom
 // right with a two-line message typed out beside it, for what happens
 // off screen - a bunker taken, the bank robbed, a van on the radar - and
-// for the airframe's own warnings.
+// for the airframe's own warnings - and a hint, UNITS NEEDED / DEPLOY TO
+// FIELD, when a campaign battle has the player with nothing on the field
+// and the funds to change that (alert_hint).
 //
 // Events push an alert *code* onto a four-deep queue (alert_push); the
 // HUD's tick plays the queue out one at a time (alert_tick):
@@ -94,8 +96,10 @@ const AL_PARAS:     u16 = 26;
 const AL_RAID:      u16 = 27;
 const AL_ENGINEER:  u16 = 28;
 const AL_REARM:     u16 = 29;
+const AL_UNITS_NEEDED: u16 = 30;
+const AL_DEPLOY:    u16 = 31;
 
-static alert_lines: [AlertLine; 30] = [
+static alert_lines: [AlertLine; 32] = [
     AlertLine { text: "" },
     AlertLine { text: "ENEMY TOOK OUR" },
     AlertLine { text: "ENEMY TOOK A" },
@@ -126,6 +130,8 @@ static alert_lines: [AlertLine; 30] = [
     AlertLine { text: "ENEMY RAID ON" },
     AlertLine { text: "ENGINEER ABOARD" },
     AlertLine { text: "PARTIAL REARM" },
+    AlertLine { text: "UNITS NEEDED" },
+    AlertLine { text: "DEPLOY TO FIELD" },
 ];
 
 // The alerts the rest of the game pushes. Captures and losses are made up
@@ -143,6 +149,14 @@ const ALERT_CONVOY:      u16 = (AL_CONVOY << 8) | AL_ON_THE_WAY;
 const ALERT_PARAS:       u16 = (AL_ENEMY << 8) | AL_PARAS;
 const ALERT_RAID:        u16 = (AL_RAID << 8) | AL_OUR_BANK;
 const ALERT_REARM:       u16 = (AL_ENGINEER << 8) | AL_REARM;
+const ALERT_DEPLOY:      u16 = (AL_UNITS_NEEDED << 8) | AL_DEPLOY;
+
+// The reinforcements hint (alert_hint): with nothing of the player's on the
+// field, on its way down or ordered, and the purse able to pay for the
+// cheapest order, HINT_DELAY frames bring UNITS NEEDED / DEPLOY TO FIELD,
+// and HINT_REPEAT more bring it again while that lasts. Campaign missions only: hud_update skips it on the test rows.
+const HINT_DELAY:  u16 = 600;             // 10 s
+const HINT_REPEAT: u16 = 1800;            // 30 s
 
 // The airframe's thresholds, crossed downward (hud_update).
 const ALERT_FUEL_AT: u8 = 25;
@@ -153,6 +167,7 @@ const ALERT_HP_AT:   u8 = 5;
 #[lowram] static mut alert_qh:    u8;
 #[lowram] static mut alert_qn:    u8;
 #[lowram] static mut alert_busy:  u8;         // anything showing or queued
+#[lowram] static mut alert_hint_t: u16;       // frames until the reinforcements hint
 #[lowram] static mut alert_up:    u8;         // the portrait is drawn
 #[lowram] static mut alert_state: u8;
 #[lowram] static mut alert_cur:   u16;        // the code showing; 0 none
@@ -176,7 +191,28 @@ far fn alert_init() {
     alert_state = ALERT_IDLE;
     alert_cur = 0;
     alert_mouth = 0;
+    alert_hint_t = HINT_DELAY;
     alert_clear();
+}
+
+// alert_hint - a battle frame of the reinforcements hint: is the player
+// short of units it could buy? Nothing of theirs on the field or under a
+// canopy, no order waiting at the gate or still letting men out, and the
+// purse covers the cheapest order (a hint they could not act on is noise -
+// an order short of funds says so itself). While that holds the countdown
+// runs, and at 0 the hint is queued; anything bought restarts it.
+fn alert_hint() {
+    if unit_side_count[SIDE_PLAYER as u16] != 0 || unit_side_held[SIDE_PLAYER as u16] != 0
+       || order_head != order_tail || order_men != 0 || funds < order_stats[0].cost {
+        alert_hint_t = HINT_DELAY;
+        return;
+    }
+    if alert_hint_t != 0 {
+        alert_hint_t = alert_hint_t - 1;
+        return;
+    }
+    alert_push(ALERT_DEPLOY);
+    alert_hint_t = HINT_REPEAT;
 }
 
 // alert_push - queue *code*, unless the battle is not on (a reset or the

@@ -200,3 +200,54 @@ def test_a_reset_clears_the_alert(state):
     assert (v.alert_state, v.alert_qn, v.alert_up) == (ALERT_IDLE, 0, 0)
     clear = snes.raw("HUD_MAP_data").u16[23 * 32]
     assert [v.alert_map.u16[i] for i in range(128)] == [clear] * 128
+
+
+# ---- the reinforcements hint --------------------------------------------------
+#
+# alert_hint: on a campaign row, with nothing of the player's on the field, on
+# its way down or ordered, and the purse paying for the cheapest order, 600
+# frames (HINT_DELAY) bring UNITS NEEDED / DEPLOY TO FIELD, and every 1800
+# (HINT_REPEAT) more while that lasts. Cake Walk starts with 32 and nothing
+# out, so it comes at ~frame 612.
+
+DEPLOY = code(30, 31)           # UNITS NEEDED / DEPLOY TO FIELD
+
+
+def showing_or_queued(v):
+    """The alert up and the codes waiting behind it."""
+    q = [v.alert_q.u16[(v.alert_qh + n) & 3] for n in range(v.alert_qn)]
+    return ([v.alert_cur] if v.alert_cur else []) + q
+
+
+def test_the_hint_asks_for_units(snes):
+    """Ten seconds into a campaign battle with nothing ordered, the hint
+    types out, one alert, both lines."""
+    boot(snes, "MISSION_CAKE_WALK").wait(680)
+    v = read_snapshot(snes)
+    assert v.alert_cur == DEPLOY
+    assert line(v, 1, 12) == letters(snes, "UNITS NEEDED")
+    assert line(v, 2, 15) == letters(snes, "DEPLOY TO FIELD")
+
+
+def test_a_unit_ordered_puts_the_hint_off(snes):
+    """A tank bought at the start is on the field: no hint at ten seconds."""
+    boot(snes, "MISSION_CAKE_WALK").press("l", "a", frames=3).wait(700)
+    v = read_snapshot(snes)
+    assert v.units__owner.u8[0] == 0
+    assert DEPLOY not in showing_or_queued(v)
+
+
+def test_the_hint_comes_again_while_nothing_is_out(snes):
+    """Still nothing ordered 30 s on (HINT_REPEAT), it is pushed again."""
+    boot(snes, "MISSION_CAKE_WALK").wait(2430)
+    v = read_snapshot(snes)
+    assert DEPLOY in showing_or_queued(v)
+
+
+def test_the_test_missions_get_no_hint(snes):
+    """The test rows skip the hint (hud_update tests the mission), so their
+    battles' alerts stay as calibrated: the countdown never moves."""
+    boot(snes, "MISSION_TEST_QUIET").wait(700)
+    v = read_snapshot(snes)
+    assert v.alert_hint_t == 600
+    assert DEPLOY not in showing_or_queued(v)
