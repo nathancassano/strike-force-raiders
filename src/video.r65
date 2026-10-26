@@ -16,14 +16,17 @@
 // 0x800 words (two 32x32 screens), a 32x32 map is 0x400.
 // Each layer carries its own tileset: r65x de-duplicates per bitmap, so the
 // tile numbering in one layer's tilemap means nothing in another's.
-// BG12NBA/BG34NBA address these in 4K-word units. BG2 holds two sheets -
-// the clouds' tiles, then the mountains' straight after (MOUNTAINS_CHR at
-// VRAM_SKYC + SKY_CHR_SIZE / 2) - and outgrows one unit, so it runs on to
-// $3FFF, and the HUD's tiles go in the 2K words Mode 1 left free between
+// BG12NBA/BG34NBA address these in 4K-word units. BG1 and BG2 share one
+// tile area from $0000, 1024 tiles to $3FFF - the most a layer can name -
+// with both name bases at $0000: the ground's tiles, then the clouds'
+// (VRAM_SKYC), then the mountains' (at VRAM_SKYC + SKY_CHR_SIZE / 2), each
+// map naming its own tiles past the sheets before it (the Makefile's
+// tilemap_attr.py --tile-offset), so any sheet may grow into what the
+// others leave. The Makefile stops the build if the three outgrow
+// $0000-$3FFF. The HUD's tiles go in the 2K words Mode 1 left free between
 // the sky's map and the HUD's - a 4K-word boundary, so BG3 can start there.
-// The Makefile stops the build if the two sheets outgrow $1000-$3FFF.
-const VRAM_GROUNDC: u16 = 0x0000;   // BG1
-const VRAM_SKYC:    u16 = 0x1000;   // BG2, to $3FFF: 768 tiles
+const VRAM_GROUNDC: u16 = 0x0000;                    // BG1 and BG2
+const VRAM_SKYC:    u16 = VRAM_GROUNDC + (GROUND_CHR_SIZE >> 1);
 const VRAM_HUDC:    u16 = 0x7000;   // BG3, to $77FF: 256 2bpp tiles
 const VRAM_GROUND:  u16 = 0x6000;   // 0x18 in $400-word units
 const VRAM_SKY:     u16 = 0x6800;   // 0x1A
@@ -219,9 +222,9 @@ const SKY_SPLIT: u8 = 104;                // first scanline at the mountains' ra
 // They are two sheets, sky.tilemap.bmp and mountains.tilemap.bmp, and BG2
 // has one map: the clouds' map goes up whole, then the mountains' tile rows
 // - the only rows they draw in - over it, in both 32x32 screens. The
-// mountains' map already names their tiles past the clouds' (the Makefile's
-// tilemap_attr.py --tile-offset). tools/sky_art.py checks both bands sit
-// where these say.
+// mountains' map already names their tiles past the ground's and the
+// clouds' (the Makefile's tilemap_attr.py --tile-offset). tools/sky_art.py
+// checks both bands sit where these say.
 const MOUNTAIN_ROW:  u16 = 16;            // tile rows 16-22, scanlines 128-183
 const MOUNTAIN_ROWS: u16 = 7;
 const MOUNTAIN_AT0:  u16 = MOUNTAIN_ROW << 5;            // map word, screen 0
@@ -404,7 +407,7 @@ far fn video_upload() {
     set_bg1_map!(0x18, 1);         // ground, 64x32 - wraps at 512px
     set_bg2_map!(0x1A, 1);         // sky, 64x32
     set_bg3_map!(0x1E, 0);         // HUD, 32x32 - does not scroll
-    set_bg12_chr!(0, 1);           // 4K-word units: $0000, $1000
+    set_bg12_chr!(0, 0);           // both at $0000: one shared tile area
     set_bg34_chr!(7, 0);           // $7000; there is no BG4 in Mode 1
 
     // Scroll registers show line (v+1), so -1 puts tilemap row 0 at the top.

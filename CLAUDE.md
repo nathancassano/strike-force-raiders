@@ -197,8 +197,8 @@ there is **no column refill anywhere**. Everything world-specific is a sprite.
 
 | Layer | Sheet | Contents | Scroll | Tiles / VRAM map (words) |
 |---|---|---|---|---|
-| BG1 | `ground` | dirt, rows 179-223 | per-scanline HDMA ch6, eight bands | 4bpp $0000 / $6000 (64x32) |
-| BG2 | `sky` + `mountains` | stratus clouds rows 16-91; mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp $1000-$3FFF (clouds' tiles, then mountains') / $6800 (64x32) |
+| BG1 | `ground` | dirt, rows 179-223 | per-scanline HDMA ch6, eight bands | 4bpp $0000- (first in the shared area) / $6000 (64x32) |
+| BG2 | `sky` + `mountains` | stratus clouds rows 16-91; mountains 135-178 (muted desert rock, hazed toward the sky) | HDMA ch5: clouds `camera_x >> 5` above `SKY_SPLIT` (104), mountains `>> 3` below - the clouds are the farthest layer | 4bpp, the shared area after the ground's (clouds' tiles, then mountains'), to $3FFF / $6800 (64x32) |
 | BG3 | `hud` + `icons` + `status` | status rows, radar, order menu, front-end pages | fixed | 2bpp $7000 / $7800 (32x32) |
 | OBJ | `obj` | units, buildings, munitions | camera-relative | $4000 (4bpp, tiles 0-255) |
 | OBJ | `heli` | the two airframes, their own sheet | camera-relative | $5000 (4bpp, tiles 256+) |
@@ -258,8 +258,14 @@ caps), `--threshold T` to move the cloud/sky line, and `--haze N` on either to b
 backdrop colour `main.r65` sets, which is what makes a band read as distant. The current art is
 mountains `--key-grey --haze 0.3` (rows 135-178) and clouds from render `rotor_clouds_e_00001_`
 rows 30-480 at `--threshold 40 --haze 0.15` (rows 16-91, from right under the HUD, where a cloud cut flat at the
-top reads as running on behind it). The two sheets share BG2's 768 tiles (537 now); the
-Makefile stops the build past it, since they would overwrite the sprites' at $4000. **Bigger sky art lengthens the boot** (its tiles upload in force blank), and a boot a frame longer shifts every
+top reads as running on behind it). **BG1 and BG2 share one tile area**, $0000-$3FFF, 1024 tiles (both name
+bases $0000): the ground's tiles, then the clouds', then the mountains', each map offset past the
+sheets before it (`tilemap_attr.py --tile-offset`), so any sheet can grow into what the others
+leave - 860 now (ground 381, clouds 181, mountains 298). The Makefile stops the build past 1024,
+since they would overwrite the sprites' at $4000. The ground has ROM bank 9 to itself: a strip
+with every 8x8 drawn differently is 384 tiles, 16K with its map, more than bank 1 holds beside the
+mountains - and an over-full bank fails the assemble, so a ROM that will not build is still the
+last one that did. **Bigger sky art lengthens the boot** (its tiles upload in force blank), and a boot a frame longer shifts every
 suite movie: the clouds' did, and moved `test_unit_budget`'s pin.
 Nothing generates graphics from code at build time. **`sky`, `mountains` and `ground` are drawn
 512x256, as they appear** across the layer's two screens, and the Makefile folds each on its way

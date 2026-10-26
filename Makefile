@@ -162,22 +162,25 @@ assets/gfx/title_2.chr: assets/gfx/title.chr
 # - The HUD carries it too, so with BGMODE's BG3 bit its rows draw over the
 #   dirt and the sky. The radar row is the exception, written at runtime
 #   without it, so the camera bracket sprite shows over it.
-# - The clouds (sky) and the mountains share BG2 and its one tile area: the
-#   mountains' tiles are uploaded straight after the clouds', so their map
-#   names them that many tiles on (--tile-offset, the clouds' tile count,
-#   from sky.chr's size - hence the extra prerequisite). Together they must
-#   fit BG2's VRAM, $1000-$3FFF (video.r65 VRAM_SKYC): 768 4bpp tiles,
-#   24576 bytes. Past it they overwrite the sprites' tiles at $4000,
-#   silently, so the build stops instead.
+# - BG1 and BG2 share one tile area, $0000-$3FFF (both name bases $0000,
+#   video.r65): 1024 4bpp tiles, the most a layer can address. The three
+#   sheets go up in it one after the other - the ground, the clouds (sky),
+#   the mountains - so each map names its tiles that many on from the
+#   sheets before it (--tile-offset, from their .chr sizes - hence the
+#   extra prerequisites), and any of them may grow into what the others
+#   leave. Together they must fit: past $3FFF they overwrite the sprites'
+#   tiles at $4000, silently, so the build stops instead.
+assets/gfx/sky.tilemap: assets/gfx/ground.chr
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: \
-	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3
-assets/gfx/mountains.tilemap: assets/gfx/sky.chr
+	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3 \
+	    --tile-offset $$(( $$(stat -c%s assets/gfx/ground.chr) / 32 ))
+assets/gfx/mountains.tilemap: assets/gfx/ground.chr assets/gfx/sky.chr
 assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/mountains.tilemap --pal 4 \
-	    --tile-offset $$(( $$(stat -c%s assets/gfx/sky.chr) / 32 )) && \
-	  { bg2=$$(( $$(stat -c%s assets/gfx/sky.chr) + $$(stat -c%s assets/gfx/mountains.chr) )); \
-	    [ $$bg2 -le 24576 ] || \
-	    { echo "sky.chr + mountains.chr are $$bg2 bytes: over the 768 tiles BG2's VRAM $$1000-$$3FFF holds" >&2; \
+	    --tile-offset $$(( ( $$(stat -c%s assets/gfx/ground.chr) + $$(stat -c%s assets/gfx/sky.chr) ) / 32 )) && \
+	  { bg=$$(( $$(stat -c%s assets/gfx/ground.chr) + $$(stat -c%s assets/gfx/sky.chr) + $$(stat -c%s assets/gfx/mountains.chr) )); \
+	    [ $$bg -le 32768 ] || \
+	    { echo "ground.chr + sky.chr + mountains.chr are $$bg bytes: over the 1024 tiles BG1/BG2's VRAM $$0000-$$3FFF holds" >&2; \
 	      rm -f assets/gfx/mountains.chr; exit 1; }; }
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/ground.tilemap --pal 2 --priority
@@ -216,10 +219,11 @@ assets/gfx/%.chr assets/gfx/%.pal: assets/src/%.bmp Makefile
 # move when art is edited - dedup decides them - so a hand-written size in
 # include_bytes! would silently desync from the file on disk.
 # The backgrounds (the %.tilemap.bmp sheets) go in bank 1 and the sprite
-# sheets in bank 3: together they outgrow one 32K bank. The sky - 600-odd
-# 4bpp tiles of clouds and mountains - outgrows a share of one, and has
+# sheets in bank 3: together they outgrow one 32K bank. The clouds have
 # bank 4, with the intro's Mode 7 logo (7K of 8bpp tiles, too much for what
-# bank 1 has left). The title's picture is two halves cut at 32K, bank 7
+# bank 1 has left), and the ground bank 9 to itself: every 8x8 of its strip
+# drawn differently is 384 tiles, 16K with its map, which bank 1 cannot
+# hold beside the mountains. The title's picture is two halves cut at 32K, bank 7
 # and bank 8, its map and palette with the second (TITLE_SPLIT, above).
 # Every upload takes a far pointer, so which bank a sheet lands in is
 # invisible to the code.
@@ -235,6 +239,7 @@ src/assets.r65: $(ART_OUT) $(TITLE_SPLIT) Makefile
 	      *) b=3;; \
 	    esac; \
 	    [ "$$n" = sky ] && b=4; \
+	    [ "$$n" = ground ] && b=9; \
 	    [ "$$n" = bubblezap ] && b=4; \
 	    [ "$$n" = title ] && b=8; \
 	    u=$$(echo $$n | tr a-z A-Z); \
