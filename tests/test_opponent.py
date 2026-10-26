@@ -6,6 +6,7 @@ from shared import boot, five_passes, read_snapshot
 
 GAME_PLAYING, GAME_LOST, GAME_PAUSED = 0, 2, 4
 FREE = 0                                    # an empty unit slot's kind
+SFX_CHN_HIT, SFX_ENEMY_HIT = 4, 6           # sound.r65
 
 
 # ---- Phase 9 - win and loss ---------------------------------------------------
@@ -265,3 +266,23 @@ def test_a_purse_under_fund_max_is_not_raided(snes):
     v = read_snapshot(snes)
     assert v.funds == 99
     assert west >= 900
+
+
+def test_a_round_on_the_enemy_airframe_plays_the_hit(snes):
+    """The player's round striking the enemy airframe plays hindstrike's
+    SFX_ENEMY_HIT on the blast channel (SFX_CHN_HIT, 4), as one striking a
+    vehicle does (test_units.py). The enemy is planted level with the
+    player's airframe, 60 px ahead of its nose and stopped, and one round
+    takes a point off it."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    px = snes.raw("airframes__x_px").u16[0]
+    py = snes.raw("airframes__y").u16[0]
+    foe = {n: snes.rom.symbols[n].addr + 2 for n in ("airframes__x_px", "airframes__y", "airframes__vx")}
+    snes.write(foe["airframes__x_px"], px + 60, 2)
+    snes.write(foe["airframes__y"], py, 2)
+    snes.write(foe["airframes__vx"], 0, 2)
+    assert snes.raw("sfx_want").u8[SFX_CHN_HIT] != SFX_ENEMY_HIT
+    snes.b(1).wait(8)
+    v = read_snapshot(snes)
+    assert v.airframes__hp.u8[1] == 19
+    assert v.sfx_want.u8[SFX_CHN_HIT] == SFX_ENEMY_HIT

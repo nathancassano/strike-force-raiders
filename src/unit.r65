@@ -977,6 +977,12 @@ far fn unit_collide() {
                                     // round and half a step back (muni_mid).
                                     let w: u16 = unit_stats[units[i].kind as u16].width;
                                     if mx - ux < w || mid - ux < w {
+                                        // A round on a vehicle rings
+                                        // (hindstrike's hit); one that
+                                        // destroys it is the explosion.
+                                        if mk == MUNI_BULLET && (units[i].kind as u8) < UnitType::Infantry as u8 {
+                                            sfx_at(SFX_CHN_HIT, SFX_ENEMY_HIT, ux + (w >> 1));
+                                        }
                                         unit_hit(i, unit_damage_for(mk, i));
                                         muni_kind[m] = MUNI_FREE;
                                     }

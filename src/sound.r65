@@ -90,6 +90,10 @@ const SFX_CHN_FOE_GUN: u8 = 1;   // the enemy airframe's
 const SFX_CHN_TURRET:  u8 = 2;   // turrets, the super bunker, the bank
 const SFX_CHN_CANNON:  u8 = 3;   // tank shells
 const SFX_CHN_BLAST:   u8 = 4;   // bombs going off, vehicles destroyed
+const SFX_CHN_HIT:     u8 = 4;   // a round striking a vehicle or the enemy airframe
+                                 // (SFX_ENEMY_HIT): shares the blast channel, so
+                                 // the round that destroys a vehicle is heard as
+                                 // the explosion, which replaces it in the queue
 const SFX_CHN_LOST:    u8 = 5;   // an airframe lost, a building fallen
 const SFX_CHN_WARN:    u8 = 5;   // the missile alarm: shares the loss channel, so a
                                  // missile that connects cuts it with the explosion

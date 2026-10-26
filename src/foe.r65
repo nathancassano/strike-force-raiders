@@ -291,6 +291,7 @@ impl Pilot {
                             if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
                             Pilot::hit(dmg);
                             if airframes[FOE].dead > 0 || airframes[FOE].rising != 0 { return; }
+                            if mk == MUNI_BULLET { sfx_at(SFX_CHN_HIT, SFX_ENEMY_HIT, fx + (HELI_W >> 1)); }
                         }
                     }
                 }

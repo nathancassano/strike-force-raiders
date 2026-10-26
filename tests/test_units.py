@@ -219,3 +219,61 @@ def test_two_rounds_drop_a_man(snes):
     v = read_snapshot(snes)
     assert v.units__kind__tag.u8[0] == 0
     assert v.fx_kind.u8[0] == 3                      # FX_MAN: he lies where he fell
+
+
+# ---- the hit sound ------------------------------------------------------------
+#
+# A round that strikes a vehicle and leaves it standing plays hindstrike's
+# SFX_ENEMY_HIT, on the blast channel (SFX_CHN_HIT, 4); one that destroys it
+# is heard as the explosion, SFX_EXPLODE_1, which replaces the hit in the
+# queue. A man struck makes no sound of it. sound_flush sends a queued effect
+# and leaves it in sfx_want, so the channel's last effect can be read back.
+# Each case plants the camera on the target too: sfx_at is silent off screen.
+
+SFX_CHN_HIT, SFX_ENEMY_HIT, SFX_EXPLODE_1 = 4, 6, 12
+
+
+def plant_gun_on_slot_0(snes):
+    """The two_rounds setup: landed 60 px west of slot 0, facing it, with
+    the camera on them both."""
+    x = snes.raw("units__x_px").u16[0]
+    snes.write("airframes__x_px", x - 60, 2)
+    snes.write("airframes__y", 168 * 256, 2)
+    snes.write("camera_x", x - 128, 2)
+
+
+def test_a_round_on_a_vehicle_plays_the_hit(snes):
+    """The quiet row's first man made a van (12 hp): one round leaves 10,
+    and the blast channel carries SFX_ENEMY_HIT."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    snes.write("units__kind__tag", VAN, 1)
+    snes.write("units__hp", 12, 1)
+    plant_gun_on_slot_0(snes)
+    assert snes.raw("sfx_want").u8[SFX_CHN_HIT] != SFX_ENEMY_HIT
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.units__hp.u8[0] == 10
+    assert v.sfx_want.u8[SFX_CHN_HIT] == SFX_ENEMY_HIT
+
+
+def test_a_round_that_destroys_a_vehicle_is_the_explosion(snes):
+    """A van on its last 2 hp goes up to one round: the explosion, not the
+    hit, is what the channel plays."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    snes.write("units__kind__tag", VAN, 1)
+    snes.write("units__hp", 2, 1)
+    plant_gun_on_slot_0(snes)
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.units__kind__tag.u8[0] == 0
+    assert v.sfx_want.u8[SFX_CHN_HIT] == SFX_EXPLODE_1
+
+
+def test_a_round_on_a_man_plays_no_hit(snes):
+    """The same round on the man himself takes him to 2 hp in silence."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    plant_gun_on_slot_0(snes)
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.units__hp.u8[0] == 2
+    assert v.sfx_want.u8[SFX_CHN_HIT] != SFX_ENEMY_HIT
