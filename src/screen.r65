@@ -549,14 +549,12 @@ fn screen_end() {
 // title's field, which is where Start goes from here - ENTER CODE, Start,
 // and the mission is fought again with the purse its row deals.
 static OVER_TITLE: [u8; 10] = "GAME OVER";
-static OVER_TEXT:  [u8; 24] = "THE CODE TRIES IT AGAIN";
 static OVER_PRESS: [u8; 12] = "PRESS START";
 
 fn screen_over() {
     code_set(mission, start_funds);
     screen_centre(8, &OVER_TITLE as far *u8);
     screen_name(11, mission);
-    screen_centre(15, &OVER_TEXT as far *u8);
     screen_code(17);
     screen_centre(SCREEN_PROMPT, &OVER_PRESS as far *u8);
 }
