@@ -754,7 +754,7 @@ background of its own inside the HUD's frame, her eyes and the two mouths painte
 frames differ only at the mouth), slides in at x 224, y 184; a box in the HUD's box pieces
 goes up beside it on BG3 rows 23-26 (cols 10-27, under the units' band, over the dirt; cols
 28-31 stay transparent or they would hide the portrait), and the code's two lines type out in the
-HUD capitals a letter every 2 frames, the mouth working; it holds 120 frames (48 with another
+HUD capitals a letter every 2 frames, the mouth working - open, then shut, every four letters (`ALERT_MOUTH`, 8 frames a shape); it holds 120 frames (48 with another
 waiting), the box's lines go blank for a second (`ALERT_GAP`, 60 frames, the portrait staying
 up), the next types into the same box, and the last clears it and slides out. A code is two
 indexes into `alert_lines`, so captures and losses (`alert_owner`, from `struct_set_owner`: kind

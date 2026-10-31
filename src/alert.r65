@@ -11,6 +11,7 @@
 //   in     the portrait slides in from the right edge, 4 px a frame
 //   type   the box goes up beside it and the lines type out, a letter
 //          every ALERT_TYPE frames, the mouth working as they do
+//          (every few letters, ALERT_MOUTH)
 //   hold   ALERT_HOLD frames - ALERT_HOLD_BUSY with more queued
 //   gap    with more queued, the lines blank for ALERT_GAP frames (a
 //          second), the box and the portrait staying up
@@ -44,6 +45,9 @@ const ALERT_X_OUT: u16 = 256;             // ... and off the right edge
 const ALERT_Y:     u8  = 184;
 const ALERT_SLIDE: u16 = 4;               // px a frame
 const ALERT_TYPE:  u8  = 2;               // frames a letter
+// The mouth opens and shuts every 1 << ALERT_MOUTH letters (4: 8 frames a
+// shape), opening on the first; flipped every letter it chattered.
+const ALERT_MOUTH: u8  = 2;
 const ALERT_HOLD:  u8  = 120;             // frames a finished message stays
 const ALERT_HOLD_BUSY: u8 = 48;           // ... with another waiting
 const ALERT_GAP:   u8  = 60;              // frames of blank box before the next
@@ -378,7 +382,7 @@ far fn alert_tick() {
         if alert_t != 0 { return; }
         alert_t = ALERT_TYPE;
         alert_type();
-        alert_mouth = alert_mouth ^ 1;
+        alert_mouth = ((alert_k + (1 << ALERT_MOUTH) - 1) >> ALERT_MOUTH) & 1;
         if alert_k >= alert_len1 + alert_len2 {
             alert_mouth = 0;
             alert_t = 0;
