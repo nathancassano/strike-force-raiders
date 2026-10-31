@@ -795,7 +795,7 @@ menu - Up/Down move the highlight, wrapping, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop (or, landed, step out), Up lifts off a deck;
 Start pauses and resumes; Y lights the **afterburner** (`player.burn`, heli.r65): 180 frames
 at 6 px/frame against the stick's 5 (`HELI_BURN_VX`) - on a dead stick a nudge along the nose, 1 px/frame (`HELI_BURN_IDLE_VX`; none mid-turn) - then 300 of recharge before it lights again,
-fuel needed to light it; `CAM_STEP` (8) has to stay above that speed or the camera falls behind,
+fuel needed to light it, and a unit drunk every `HELI_BURN_FUEL` (16) frames while lit, 11 a burn on top of the flight's own (`Airframe::afterburn`, the enemy raider's too); `CAM_STEP` (8) has to stay above that speed or the camera falls behind,
 and the view's lead stops at top speed's 40 px, so the airframe holds its place on screen while it burns.
 Its flame is an 8x8 off the tail (`Player::burn_draw`, `obj.bmp` tiles 226-227 from `tools/muni_art.py`,
 flickering on `player.burn`), drawn after the radar bracket and the alert so it sits behind the

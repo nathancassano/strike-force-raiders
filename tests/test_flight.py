@@ -359,10 +359,13 @@ def test_the_afterburner_flies_a_fifth_faster(snes):
 
 
 def test_the_afterburner_burns_out_after_three_seconds(snes):
+    """And drinks while lit: 11 units on top of the flight's 2 (heli.r65
+    HELI_BURN_FUEL)."""
     boot(snes, "MISSION_TEST_QUIET").wait(20).y(1).right(220)
     v = read_snapshot(snes, "right")
     assert v.airframes__vx.u16[0] == 5 * 64
     assert 0 < v.player__burn.u16[0] < 300               # recharging
+    assert v.airframes__fuel.u8[0] == 100 - 2 - 11
 
 
 def test_the_afterburner_waits_to_recharge(snes):

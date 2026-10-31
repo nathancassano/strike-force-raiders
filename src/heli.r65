@@ -47,6 +47,9 @@ const HELI_BURN_VX: Q10 = 6 * 64;         // 6 px/frame
 const HELI_BURN_IDLE_VX: Q10 = 64;        // 1 px/frame
 const HELI_BURN: u16 = 180;               // 3 s
 const HELI_BURN_RECHARGE: u16 = 300;      // 5 s
+// Lit, it drinks: a unit every HELI_BURN_FUEL frames on top of the flight's
+// one in 96 (Airframe::afterburn), 11 a burn - what 18 s of flight costs.
+const HELI_BURN_FUEL: u16 = 16;           // a power of two: a mask on the count
 // Its flame (Player::burn_draw): obj.bmp's two 8x8 flickers, out of the
 // tail - the tile's right edge on the boom's end, x+3, mirrored to x+28
 // facing left - and on the boom's height, y+3.
@@ -462,6 +465,7 @@ impl Player {
 
             // The afterburner: Y lights it, once it has recharged.
             if player.burn != 0 { player.burn = player.burn - 1; }
+            airframes[HELI].afterburn(player.burn);
             if (trig & JOY_Y) != 0 && player.burn == 0 && airframes[HELI].fuel > 0 {
                 player.burn = HELI_BURN + HELI_BURN_RECHARGE;
             }
@@ -675,6 +679,15 @@ impl Airframe {
             self.fuel_t = self.fuel_t - 1;
         } else {
             self.fuel_t = HELI_FUEL_DRAIN;
+            if self.fuel > 0 { self.fuel = self.fuel - 1; }
+        }
+    }
+
+    // afterburn - the burner's own draw, from its count (player.burn or
+    // pilot.burn): a unit each HELI_BURN_FUEL frames while it is lit.
+    #[inline(always)]
+    fn afterburn(self, lit: u16) {
+        if lit > HELI_BURN_RECHARGE && (lit & (HELI_BURN_FUEL - 1)) == 0 {
             if self.fuel > 0 { self.fuel = self.fuel - 1; }
         }
     }

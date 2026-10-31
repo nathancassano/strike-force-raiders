@@ -622,6 +622,7 @@ impl Pilot {
         // every frame; the gun and the bombs every frame, since a shot is a
         // frame's opportunity.
         if pilot.burn != 0 { pilot.burn = pilot.burn - 1; }
+        airframes[FOE].afterburn(pilot.burn);
         if (frames_loop & (FOE_THINK - 1)) == 0 {
             Pilot::think();
             Pilot::over_balloons();
