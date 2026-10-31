@@ -75,7 +75,7 @@ const char* const soundEffectsNames[SOUND_EFFECTS_ALL]={
 //music effect aliases
 
 enum {
-	MUS_OPERATION_HINDSTRIKE=0,
+	MUS_GAME_TITLE_TRACK_WHO=0,
 	MUS_YOU_HAVE_YOUR_ORDERS=1,
 	MUS_FIRE_FROM_THE_SKY=2,
 	MUS_FIRST_ROUND_IS_ON_ME=3,
@@ -87,7 +87,7 @@ enum {
 //music names
 
 const char* const musicNames[MUSIC_ALL]={
-	"OPERATION HINDSTRIKE",	//0
+	"GAME TITLE TRACK WHO",	//0
 	"YOU HAVE YOUR ORDERS",	//1
 	"FIRE FROM THE SKY",	//2
 	"FIRST ROUND IS ON ME",	//3

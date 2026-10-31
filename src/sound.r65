@@ -71,6 +71,10 @@ const SFX_MENU_MOVE:           u8 = 25;
 const SFX_MENU_SELECT:         u8 = 26;
 const SFX_MENU_START:          u8 = 27;
 const SFX_MENU_WRONG_PASSWORD: u8 = 28;
+// What the game calls them by, where the bank has nothing of the name: an
+// airframe snapping a balloon's chain (struct_balloon_at) is hindstrike's
+// player hit, until an effect of its own is drawn in the GSS project.
+const SFX_CHAIN_HIT:           u8 = SFX_PLAYER_HIT;
 
 // Tunes, in music_N.bin order (MUS_ n is music_{n+1}.bin).
 const MUS_OPERATION_HINDSTRIKE: u8 = 0;
@@ -91,7 +95,8 @@ const SFX_CHN_TURRET:  u8 = 2;   // turrets, the super bunker, the bank
 const SFX_CHN_CANNON:  u8 = 3;   // tank shells
 const SFX_CHN_BLAST:   u8 = 4;   // bombs going off, vehicles destroyed
 const SFX_CHN_HIT:     u8 = 4;   // a round striking a vehicle or the enemy airframe
-                                 // (SFX_ENEMY_HIT): shares the blast channel, so
+                                 // (SFX_ENEMY_HIT), an airframe snapping a chain
+                                 // (SFX_CHAIN_HIT): shares the blast channel, so
                                  // the round that destroys a vehicle is heard as
                                  // the explosion, which replaces it in the queue
 const SFX_CHN_LOST:    u8 = 5;   // an airframe lost, a building fallen
@@ -355,8 +360,8 @@ far fn music_stop() {
 }
 
 // music_start - music_play, unless *track* is already the one playing: a
-// page that comes round again (the title after the end page) carries on
-// rather than reloading and restarting it.
+// page that asks for the tune already up carries on rather than reloading
+// and restarting it.
 far fn music_start(track: u8) {
     if music_now != track { music_play(track); }
 }
