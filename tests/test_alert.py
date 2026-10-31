@@ -204,7 +204,7 @@ def test_a_reset_clears_the_alert(state):
 
 # ---- the reinforcements hint --------------------------------------------------
 #
-# alert_hint: on a campaign row, with nothing of the player's on the field, on
+# alert_hint: on the first mission only, with nothing of the player's on the field, on
 # its way down or ordered, and the purse paying for the cheapest order, 600
 # frames (HINT_DELAY) bring UNITS NEEDED / DEPLOY TO FIELD, and every 1800
 # (HINT_REPEAT) more while that lasts. Cake Walk starts with 32 and nothing
@@ -244,10 +244,11 @@ def test_the_hint_comes_again_while_nothing_is_out(snes):
     assert DEPLOY in showing_or_queued(v)
 
 
-def test_the_test_missions_get_no_hint(snes):
-    """The test rows skip the hint (hud_update tests the mission), so their
-    battles' alerts stay as calibrated: the countdown never moves."""
-    boot(snes, "MISSION_TEST_QUIET").wait(700)
+def test_only_the_first_mission_gets_the_hint(snes):
+    """Every mission past Cake Walk skips the hint (hud_update tests the
+    mission) - the test rows with them, so their battles' alerts stay as
+    calibrated: the countdown never moves."""
+    boot(snes, "MISSION_ONE_GUN").wait(700)
     v = read_snapshot(snes)
     assert v.alert_hint_t == 600
     assert DEPLOY not in showing_or_queued(v)

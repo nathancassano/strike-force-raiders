@@ -193,7 +193,7 @@ far fn hud_init() {
 // unit, the last two clipped).
 far fn hud_update() {
     if alert_busy != 0 { alert_tick(); }
-    if mission < MISSION_COUNT { alert_hint(); }   // the campaign's, not the test rows'
+    if mission == MISSION_CAKE_WALK { alert_hint(); }   // the first mission's only
     if hud_funds != funds {
         hud_funds = funds;
         hud_put2(HUD_COL_FUNDS + 1, funds);
