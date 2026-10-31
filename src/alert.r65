@@ -12,7 +12,9 @@
 //   type   the box goes up beside it and the lines type out, a letter
 //          every ALERT_TYPE frames, the mouth working as they do
 //   hold   ALERT_HOLD frames - ALERT_HOLD_BUSY with more queued
-//   next   the next queued alert types into the same box, or
+//   gap    with more queued, the lines blank for ALERT_GAP frames (a
+//          second), the box and the portrait staying up
+//   next   then the next queued alert types into the same box, or
 //   out    the box clears and the portrait slides back out
 //
 // A push costs its event a far call and nothing else, and an idle queue
@@ -44,6 +46,7 @@ const ALERT_SLIDE: u16 = 4;               // px a frame
 const ALERT_TYPE:  u8  = 2;               // frames a letter
 const ALERT_HOLD:  u8  = 120;             // frames a finished message stays
 const ALERT_HOLD_BUSY: u8 = 48;           // ... with another waiting
+const ALERT_GAP:   u8  = 60;              // frames of blank box before the next
 const ALERT_QMAX:  u8  = 4;               // the queue's depth, a power of two
 
 // The avatar's sheet sits after the explosions' in the second OBJ name
@@ -58,6 +61,7 @@ const ALERT_IN:   u8 = 1;
 const ALERT_TYPING: u8 = 2;
 const ALERT_HELD: u8 = 3;
 const ALERT_OUT:  u8 = 4;
+const ALERT_GAP_WAIT: u8 = 5;              // between two queued alerts
 
 // The lines an alert is made of, in capitals and spaces (hud_letter's
 // set), 0-padded. A code is two of them: (first << 8) | second.
@@ -172,7 +176,7 @@ const ALERT_HP_AT:   u8 = 5;
 #[lowram] static mut alert_state: u8;
 #[lowram] static mut alert_cur:   u16;        // the code showing; 0 none
 #[lowram] static mut alert_x:     u16;        // the portrait's left edge
-#[lowram] static mut alert_t:     u8;         // frames to the next letter / of the hold
+#[lowram] static mut alert_t:     u8;         // frames to the next letter / of the hold / of the gap
 #[lowram] static mut alert_k:     u8;         // letters typed
 #[lowram] static mut alert_len1:  u8;
 #[lowram] static mut alert_len2:  u8;
@@ -379,14 +383,23 @@ far fn alert_tick() {
         alert_t = alert_t + 1;
         if alert_t < ALERT_HOLD_BUSY { return; }
         if alert_qn != 0 {
+            // alert_cur stays the finished code through the gap, so it is
+            // not queued again the moment it leaves the box.
             alert_blank();
-            alert_next();
+            alert_t = 0;
+            alert_state = ALERT_GAP_WAIT;
             return;
         }
         if alert_t < ALERT_HOLD { return; }
         alert_clear();
         alert_cur = 0;
         alert_state = ALERT_OUT;
+        return;
+    }
+    if alert_state == ALERT_GAP_WAIT {
+        alert_t = alert_t + 1;
+        if alert_t < ALERT_GAP { return; }
+        alert_next();
         return;
     }
     // ALERT_OUT

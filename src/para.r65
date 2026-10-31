@@ -5,7 +5,7 @@
 // who walks under the middle of a landed airframe, within PARA_PICKUP px
 // of its centre, climbs aboard - the pad does not restore men, the field
 // does - and X drops one out of the door as a paratrooper. One chute in
-// ten fails and the man splats; the rest land and walk on as ordered
+// twenty fails and the man splats; the rest land and walk on as ordered
 // infantry would.
 //
 // A paratrooper is the one thing on the field with a height that is not
@@ -28,7 +28,7 @@ const PARA_ABOARD: u8  = 5;               // the design's limit
 // Descent in 8.8 px/frame: a chute drifts down, a failed one drops.
 const PARA_SINK: u16 = 0x00C0;            // 0.75 px/frame, ~75 frames from hover
 const PARA_FALL: u16 = 0x0300;            // 3 px/frame
-const PARA_FAIL: u16 = 26;                // of 256: one chute in ten, near enough
+const PARA_FAIL: u16 = 13;                // of 256: one chute in twenty (it was ten: too often)
 
 // A man under a canopy is two 16x16 cells: the canopy over the standing
 // infantryman's cell. The failed chute is the man's cell alone.
@@ -69,7 +69,7 @@ far fn para_init() {
 
 // para_drop - a man out of the door at (x, y), for *owner*: 1, or 0 with
 // nobody dropped when every slot is taken. The chute is decided at the
-// door: one in ten fails. The player's on rand(), whose
+// door: one in twenty fails (PARA_FAIL). The player's on rand(), whose
 // sequence the suite's airlift cases are pinned to; the enemy's on the
 // frame count and the spot, so its drops neither move that sequence nor
 // take a draw from cpu_rand, which deals the CPU's purchases.
