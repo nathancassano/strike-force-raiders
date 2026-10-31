@@ -14,14 +14,17 @@ Rows 0-5 hold the munitions, the decks and the units; the airframe has a
 sheet of its own (tools/heli_art.py), and the cells it used to occupy -
 rows 0-1 and 14-15, columns 0-11 - are cleared here so the two cannot
 drift apart, all but rows 14-15's columns 0-3, which are muni_art.py's
-(the round's ground impact, tiles 224-225; it draws the round, tile 12, too). This adds rows 6-13:
+(the round's ground impact, tiles 224-225; it draws the round, tile 12, too).
+Columns 4-11 of both are the 64x64 base's upper half now, which
+tools/base_art.py stamps there after this. This adds rows 6-13:
 
     row  6-7   turret (16x16) at col 0    balloon (16x16) at col 2
                chain (8x8) at col 4       bunker (32x24 in 32x32) at cols 6-9
                bank   (32x24 in 32x32) at cols 10-13
     row 10-13  super bunker (40x24 in 48x32) at cols 0-5
-               base (64x32) at cols 6-13 - now tools/base_art.py's, from a
-               ComfyUI render: re-run that after this, or lose it
+               base's lower half (64x32) at cols 6-13 - now
+               tools/base_art.py's, from a ComfyUI render, with its upper
+               half in rows 0-1 and 14-15: re-run it after this, or lose it
     row 14-15  cols 12-15: the base's missile launcher, loaded at tile 236
                and empty at 238 (16x16 each), drawn on the base's roof
     row 1      cols 12-14: the missile heading E, NE, N (8x8 tiles 28-30)

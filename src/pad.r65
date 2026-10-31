@@ -14,9 +14,11 @@ const PAD_COUNT: u16 = 2;
 const PAD_W:     u16 = 48;
 const PAD_H:     u16 = 8;
 
-// The deck sits on the ground line, so an airframe resting on it is at the
-// same height as one resting on open ground.
-const PAD_Y:     u16 = GROUND_Y;
+// Where the deck's cells are drawn: 4 px above the ground line, so its art
+// sits up under the skids. Drawing only - landing is against the ground
+// line, so an airframe resting on it is at the same height as one resting
+// on open ground.
+const PAD_Y:     u16 = GROUND_Y - 4;
 
 // OBJ tiles: three 16x16 cells, two tiles apart, from the sheet's third row.
 const PAD_TILE:  u8  = 32;

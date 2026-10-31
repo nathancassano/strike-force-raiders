@@ -82,6 +82,17 @@ def test_infantry_capture_a_neutral_bunker(snes):
     assert v.units__kind__tag.u8[0] == FREE
 
 
+def test_a_captured_bunker_is_tallied_for_the_debrief(snes):
+    """That capture is the enemy's one building taken in tally_taken
+    (game.r65): the field's starting owners are written without a change of
+    hands, so they count for nobody."""
+    boot(snes, "MISSION_TEST_QUIET").wait(5300)
+    read_snapshot(snes)
+    taken = snes.raw("tally_taken").u8           # two bytes: `v.` would read one number
+    assert taken[1] == 1
+    assert taken[0] == 0
+
+
 def test_tanks_shell_a_bunker_to_rubble(snes):
     """Tanks shell the other side's turrets and bunkers, holding in place until
     the building falls.

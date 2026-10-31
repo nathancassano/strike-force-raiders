@@ -57,7 +57,7 @@ const STRUCT_TILE_TURRET: u8 = 96;
 const STRUCT_TILE_BUNKER: u8 = 102;
 const STRUCT_TILE_BANK:   u8 = 106;
 const STRUCT_TILE_SUPER:  u8 = 160;
-const STRUCT_TILE_BASE:   u8 = 166;
+const STRUCT_TILE_BASE:   u8 = 166;       // the base's lower half (see BASE_TILE_TOP)
 const STRUCT_TILE_BALLOON: u8 = 98;
 const STRUCT_TILE_CHAIN:   u8 = 100;      // an 8x8 tile
 const STRUCT_TILE_LAUNCHER_LOADED: u8 = 236;
@@ -113,11 +113,21 @@ const BASE_RATE:  u8  = 45;
 // MISSILE_SPEED says why), for the same MISSILE_RANGE.
 const BASE_MISSILE_SPEED: Q10 = 3 * 64;
 const BASE_MISSILE_LIFE:  u8  = (MISSILE_RANGE / 3) as u8;    // 170 frames
+// The base is 64x64, four rows of four 16x16 cells, but the sheet has no
+// free 64x64 block: its lower half is the stats' 4x2 grid at
+// STRUCT_TILE_BASE, drawn like any building's, and its upper half two
+// strips elsewhere on the sheet - the airframe's old cells - that
+// struct_draw adds above it (tools/base_art.py stamps all four).
+const BASE_H:        u16 = 64;
+const BASE_TOP:      u16 = GROUND_Y - BASE_H;     // screen y of the 64x64 box
+const BASE_TILE_TOP: u8  = 4;             // cell row 0: obj.bmp rows 0-1, cols 4-11
+const BASE_TILE_MID: u8  = 228;           // cell row 1: rows 14-15, cols 4-11
 // The launcher stands on the hangar roof between the two towers
 // (tools/base_art.py), centred over the base's middle, where its missile
-// leaves from: its 16x16 cell this far in and this far below the box's top.
+// leaves from: its 16x16 cell this far in and this far below the box's
+// top, its foot on the roof (row 35 of the 64).
 const BASE_LAUNCHER_DX: u16 = 24;
-const BASE_LAUNCHER_DY: u8  = 2;
+const BASE_LAUNCHER_DY: u16 = 19;
 
 // ---------------------------------------------------------------- bank ---
 // The end bunker holds the funds. Its gun covers BANK_RANGE like a
@@ -152,7 +162,8 @@ static struct_stats: [StructStat; 5] = [
     StructStat { tile: STRUCT_TILE_BUNKER, cells_w: 2, cells_h: 2, max_hp: 69 },
     // Super bunker: hp is the men inside, five at most
     StructStat { tile: STRUCT_TILE_SUPER,  cells_w: 3, cells_h: 2, max_hp: 5 },
-    // Base: only a van ends it, so hp is nominal
+    // Base: only a van ends it, so hp is nominal. These are its lower two
+    // cell rows; struct_draw adds the upper two (BASE_TILE_TOP).
     StructStat { tile: STRUCT_TILE_BASE,   cells_w: 4, cells_h: 2, max_hp: 1 },
     // Bank (end bunker)
     StructStat { tile: STRUCT_TILE_BANK,   cells_w: 2, cells_h: 2, max_hp: 10 },
@@ -227,9 +238,14 @@ fn struct_attr(owner: u8) -> u16 {
 }
 
 // struct_set_owner - hand a structure to a side; the palette follows, and
-// a change of hands is an alert (alert_owner).
+// a change of hands is an alert (alert_owner) and, to a side rather than
+// to nobody, a building taken for the debrief. struct_init writes the
+// owner first, so the field's starting owners are no change of hands.
 fn struct_set_owner(i: u16, owner: u8) {
-    if owner != structs[i].owner { alert_owner(structs[i].kind, structs[i].owner, owner); }
+    if owner != structs[i].owner {
+        alert_owner(structs[i].kind, structs[i].owner, owner);
+        if owner != SIDE_NONE { tally_take(owner); }
+    }
     radar_base_dirty = 1;
     structs[i].owner = owner;
     structs[i].attr = struct_attr(owner);
@@ -340,15 +356,36 @@ far fn struct_draw() {
             if kind == StructKind::Bunker as u8 {
                 if structs[i].bal > 0 { struct_balloon_draw(i, sx); }
             } else {
-                // The base's launcher, one cell on the tower: loaded while the
-                // countdown is spent, empty while it reloads. Inline rather than
-                // a call: it runs every frame a base is in view.
+                // The base's upper half - two cell rows from their own strips
+                // of the sheet, BASE_TILE_TOP then BASE_TILE_MID - and its
+                // launcher, one cell on the roof: loaded while the countdown
+                // is spent, empty while it reloads. Inline rather than a
+                // call: it runs every frame a base is in view.
                 if kind == StructKind::Base as u8 {
+                    let mut uy: u16 = BASE_TOP;
+                    let mut utile: u16 = BASE_TILE_TOP as u16;
+                    for r in 0..2 {
+                        let mut ux: u16 = sx & 0x01FF;
+                        let mut tile: u16 = utile;
+                        for c in 0..4 {
+                            if ux < 256 || ux >= 0x01F0 {
+                                let cell: u16 = oam_take();
+                                if cell < OAM_SLOTS {
+                                    oam.set_full!(cell as u8, ux, uy as u8, tile | attr);
+                                    oam.set_size!(cell as u8, 1);
+                                }
+                            }
+                            ux = (ux + 16) & 0x01FF;
+                            tile = tile + 2;
+                        }
+                        utile = utile + ((BASE_TILE_MID - BASE_TILE_TOP) as u16);
+                        uy = uy + 16;
+                    }
                     let slot: u16 = oam_take();
                     if slot < OAM_SLOTS {
                         let mut tile: u16 = STRUCT_TILE_LAUNCHER_LOADED as u16;
                         if structs[i].t != 0 { tile = STRUCT_TILE_LAUNCHER_EMPTY as u16; }
-                        oam.set_full!(slot as u8, (sx + BASE_LAUNCHER_DX) & 0x01FF, structs[i].top + BASE_LAUNCHER_DY, tile | attr);
+                        oam.set_full!(slot as u8, (sx + BASE_LAUNCHER_DX) & 0x01FF, (BASE_TOP + BASE_LAUNCHER_DY) as u8, tile | attr);
                         oam.set_size!(slot as u8, 1);
                     }
                 }
@@ -795,6 +832,9 @@ far fn struct_balloon_at(side: u8, hx: u16, hy: u16) -> u8 {
                 if hx + HELI_W > cx && hx < cx + CHAIN_W {
                     structs[i].bal = 0;              // snapped: the balloon goes
                     structs[i].t = BALLOON_REGROW;
+                    // Heard either way: the airframe takes the damage, or
+                    // goes up with its own explosion on the loss channel.
+                    sfx_at(SFX_CHN_HIT, SFX_CHAIN_HIT, cx);
                     return HIT_CHAIN;
                 }
             }
@@ -932,7 +972,7 @@ fn struct_base_tick(i: u16) {
     }
     let bx: u16 = structs[i].x + (BASE_W >> 1);
     if air_target(structs[i].owner, bx, BASE_RANGE) != AIR_NONE {
-        muni_spawn(MUNI_MISSILE, bx, (GROUND_Y - 32) << 8, Q10(0), Q10(0) - BASE_MISSILE_SPEED,
+        muni_spawn(MUNI_MISSILE, bx, (BASE_TOP + BASE_LAUNCHER_DY) << 8, Q10(0), Q10(0) - BASE_MISSILE_SPEED,
                    BASE_MISSILE_LIFE, structs[i].owner);
         sfx_missile(structs[i].owner, bx);
         structs[i].t = BASE_RATE;

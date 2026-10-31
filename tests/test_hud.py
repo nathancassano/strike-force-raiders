@@ -52,19 +52,22 @@ METER_PALETTES = [6, 6, 6, 5, 5, 7]
 
 
 def test_the_meters_are_drawn(snes, tmp_path):
-    """Two full meters' red cells - a solid one and the red of a dithered
-    one, 48 px each - are the only red of that shade on screen."""
+    """The full fuel meter's red cells - a solid one and the red of a
+    dithered one - are the only red of that shade on screen (the health
+    meter is grey)."""
     boot(snes, "MISSION_TEST_QUIET").wait(16)
     read_snapshot(snes)
-    assert screen_colour(snes, tmp_path, (26, 4, 2), snes_colour=True) >= 0.15, "the meters' red is drawn"
+    assert screen_colour(snes, tmp_path, (26, 4, 2), snes_colour=True) >= 0.07, "the fuel meter's red is drawn"
 
 
 def test_each_meter_cell_has_its_own_palette(snes):
-    """The health meter's cells, full, in the bottom row's shadow: one
-    sub-palette a cell, red to white; the label is gold, the digits white."""
+    """The fuel meter's cells, full, in the bottom row's shadow: one
+    sub-palette a cell, red to white. The health meter's are all the white
+    one (greys); the label is gold, the digits white."""
     boot(snes, "MISSION_TEST_QUIET").wait(16)
     row = read_snapshot(snes).hud_row.u16
-    assert [palette(row[32 + 2 + c]) for c in range(6)] == METER_PALETTES
+    assert [palette(row[32 + 12 + c]) for c in range(6)] == METER_PALETTES
+    assert [palette(row[32 + 2 + c]) for c in range(6)] == [7] * 6
     assert palette(row[32]) == 5, "H is gold"
     assert palette(row[1]) == 7, "the purse's digits are white"
 

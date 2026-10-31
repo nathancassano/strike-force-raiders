@@ -99,7 +99,7 @@ campaign mission, `MISSION_` and its briefing name, `boot(snes, "MISSION_CAKE_WA
 end.
 `conftest.py`'s header says what each opponent is. A setup several cases share is a state
 in `tests/shared.py`, beside `boot` and `read_snapshot` (`@rom_state` builders: `boarded`,
-`eight_tanks`, `five_passes`, `balloon_hit`, `campaign_lost`), built once, cached in
+`eight_tanks`, `five_passes`, `balloon_hit`, `campaign_lost`, `campaign_overrun`), built once, cached in
 `build/.rom_driver/`, and opened by passing the builder: `from shared import boarded`, then
 `state(boarded)`.
 
@@ -223,7 +223,7 @@ in front of the mountains.
 first 32 of those. So the HUD keeps 0-31 (CGRAM 0 is also the backdrop - the sky, #3d9aec, the clouds' art drawn against it):
 BG3 sub-palette 0 the HUD art, 1 the radar, 2 the front end's font, 3-4 the order menu's icons, and
 5-7 (CGRAM 20-31) the status rows' gold, red and white;
-the ground is palette 2 (32-47), the clouds 3 (48-63), the mountains 4 (64-79), 5-7 are free,
+the ground is palette 2 (32-47), the clouds 3 (48-63), the mountains 4 (64-79), 5 the top strip's grey (81), 6-7 are free,
 and sprites get 128-255. Every 4bpp sheet is one palette, drawn as palette 0 in its bitmap and
 moved up by `tools/tilemap_attr.py --pal` in the Makefile; `CGRAM_GROUND`/`CGRAM_SKY`/
 `CGRAM_MOUNTAINS` in `video.r65` say where its `.pal` is uploaded. Change one, change both.
@@ -387,7 +387,12 @@ run on a stagger of one structure per frame in sixteen - a man covers eight pixe
 `tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp` - but the home base,
 which `tools/base_art.py` stamps from a ComfyUI render (a hangar, its control tower and a flagged
 tower; the launcher on the roof between them, `BASE_LAUNCHER_DX`/`_DY`), fitted to the sheet's
-palette with the greens as the owner's colour and two extra entries (12, 13) of its own; the airframe's
+palette with the greens as the owner's colour and two extra entries (12, 13) of its own. **The base
+is 64x64**, the render stretched to fill it (`--fill`), and the sheet has no free 64x64 block: its
+lower half is the stats' 4x2 grid at `STRUCT_TILE_BASE` (166), drawn like any building, and its upper
+half two 8x2-tile strips in the airframe's old cells - `BASE_TILE_TOP` (4, rows 0-1) and
+`BASE_TILE_MID` (228, rows 14-15), cols 4-11 - that `struct_draw`'s base branch adds above it, 17
+sprites with the launcher. Its `top` is still the grid's; `BASE_TOP` is the whole box's; the airframe's
 own sheet is drawn by `tools/heli_art.py`, and both write their 4-bit BMP through
 `tools/bmp4.py`, since PIL only writes 8-bit and `bmp2chr -b4` refuses that.
 
@@ -426,8 +431,12 @@ once; `wreck_up` says one is falling). One lost on the ground leaves no wreck. T
 same code on `airframes[FOE]`, ticked by `Pilot::update` whether or not its next airframe is up
 (a row with no `regen_time` puts it up at once), in its palette. Nothing draws the crashed frame
 (`HELI_TILE_CRASHED`, tile 44) now. Both sides' falls and `Player::lost`/`Pilot::lost` are in
-bank 3. The last airframe of either side leaves no wreck: the field freezes
-as it stands. The next
+bank 3. The enemy's last airframe leaves no wreck: the field freezes
+as it stands. The player's last goes down like any other - wreck, a second on the ground, the pan
+home - with the screen fading out over the pan (`Player::dead_tick`, a step every four frames);
+at its end `game_fallen` (game.r65) loses the match, straight to game over on a campaign mission
+with no debrief, DEFEAT on the field on a test one. Meanwhile nothing else ends the match
+(`game_over` ignores it), Start does not pause, and a heli cannot be bought. The next
 airframe then rises out of the ground at the start, a pixel a frame from the ground line to
 hover height, drawn at OBJ priority 2 behind the dirt until it has cleared it (the ground's
 tilemap carries the tile priority bit for exactly this - see the Makefile). The stick, gun and hit test
@@ -499,7 +508,7 @@ white), not stepping 192 colours a frame, which overran the frame by half.
 **The front end** (`src/screen.r65`, phase 11, bank 2) is three pages - title, briefing,
 after-action - and they are all one mechanism: BG3 written as a full 32x28 page of text with
 `TM` naming BG3 alone, so the field behind is not hidden but simply not drawn, keeping its
-state and its registers. A page costs one 1792-byte DMA of the map in force blank when it goes
+state and its registers. **The briefing** is the mission's number and name, the campaign's road (`screen_map`: placeholder art in the font's glyphs, ten stops on row 7 three columns apart, the taken ones and their road in the status rows' gold, a caret under this one - the campaign is linear, so it is drawn from `mission` alone), the mission's text (`mission_brief` in mission.r65, up to five lines of 26 split by `\n`) and the row's numbers in two columns. A page costs one 1792-byte DMA of the map in force blank when it goes
 up and nothing per frame; coming back restores the map from ROM and re-runs `hud_init` and
 `radar_init`, the page having written over the rows they own. **The title is the exception: Mode
 3**, a 256-colour picture on BG1 (`assets/src/title.tilemap.bmp`, 8bpp, `-b8` in the Makefile)
@@ -532,14 +541,19 @@ or A takes it, and the menu comes back each time the title goes up); ENTER CODE 
 same rows for the code field, where the d-pad types it (a held direction repeats), the line under
 it says live what the code reads as - the mission it opens, or INVALID CODE - and Start takes
 the code, the code's purse displacing the row's `start_funds`, or does nothing on an invalid
-one; B goes back to the menu. The after-action page settles the mission and spells the code for the next
+one; B goes back to the menu. The after-action page is the **debrief**: a table of the match's tally, YOU against ENEMY - units destroyed, choppers downed, buildings taken - read from `game.r65`'s `tally_units`/`tally_helis`/`tally_taken`, per side of what that side *lost* (units, airframes) or *took* (buildings), bumped only as it happens (`tally_unit`/`tally_take`, bank 2, from `unit_hit`, the tank's run-over, `struct_set_owner`, `Player::lost`/`Pilot::lost`) and zeroed by `game_init`, so a battle frame pays nothing for them. **R65 puts an inline string literal in bank 0** whatever bank the code using it is in, so a new page label belongs in a bank-2 `static`, as the debrief's are. It then settles the mission and spells the code for the next
 run, leaving it typed in so continuing is one press: **a won mission carries its purse plus
 what survived it** (`campaign_salvage` - a ground unit at what order.r65 charged for it, a held
-building at the design's value, the base 20), a lost one is fought again with the purse its row
-deals. The airframes deliberately do *not* convert: the original pays 20 a surviving
+building at the design's value, the base 20), a lost one's code is that mission again with the
+purse its row deals. The airframes deliberately do *not* convert: the original pays 20 a surviving
 helicopter, which against a two-digit purse saturates the carry on any win at all. Start on
 that page goes straight to the next mission's briefing, or to the end page once the tenth is
-taken. Typing redraws only the five rows the
+taken - or, the mission lost, to **game over** (`SCREEN_OVER`, to `MUS_BLOWED_UP_SIR`): the
+mission's name and the retry code (spelled by the page itself, since the last airframe lost
+reaches it with no debrief before it), and Start back to the title, the code still typed into its
+field, so ENTER CODE and Start fight it again. **The end page is a dead end**: VICTORY, the road with all ten stops taken, a closing word
+and THE END, to `MUS_CONGRATULATIONS`, and `screen_tick` takes no button on it - only a reset
+leaves it (a code still opens any mission from the title). Typing redraws only the five rows the
 field occupies, DMA'd from the page shadow in vblank (`screen_flush`); everything else about a
 page is composed once. The text goes through the stdlib console (`lib/console.r65`, buffer mode
 into the page shadow, its area the inside of the frame) in the stdlib's default font, DMA'd at
@@ -694,7 +708,7 @@ The HUD is BG3 rows 0-1 at the top and row 27 at the bottom. Row 0 (`src/hud.r65
 lives, men aboard) and row 27 (the airframe: H and F meters, the gun's rounds and the bombs, each
 behind its icon, and the afterburner's flame - over the dirt, the last visible row in 224-line mode, where nothing else is
 drawn) are composed into one 64-word shadow and DMA'd in vblank, 64 bytes each, when a shown
-value changes; row 2, navy in the art, is cleared once at boot. **These two status rows have a
+value changes; row 2, navy in the art, is cleared once at boot. **Row 0 sits on medium grey, not the sky**: BG1's map row 0 is one solid tile (`video_top_strip`, `TOP_TILE` 1023 - the last of the BG1/BG2 tile area, which the Makefile keeps the art out of - in colour 1 of BG palette 5, CGRAM 81, its own (15,15,15)), written by `video_extras` at boot and after the title. So BG palette 5 is no longer free. **These two status rows have a
 sheet of their own**, `status.tilemap.bmp` (`tools/status_art.py`, after
 `assets/reference/hud.png`): a bold font in two tones with a drop shadow - the labels gold, the
 digits white - the icons, and the meters, all transparent around the ink so the rows float over
@@ -733,7 +747,8 @@ art from `tools/avatar_art.py`), slides in at x 224, y 184; a box in the HUD's b
 goes up beside it on BG3 rows 23-26 (cols 10-27, under the units' band, over the dirt; cols
 28-31 stay transparent or they would hide the portrait), and the code's two lines type out in the
 HUD capitals a letter every 2 frames, the mouth working; it holds 120 frames (48 with another
-waiting), the next types into the same box, and the last clears it and slides out. A code is two
+waiting), the box's lines go blank for a second (`ALERT_GAP`, 60 frames, the portrait staying
+up), the next types into the same box, and the last clears it and slides out. A code is two
 indexes into `alert_lines`, so captures and losses (`alert_owner`, from `struct_set_owner`: kind
 times who took it from whom - a base never changes hands mid-battle, so there is no "base taken")
 share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_robbed`); a van
@@ -768,7 +783,7 @@ room left for him on the field (`para_drop` returns 0), the man stays aboard. Th
 down count against `UNIT_SIDE_MAX` (`unit_side_held`, which `unit_spawn` adds to the side's
 count): a man who landed with no room used to stand where he landed, unhittable, until something
 of his side died. Sixteen slots cost the frame enough to move `test_drop`. A man sinks at 0.75 px/frame under a canopy
-cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in ten,
+cell drawn over the standing man's, or at 3 px/frame with none when the chute fails (one in twenty, `PARA_FAIL`,
 `rand()`'s only consumer, so the sequence from a cold boot is fixed), and becomes an infantryman
 the frame the unit pool has room. An airframe lost a third of its flight band up or higher
 (`HELI_Y_BAIL`) with men aboard drops one of them first; the rest go with it. Draw order: after the munitions.
@@ -779,7 +794,7 @@ Start goes on from the briefing and the after-action page. In the battle, hold L
 menu - Up/Down move the highlight, wrapping, A buys - and the d-pad
 and A do not reach the airframe while L is down; B gun, A bomb, X drop (or, landed, step out), Up lifts off a deck;
 Start pauses and resumes; Y lights the **afterburner** (`player.burn`, heli.r65): 180 frames
-at 6 px/frame against the stick's 5 (`HELI_BURN_VX`), then 300 of recharge before it lights again,
+at 6 px/frame against the stick's 5 (`HELI_BURN_VX`) - on a dead stick a nudge along the nose, 1 px/frame (`HELI_BURN_IDLE_VX`; none mid-turn) - then 300 of recharge before it lights again,
 fuel needed to light it; `CAM_STEP` (8) has to stay above that speed or the camera falls behind,
 and the view's lead stops at top speed's 40 px, so the airframe holds its place on screen while it burns.
 Its flame is an 8x8 off the tail (`Player::burn_draw`, `obj.bmp` tiles 226-227 from `tools/muni_art.py`,
@@ -854,8 +869,9 @@ hand into `SFX_*`/`MUS_*` - re-export and re-port them together).
   sound RAM, so that handshake is the check that the driver runs.
 - Not ported: hindstrike's BRR streaming (`spc_stream_*`, channels 6-7), which it never uses.
 
-What plays: the title page starts `MUS_OPERATION_HINDSTRIKE` (`screen_show`, through
-`music_start`, which does not reload a tune already playing), carrying on into the briefing;
+What plays: each page starts its own tune as it goes up (`screen_show`, through
+`music_start`, which does not reload a tune already playing) - the title `MUS_OPERATION_HINDSTRIKE`,
+the briefing `MUS_YOU_HAVE_YOUR_ORDERS`, the end page `MUS_CONGRATULATIONS`; the debrief is silent;
 `screen_hide`, back to the battle, stops it. In battle, `sfx_at(chn, sfx, x)` plays an effect for
 something at world x - silent off screen, panned by screen position (`spc_stereo(1)` at boot) -
 one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the player's gun

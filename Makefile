@@ -168,8 +168,9 @@ assets/gfx/title_2.chr: assets/gfx/title.chr
 #   the mountains - so each map names its tiles that many on from the
 #   sheets before it (--tile-offset, from their .chr sizes - hence the
 #   extra prerequisites), and any of them may grow into what the others
-#   leave. Together they must fit: past $3FFF they overwrite the sprites'
-#   tiles at $4000, silently, so the build stops instead.
+#   leave. Together they must fit in 1023: past $3FFF they overwrite the
+#   sprites' tiles at $4000, silently, so the build stops instead - and the
+#   last tile is the HUD's top strip (video.r65's TOP_TILE), drawn at boot.
 assets/gfx/sky.tilemap: assets/gfx/ground.chr
 assets/gfx/sky.chr assets/gfx/sky.pal assets/gfx/sky.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/sky.tilemap --pal 3 \
@@ -179,8 +180,8 @@ assets/gfx/mountains.chr assets/gfx/mountains.pal assets/gfx/mountains.tilemap: 
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/mountains.tilemap --pal 4 \
 	    --tile-offset $$(( ( $$(stat -c%s assets/gfx/ground.chr) + $$(stat -c%s assets/gfx/sky.chr) ) / 32 )) && \
 	  { bg=$$(( $$(stat -c%s assets/gfx/ground.chr) + $$(stat -c%s assets/gfx/sky.chr) + $$(stat -c%s assets/gfx/mountains.chr) )); \
-	    [ $$bg -le 32768 ] || \
-	    { echo "ground.chr + sky.chr + mountains.chr are $$bg bytes: over the 1024 tiles BG1/BG2's VRAM $$0000-$$3FFF holds" >&2; \
+	    [ $$bg -le 32736 ] || \
+	    { echo "ground.chr + sky.chr + mountains.chr are $$bg bytes: over the 1023 tiles BG1/BG2's VRAM $$0000-$$3FFF holds beside the top strip's" >&2; \
 	      rm -f assets/gfx/mountains.chr; exit 1; }; }
 assets/gfx/ground.chr assets/gfx/ground.pal assets/gfx/ground.tilemap: \
 	BMP2CHR_POST = python3 tools/tilemap_attr.py assets/gfx/ground.tilemap --pal 2 --priority

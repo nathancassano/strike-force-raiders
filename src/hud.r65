@@ -81,7 +81,8 @@ const HUD_COL_FUNDS:  u16 = 0;
 const HUD_COL_LIVES:  u16 = 4;
 const HUD_COL_MEN:    u16 = 7;
 // The bottom row (map row HUD_BOTTOM_ROW, the shadow's second 32 words):
-// "H[......]" and "F[......]" - six-cell meters, 48 px each - then the
+// "H[......]" and "F[......]" - six-cell meters, 48 px each, the health
+// meter in greys and the fuel meter in its red-to-white gradient - then the
 // gun's icon and "NN", the bomb's and "NN", and at column 30 the
 // afterburner's flame: gold while Y would light it and on through the burn,
 // its tile palette swapped to the white one (greys) while it recharges. (Columns
@@ -136,14 +137,17 @@ fn hud_put2(col: u16, v: u8) {
 }
 
 // hud_bar - a meter's six cells at *col*, *px* of 48 filled: each cell its
-// own row of the sheet, so its own palette.
-fn hud_bar(col: u16, px: u16) {
+// own row of the sheet, so its own palette - or, with *grey*, every cell on
+// the white one (greys), as the health meter is drawn.
+fn hud_bar(col: u16, px: u16, grey: u8) {
     let mut left: u16 = px;
     if left > (HUD_BAR_CELLS << 3) { left = HUD_BAR_CELLS << 3; }
     for c in 0..HUD_BAR_CELLS {
         let mut n: u16 = left;
         if n > 8 { n = 8; }
-        hud_row[col + c] = hud_stat(((STAT_METER + c) << 5) + (n >> 1));
+        let mut w: u16 = hud_stat(((STAT_METER + c) << 5) + (n >> 1));
+        if grey != 0 { w = (w & ~HUD_PAL_BITS) | HUD_PAL_GREY; }
+        hud_row[col + c] = w;
         left = left - n;
     }
 }
@@ -208,7 +212,7 @@ far fn hud_update() {
         let hp: u8 = airframes[HELI].hp;
         if hp != 0 && hp <= ALERT_HP_AT && hud_hp > ALERT_HP_AT && hud_hp != 0xFF { alert_push(ALERT_DAMAGE); }
         hud_hp = hp;
-        hud_bar(32 + HUD_COL_HEALTH + 2, ((airframes[HELI].hp as u16) * 2) + ((airframes[HELI].hp as u16) >> 1));
+        hud_bar(32 + HUD_COL_HEALTH + 2, ((airframes[HELI].hp as u16) * 2) + ((airframes[HELI].hp as u16) >> 1), 1);
         hud_dirty = 1;
     }
     if hud_fuel != airframes[HELI].fuel {
@@ -221,7 +225,7 @@ far fn hud_update() {
             }
         }
         hud_fuel = fuel;
-        hud_bar(32 + HUD_COL_FUEL + 2, (airframes[HELI].fuel as u16) >> 1);
+        hud_bar(32 + HUD_COL_FUEL + 2, (airframes[HELI].fuel as u16) >> 1, 0);
         hud_dirty = 1;
     }
     if hud_gun != airframes[HELI].gun {

@@ -37,10 +37,21 @@ const VRAM_HUD:     u16 = 0x7800;   // 0x1E
 // always was (CGRAM 0 is also the backdrop: the sky). So the 4bpp sheets
 // start at palette 2, one palette each. The Makefile names these same
 // palettes in each map (tools/tilemap_attr.py --pal): change one, change
-// both. Palettes 5-7 are free.
+// both. Palette 5 is the top strip's (TOP_PAL); 6-7 are free.
 const CGRAM_GROUND:    u16 = 32;    // palette 2
 const CGRAM_SKY:       u16 = 48;    // palette 3: the clouds
 const CGRAM_MOUNTAINS: u16 = 64;    // palette 4
+
+// The top strip: the HUD's first row (purse, lives, men) on medium grey
+// rather than the sky. BG3's tiles are transparent around their ink and a
+// BG tile's colour 0 always is, so the grey is BG1's: its map's row 0
+// (lines 0-7 - nothing of the dirt's is that high) all one solid tile,
+// which reads the same at any scroll, under the HUD's priority tiles.
+// The tile is the last of BG1/BG2's 1024 - the Makefile keeps the art out
+// of it - in colour 1 of BG palette 5, which no sheet uses: no loaded
+// palette holds a medium grey, so the strip brings its own.
+const TOP_TILE:   u16 = 1023;
+const TOP_PAL:    u16 = 5;          // CGRAM 80-95, free
 
 // -------------------------------------------------------------- sprites ---
 // OBJ tiles sit at word $4000, clear of the BG tileset at $0000 and the four
@@ -101,14 +112,16 @@ fn oam_end() {
     oam_high = oam_next;
 }
 
-// oam_flush - push the shadow buffer to the PPU. Vblank only. Not
-// dma_copy_oam_const!, which writes OAMADDH = 0 over the rotation bit.
+// oam_flush - push the shadow buffer to the PPU. Vblank only.
 far fn oam_flush() {
     OAMADDL = 0;
-    // Bit 7 enables priority rotation: the sprite evaluation start point
-    // moves each frame, so a scanline that overflows flickers between the
-    // sprites competing for it instead of always dropping the same ones.
-    OAMADDH = 0x80;
+    // No priority rotation (bit 7 clear): slot 0 is the first sprite, so a
+    // lower slot draws on top and the PPU drops the last-claimed ones on a
+    // crowded line - the draw order main sets out. With rotation the first
+    // sprite comes from the OAM address, which this DMA leaves at $220:
+    // slot 8 led every frame, and the airframes (0-1) drew under the deck
+    // and everything else, and were dropped first.
+    OAMADDH = 0x00;
     DMAP7 = 0x00;                  // 1 register, 1 write per transfer
     BBAD7 = 0x04;                  // $2104 OAMDATA
     dma_set_src!(7, oam);
@@ -355,9 +368,31 @@ far fn scroll_update() {
 // 0), the radar's palette, the order menu's icons and the front end's font.
 far fn video_extras() {
     set_backdrop!(Color::rgb!(7, 19, 29));   // #3d9aec, the clouds' sky (sky.tilemap.bmp entry 0)
+    video_top_strip();
     radar_palette();
     hud_icons_load();
     screen_font_load();
+}
+
+// TOP_TILE's pixels. Colour 1 is bitplane 0 alone: the tile's first 16
+// bytes, planes 0 and 1 interleaved by row, set on plane 0's.
+static TOP_CHR: [u8; 32] = [
+    0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// video_top_strip - the solid tile and its grey, and BG1's map row 0 in
+// both its screens named with it (TOP_TILE). After the ground's map
+// upload, which would clear the row; CGRAM, so in force blank.
+far fn video_top_strip() {
+    set_cgram_addr!((TOP_PAL << 4) + 1);
+    write_color!(Color::rgb!(15, 15, 15));   // medium grey, #7b7b7b
+    dma_copy_vram(0, &TOP_CHR as far *u8, VRAM_GROUNDC + (TOP_TILE << 4), 32);
+    let entry: u16 = TOP_TILE | (TOP_PAL << 10);
+    VMADD = VRAM_GROUND;                     // the left screen's row 0 ...
+    for c in 0..32 { VMDATA = entry; }
+    VMADD = VRAM_GROUND + 0x0400;            // ... and the right's
+    for c in 0..32 { VMDATA = entry; }
 }
 
 // video_restore - the field's art back after the title page, which loads
