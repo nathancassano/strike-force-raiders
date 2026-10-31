@@ -747,8 +747,11 @@ over it by a hair drops whole.
 **Alerts** (`src/alert.r65`, bank 2) are the avatar pop-in design.md planned: an event calls
 `alert_push(code)`, and the queue (four deep; a code already showing or queued, or anything
 pushed while the battle is not on, is dropped) plays out one at a time - the portrait, four
-16x16 sprites of `avatar.bmp` (OBJ palette 6, after `fx` in the second name block; programmer
-art from `tools/avatar_art.py`), slides in at x 224, y 184; a box in the HUD's box pieces
+16x16 sprites of `avatar.bmp` (OBJ palette 6, after `fx` in the second name block: the radio
+operator, Rachel (`assets/reference/rachel.png`: beret, headset), painted by `tools/avatar_art.py`
+from a `pixel_art_sdxl_ref` render of her - render, crop and prompt in its docstring - on a slate
+background of its own inside the HUD's frame, her eyes and the two mouths painted by the tool so the
+frames differ only at the mouth), slides in at x 224, y 184; a box in the HUD's box pieces
 goes up beside it on BG3 rows 23-26 (cols 10-27, under the units' band, over the dirt; cols
 28-31 stay transparent or they would hide the portrait), and the code's two lines type out in the
 HUD capitals a letter every 2 frames, the mouth working; it holds 120 frames (48 with another
