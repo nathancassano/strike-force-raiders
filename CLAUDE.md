@@ -885,7 +885,7 @@ one kind a channel (`SFX_CHN_*`), so gunfire cannot cut an explosion short: the 
 (`SFX_PLAYER_GUN1`), the enemy airframe's and the turrets' (`SFX_ENEMY_GUN`), tank shells
 (`SFX_ENEMY_CANNON`), a bomb going off or a vehicle destroyed (`SFX_EXPLODE_1`), a round of gunfire striking a vehicle or the enemy airframe
 (`SFX_ENEMY_HIT`, hindstrike's hit; on the blast channel as `SFX_CHN_HIT`, so the round that
-destroys a vehicle is heard as its explosion, and a man struck makes no sound of it), a lost
+destroys a vehicle is heard as its explosion, and a man struck makes no sound of it), an enemy round or missile striking the player's airframe and leaving it flying (`SFX_PLAYER_HIT`, on the same channel, in `Player::collide`; one that downs it is heard as the loss), a lost
 airframe of either side or a turret or bunker falling (`SFX_EXPLODE_2`), a missile launched by a base or a truck (`sfx_missile`: `SFX_PLAYER_MISSILE`
 or `SFX_ENEMY_MISSILE` by its side), the missile alarm (`SFX_MISSILE_WARNING`, centred, every 32
 frames while a missile homes on the player's airframe - `muni_update`, on the loss channel as

@@ -299,7 +299,8 @@ impl Player {
     // Player::collide - enemy rounds against the airframe's box, the
     // enemy's barrage balloons, which end it outright, and their chains,
     // which take CHAIN_DMG and snap, and the enemy's ground (unit_ram),
-    // which goes with it.
+    // which goes with it. A round or a missile it survives is heard
+    // (SFX_PLAYER_HIT, the chain's sound too); one it does not, as the loss.
     fn collide() {
         if airframes[HELI].dead > 0 || airframes[HELI].rising != 0 { return; }   // nothing there to hit
         let hx: u16 = airframes[HELI].x_px;
@@ -344,6 +345,7 @@ impl Player {
                             if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
                             if airframes[HELI].hp > dmg {
                                 airframes[HELI].hp = airframes[HELI].hp - dmg;
+                                sfx_at(SFX_CHN_HIT, SFX_PLAYER_HIT, hx + (HELI_W >> 1));
                             } else {
                                 Player::lost();
                                 return;
