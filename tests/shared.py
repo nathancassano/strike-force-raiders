@@ -144,11 +144,23 @@ def five_passes(s):
 
 @rom_state
 def campaign_lost(s):
-    """A campaign boot through title and briefing, four crash landings, Start."""
+    """A campaign boot through title and briefing, four crash landings: the
+    last airframe's pan home and fade out, and game over."""
     boot(s).start().wait(10).start().wait(20)
     for frames in (200, 200, 200, 240):
         s.up(60).downright(90).wait(frames)
-    s.start().wait(20)
+
+
+@rom_state
+def campaign_overrun(s):
+    """A campaign boot, three crash landings, then the match lost with an
+    airframe still up - a van at the base, planted (game_state: a van cannot
+    be scripted in useful time) - and Start: the debrief."""
+    boot(s).start().wait(10).start().wait(20)
+    for frames in (200, 200, 200):
+        s.up(60).downright(90).wait(frames)
+    s.var.game_state = s.var.GAME_LOST
+    s.wait(2).start().wait(20)
 
 
 @rom_state

@@ -42,6 +42,9 @@ const HELI_VX_MAX: Q10 = 5 * 64;          // 5 px/frame, the plan's cap
 // burning while it is above the recharge. It needs fuel to light, and
 // flat out under it is still a crash at touchdown (Airframe::crashes).
 const HELI_BURN_VX: Q10 = 6 * 64;         // 6 px/frame
+// Lit with no direction held, it still pushes: a nudge along the nose,
+// reached on the stick's thrust and gone on the drag once the burn is.
+const HELI_BURN_IDLE_VX: Q10 = 64;        // 1 px/frame
 const HELI_BURN: u16 = 180;               // 3 s
 const HELI_BURN_RECHARGE: u16 = 300;      // 5 s
 // Its flame (Player::burn_draw): obj.bmp's two 8x8 flickers, out of the
@@ -232,7 +235,8 @@ const HELI_DMG_MISSILE: u8 = 10;          // two of a base's missiles end it
 // airframe appears there once the pan is done. The pan is paced from
 // where the camera stands when it starts: distance over HELI_PAN, rounded
 // up, so the far end of the world takes all of it and anywhere nearer
-// arrives with frames to spare.
+// arrives with frames to spare. The last airframe goes down the same way,
+// the screen fading out over the pan (Player::dead_tick).
 const HELI_GROUND_PAUSE: u8 = 60;
 const HELI_PAN:          u8 = 72;
 // Then it rises out of the ground at the start: from the ground line up
@@ -469,6 +473,12 @@ impl Player {
             let mut want: u8 = 2;
             if (held & JOY_RIGHT) != 0 { tx = top; want = 0; }
             if (held & JOY_LEFT)  != 0 { tx = Q10(0) - top; want = 1; }
+            // Burning on a dead stick: the nudge, the way the nose points -
+            // none mid-turn, when it points neither way.
+            if want == 2 && player.burn > HELI_BURN_RECHARGE && airframes[HELI].turn == 0 {
+                tx = HELI_BURN_IDLE_VX;
+                if airframes[HELI].face_left != 0 { tx = Q10(0) - HELI_BURN_IDLE_VX; }
+            }
             airframes[HELI].turn_step(want);
             let mut ax: Q10 = HELI_THRUST_X;
             if tx == Q10(0) { ax = HELI_DRAG_X; }
@@ -916,21 +926,22 @@ impl Player {
             let _: u8 = para_drop(airframes[HELI].x_px + (HELI_W >> 2), airframes[HELI].y, SIDE_PLAYER, 0);
         }
         airframes[HELI].lives = airframes[HELI].lives - 1;
-        if airframes[HELI].lives == 0 {
-            game_over(GAME_LOST);                 // the field freezes as it stands: no wreck
-        } else {
-            airframes[HELI].wreck_start();
-            Player::init();
-            airframes[HELI].dead = HELI_PAN;
-            player.pause = HELI_GROUND_PAUSE;
-        }
+        tally_helis[SIDE_PLAYER] = tally_helis[SIDE_PLAYER] + 1;
+        // The last one goes down the same way; the pan home is the match's
+        // end (dead_tick).
+        airframes[HELI].wreck_start();
+        Player::init();
+        airframes[HELI].dead = HELI_PAN;
+        player.pause = HELI_GROUND_PAUSE;
     }
 
     // Player::dead_tick - a frame of a lost airframe, in three steps: the wreck
     // falls with the camera on it (camera_update follows the focus, so the
     // focus stays there), a second on the ground once it has gone up, then
     // the pan home, at the end of which the next airframe rises. Player::init
-    // has already put it on the start.
+    // has already put it on the start. After the last there is no next: the
+    // screen fades out over the pan, a step every four frames from full at
+    // its twelfth, and the match is lost at its end (game_fallen).
     fn dead_tick() {
         if airframes[HELI].wreck_up != 0 {
             airframes[HELI].wreck_tick();
@@ -944,12 +955,19 @@ impl Player {
             return;
         }
         airframes[HELI].dead = airframes[HELI].dead - 1;
+        focus_x = airframes[HELI].x_px + (HELI_W >> 1);
+        camera_pan(player.cam_step);
+        if airframes[HELI].lives == 0 {
+            let mut b: u8 = airframes[HELI].dead >> 2;
+            if b > FULL_BRIGHT { b = FULL_BRIGHT; }
+            set_brightness!(b);
+            if airframes[HELI].dead == 0 { game_fallen(); }
+            return;
+        }
         if airframes[HELI].dead == 0 {
             airframes[HELI].rising = 1;
             airframes[HELI].y = GROUND_Y << 8;
         }
-        focus_x = airframes[HELI].x_px + (HELI_W >> 1);
-        camera_pan(player.cam_step);
     }
 }
 

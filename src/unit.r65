@@ -597,6 +597,7 @@ fn unit_fire(i: u16) {
                         let ux: u16 = units[j].x_px;
                         if ux + UNIT_MAN_W > x && ux < x + UNIT_W {
                             fx_man(ux, units[j].owner);
+                            tally_unit(units[j].owner);
                             unit_free(j);
                             t.target = unit_target(i, TANK_RANGE) as u8;
                         }
@@ -834,6 +835,7 @@ fn unit_hit(i: u16, dmg: u8) {
             } else {
                 fx_man(units[i].x_px, units[i].owner);
             }
+            tally_unit(units[i].owner);
             unit_free(i);
         }
     }

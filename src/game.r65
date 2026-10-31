@@ -10,7 +10,9 @@
 // When it ends the simulation freezes where it stands, the result goes up
 // mid-screen, and Start goes on: to the after-action page on a campaign
 // mission, or straight into a fresh match on a test one, which is what
-// the suite drives.
+// the suite drives. The last airframe lost is the exception: its wreck
+// falls and the camera pans home as for any other, fading out, and a
+// campaign mission then goes straight to game over (game_fallen).
 
 #[bank(0)]
 
@@ -44,18 +46,28 @@ const PAUSE_FADE:   u8 = 2;               // frames a step: 16 each way
 #[lowram] static mut game_fade_t: u8;         // frames to the fade's next step
 #[lowram] static mut game_resuming: u8;       // 1 fading up to carry on, 0 down
 
+// The debrief's tally (screen.r65's after-action page), per side, of what
+// that side lost or took this match. Bumped only as the thing happens, so
+// they cost a battle frame nothing; nothing reads them during the battle.
+#[lowram] static mut tally_units: [u16; 2];   // its ground units destroyed (unit_hit, run over)
+#[lowram] static mut tally_helis: [u8; 2];    // its airframes lost (Player::lost, Pilot::lost)
+#[lowram] static mut tally_taken: [u8; 2];    // buildings it took (struct_set_owner)
+
 static MSG_WON:  [u8; 7]  = "VICTORY";
 static MSG_LOST: [u8; 6]  = "DEFEAT";
 static MSG_PAUSED: [u8; 6] = "PAUSED";
 
 far fn game_init() {
     game_state = GAME_PLAYING;
+    tally_reset();
 }
 
 // game_over - end the match one way or the other. Idempotent: the first
-// end stands.
+// end stands - and the player's last airframe going down is one already,
+// delivered when the pan home ends (game_fallen).
 far fn game_over(result: u8) {
     if game_state != GAME_PLAYING { return; }
+    if airframes[HELI].lives == 0 && airframes[HELI].dead > 0 { return; }
     game_state = result;
     hud_overlay_hide();                   // it shares row 10 with the message
     if result == GAME_WON {
@@ -140,4 +152,44 @@ far fn game_reset() {
     camera_x = 0;
     focus_x = CAM_MID;
     game_init();
+}
+
+// ---------------------------------------------------------------- tally ---
+// The debrief's counting, in bank 2: bank 0 is full, and a long call from
+// a kill or a capture is nothing beside what the event itself costs.
+
+#[bank(2)]
+
+far fn tally_reset() {
+    for s in 0..2 {
+        tally_units[s] = 0;
+        tally_helis[s] = 0;
+        tally_taken[s] = 0;
+    }
+}
+
+// game_fallen - the player's last airframe is down and the camera home,
+// the screen faded out on the way (Player::dead_tick): the match is lost.
+// A campaign mission goes straight to game over, with no debrief; a test
+// mission has no front end, so its field comes back up with DEFEAT on it
+// and Start starts again, as any other end does.
+far fn game_fallen() {
+    game_over(GAME_LOST);
+    if mission < MISSION_COUNT {
+        screen_show(SCREEN_OVER);
+        return;
+    }
+    set_brightness!(FULL_BRIGHT);
+}
+
+// tally_unit - a unit of *side* destroyed.
+far fn tally_unit(side @ A: u8) {
+    let s: u16 = side as u16;
+    tally_units[s] = tally_units[s] + 1;
+}
+
+// tally_take - a building taken by *side*.
+far fn tally_take(side @ A: u8) {
+    let s: u16 = side as u16;
+    tally_taken[s] = tally_taken[s] + 1;
 }

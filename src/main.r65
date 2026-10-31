@@ -192,8 +192,9 @@ fn main() -> ! {
         let trig: u16 = pad_poll_trigger();
 
         if game_state == GAME_PLAYING {
-            // Start pauses: this frame runs no tick (game_pause).
-            if (trig & JOY_START) != 0 {
+            // Start pauses: this frame runs no tick (game_pause). Not while
+            // the last airframe goes down: the fade out is the match's end.
+            if (trig & JOY_START) != 0 && airframes[HELI].lives != 0 {
                 game_pause();
             } else {
                 // Holding L is the order overlay: the d-pad walks the ring and

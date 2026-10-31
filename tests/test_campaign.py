@@ -3,7 +3,7 @@
 These boot with nothing held, which is the campaign's first mission.
 """
 
-from shared import boot, campaign_lost, read_snapshot, screen_colour, title_shot
+from shared import boot, campaign_lost, campaign_overrun, read_snapshot, screen_colour, title_shot
 
 GAME_PLAYING, GAME_SCREEN = 0, 3
 SCREEN_NONE, SCREEN_TITLE, SCREEN_BRIEF, SCREEN_AFTER = 0, 1, 2, 3
@@ -83,6 +83,23 @@ def test_start_goes_to_the_briefing(snes):
     v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_BRIEF
+
+
+# Tunes, sound.r65's MUS_* (music_now is the one playing, MUS_NONE 0xFF).
+MUS_TITLE, MUS_ORDERS, MUS_NONE = 0, 1, 0xFF
+
+
+def test_the_briefing_has_its_own_tune(snes):
+    """The title plays its theme, the briefing swaps it for its orders, and
+    the battle is silent of music."""
+    boot(snes).wait(20)
+    assert read_snapshot(snes).music_now == MUS_TITLE
+    snes.start().wait(30)
+    v = read_snapshot(snes)
+    assert v.screen_kind == SCREEN_BRIEF
+    assert v.music_now == MUS_ORDERS
+    snes.start().wait(30)
+    assert read_snapshot(snes).music_now == MUS_NONE
 
 
 def test_start_again_goes_into_the_battle(snes):
@@ -174,6 +191,51 @@ def test_a_continue_code_resumes_its_mission(snes):
     assert v.screen_kind == SCREEN_BRIEF
 
 
+# The briefing, read out of the page shadow (screen_page, 32 words a row). Its
+# road (screen_map) is ten stops on row 7 from column 2, three apart: a taken
+# stop '#' in the status rows' gold (sub-palette 5), this mission's '@' with a
+# '^' under it, the rest 'O', in the font's own (2). The text starts at row 11,
+# column 3. A glyph is font tile 96 on, from ASCII 32.
+BRIEF_MAP_ROW, BRIEF_MAP_COL, BRIEF_TEXT_ROW, BRIEF_TEXT_COL = 7, 2, 11, 3
+
+
+def page_glyph(v, row, col):
+    """The character at page (row, col) and its BG3 sub-palette."""
+    w = v.screen_page.u16[row * 32 + col]
+    return chr((w & 0x3FF) - 96 + 32), (w >> 10) & 7
+
+
+def page_text(v, row, col, n):
+    return "".join(page_glyph(v, row, col + k)[0] for k in range(n))
+
+
+def road(v):
+    return "".join(page_glyph(v, BRIEF_MAP_ROW, BRIEF_MAP_COL + 3 * k)[0] for k in range(10))
+
+
+def test_the_briefing_marks_the_first_stop(snes):
+    """A new campaign's briefing: the road with nothing taken, the marker on
+    the first stop, and the mission's text under it."""
+    boot(snes).start().wait(30)
+    v = read_snapshot(snes)
+    assert road(v) == "@OOOOOOOOO"
+    assert page_glyph(v, BRIEF_MAP_ROW + 1, BRIEF_MAP_COL)[0] == "^"
+    assert page_text(v, BRIEF_MAP_ROW - 1, 28, 2) == "10"
+    assert page_text(v, BRIEF_TEXT_ROW, BRIEF_TEXT_COL, 26) == "A QUIET STRETCH OF DESERT."
+    assert page_text(v, BRIEF_TEXT_ROW + 4, BRIEF_TEXT_COL, 24) == "DRIVE A VAN INTO THEIRS."
+
+
+def test_the_briefing_road_is_taken_up_to_a_codes_mission(snes):
+    """NKCH opens mission 5: the four stops before it are taken, in gold, and
+    the road on from it is not."""
+    type_code(enter_code(boot(snes).wait(20)), "NKCH").start().wait(20)
+    v = read_snapshot(snes)
+    assert road(v) == "####@OOOOO"
+    assert [page_glyph(v, BRIEF_MAP_ROW, BRIEF_MAP_COL + 3 * k)[1] for k in range(5)] == [5, 5, 5, 5, 2]
+    assert page_text(v, BRIEF_MAP_ROW, BRIEF_MAP_COL + 9, 6) == "#==@--"
+    assert page_glyph(v, BRIEF_MAP_ROW + 1, BRIEF_MAP_COL + 12)[0] == "^"
+
+
 def test_a_bad_code_is_refused(snes):
     """Start on a code that names nothing stays on the title, and B goes
     back to the menu."""
@@ -187,35 +249,110 @@ def test_a_bad_code_is_refused(snes):
 
 
 def test_screen_after(state):
-    """The way out: four crash landings spend the four lives, which ends the
-    match, and Start on the frozen field brings up the after-action page.
+    """A match lost with an airframe still up ends on the frozen field, and
+    Start there brings up the after-action page.
 
     It spells the code for the next run - JKDG, this mission again with the
     purse the row deals, since the match was lost - and leaves it typed into
     the title's field. Salvage reads 20: the player's base, all the field it
     still holds.
     """
-    snes = state(campaign_lost)
+    snes = state(campaign_overrun)
     v = read_snapshot(snes)
     assert v.game_state == GAME_SCREEN
     assert v.screen_kind == SCREEN_AFTER
-    assert v.airframes__lives.u8[0] == 0
+    assert v.airframes__lives.u8[0] == 1
     assert v.after_salvage == 20
     assert v.after_carry == 32
     assert code_text(v) == "JKDG"
 
 
-def test_campaign_retry(state):
-    """Start on the after-action page goes on to the next mission's briefing
-    carrying what it settled - or back to the same mission after a defeat,
-    which is this: mission unchanged, the purse the row deals.
+# The debrief's table (screen_after): headings on row 6, then UNITS DESTROYED,
+# CHOPPERS DOWNED and BUILDINGS TAKEN on rows 8-10, the player's figure ending
+# on column 21 and the enemy's on 28; PURSE, SALVAGE and CARRIED on 12-14 in
+# the player's column.
+DEBRIEF_ROW, DEBRIEF_YOU, DEBRIEF_ENEMY = 8, 21, 28
 
-    (The winning side cannot be scripted in useful time; it was driven through
-    the debugger by setting game_state to GAME_WON at a snapshot break.)
-    """
-    snes = state(campaign_lost)
+
+def test_the_debrief_tallies_the_lost_match(state):
+    """Three crash landings are three airframes the enemy downed, and nothing
+    the player destroyed or took; the page reads the tally (game.r65) as the
+    match left it."""
+    snes = state(campaign_overrun)
+    v = read_snapshot(snes)
+    helis = snes.raw("tally_helis").u8           # two bytes: `v.` would read one number
+    assert helis[0] == 3
+    assert helis[1] == 0
+    assert page_text(v, 6, DEBRIEF_YOU - 2, 3) == "YOU"
+    assert page_text(v, 6, DEBRIEF_ENEMY - 4, 5) == "ENEMY"
+    assert page_text(v, DEBRIEF_ROW, 3, 15) == "UNITS DESTROYED"
+    assert page_text(v, DEBRIEF_ROW + 1, 3, 15) == "CHOPPERS DOWNED"
+    assert page_glyph(v, DEBRIEF_ROW + 1, DEBRIEF_YOU)[0] == "0"
+    assert page_glyph(v, DEBRIEF_ROW + 1, DEBRIEF_ENEMY)[0] == "3"
+    assert page_text(v, DEBRIEF_ROW + 5, 3, 7) == "SALVAGE"
+    assert page_text(v, DEBRIEF_ROW + 5, DEBRIEF_YOU - 1, 2) == "20"
+
+
+GAME_WON, SCREEN_END = 1, 4
+
+
+def test_the_last_victory_is_a_dead_end(snes):
+    """Midnight Oasis won (game_state planted - a win cannot be scripted in
+    useful time): Start brings up the debrief, and Start again the end page,
+    the road with every stop taken and THE END. Nothing leaves it - not
+    Start, not any other button."""
+    boot(snes, "MISSION_MIDNIGHT_OASIS").wait(10)
+    snes.write("game_state", GAME_WON, 1)
+    snes.wait(2).start().wait(20)
+    assert read_snapshot(snes).screen_kind == SCREEN_AFTER
     snes.start().wait(20)
     v = read_snapshot(snes)
-    assert v.mission == 0
+    assert v.game_state == GAME_SCREEN
+    assert v.screen_kind == SCREEN_END
+    assert road(v) == "##########"
+    assert page_text(v, 22, 12, 7) == "THE END"
+    snes.start().wait(20).a(1).b(1).x(1).y(1).wait(10).start().wait(30)
+    v = read_snapshot(snes)
+    assert v.game_state == GAME_SCREEN
+    assert v.screen_kind == SCREEN_END
+
+
+SCREEN_OVER = 5
+
+
+def test_the_last_airframe_goes_straight_to_game_over(state):
+    """Four crash landings: the last airframe's loss plays out as any
+    other's, the camera panning home as the screen fades, and then game over
+    comes up with no debrief - spelling the debrief's code itself (JKDG,
+    this mission with the purse its row deals). The tally still counts the
+    four."""
+    snes = state(campaign_lost)
+    v = read_snapshot(snes)
+    assert v.game_state == GAME_SCREEN
+    assert v.screen_kind == SCREEN_OVER
+    assert v.airframes__lives.u8[0] == 0
+    assert snes.raw("tally_helis").u8[0] == 4
+    assert page_text(v, 8, 11, 9) == "GAME OVER"
+    assert code_text(v) == "JKDG"
+
+
+def test_a_lost_mission_is_game_over(state):
+    """Start on a lost mission's debrief brings up game over, and Start there
+    goes back to the title - the debrief's code (JKDG, this mission with the
+    purse its row deals) still typed into its field, so ENTER CODE and Start
+    fight it again: mission unchanged, 32 to start with.
+    """
+    snes = state(campaign_overrun)
+    snes.start().wait(20)
+    v = read_snapshot(snes)
+    assert v.screen_kind == SCREEN_OVER
+    assert page_text(v, 8, 11, 9) == "GAME OVER"
+    snes.start().wait(30)
+    v = read_snapshot(snes)
+    assert v.screen_kind == SCREEN_TITLE
+    assert code_text(v) == "JKDG"
+    enter_code(snes).start().wait(20)
+    v = read_snapshot(snes)
     assert v.screen_kind == SCREEN_BRIEF
+    assert v.mission == 0
     assert v.start_funds == 32

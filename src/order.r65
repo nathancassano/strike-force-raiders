@@ -120,6 +120,8 @@ far fn order_place() -> u8 {
     }
 
     if order_sel == Order::Heli as u8 {
+        // None left and the last going down: the match is lost already.
+        if airframes[HELI].lives == 0 { return 0; }
         funds = funds - cost;
         airframes[HELI].lives = airframes[HELI].lives + 1;
         return 1;

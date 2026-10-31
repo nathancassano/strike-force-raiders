@@ -110,6 +110,26 @@ static mission_stats: [MissionStat; 13] = [
     MissionStat { cpu_row: 10, turret_rate: 12, turret_range: 340, econ_thresh: 40000, start_funds: 32, start_lives: 4, turrets: 5, bunkers: 4, owned: 1, name: "TEST CONVOY" },
 ];
 
+// What the briefing page says about each campaign mission: up to five
+// lines of at most 26 characters (screen.r65's BRIEF_W, less one), split by '\n' - the console
+// wraps a long line by the character, not the word - in capitals and
+// ASCII 32-95, the font's whole range. 128 bytes a mission, so the index
+// is a shift; the test rows have no briefing, nor any page to show one on.
+const MISSION_BRIEF_W: u16 = 128;
+
+static mission_brief: [[u8; MISSION_BRIEF_W]; 10] = [
+    "A QUIET STRETCH OF DESERT.\nTWO GUNS AND A BUNKER\nSTAND UNCLAIMED BETWEEN\nTHE BASES. TAKE THEM, THEN\nDRIVE A VAN INTO THEIRS.",
+    "THE ENEMY IS SENDING MORE\nTHAN TANKS NOW. WATCH FOR\nVANS SLIPPING THROUGH -\nONE AT YOUR BASE ENDS IT.",
+    "EACH SIDE HOLDS A GUN AT\nITS END OF THE FIELD.\nTHEIR PILOT HAS ORDERS TO\nHUNT YOU. DON'T TRADE\nBLOWS OVER THEIR GUNS.",
+    "MISSILE TRUCKS ROLL WITH\nTHEIR COLUMNS NOW, AND\nTHEIR CHOPPER CARRIES MEN.\nTAKE THE BUNKERS BEFORE\nPARATROOPERS DO.",
+    "TWO GUNS A SIDE AND MORE\nOF EVERYTHING ON THE ROAD.\nKEEP YOUR MEN BEHIND YOUR\nARMOR AND YOUR FUEL UP.",
+    "A SUPER BUNKER HOLDS THE\nCENTER. MAN IT AND IT\nGUNS DOWN ANYTHING THAT\nPASSES. LIVES ARE SHORT:\nTHREE HELICOPTERS ONLY.",
+    "THE WRECKS OF LAST WEEK\nLITTER THE FIELD. THEIR\nCONVOYS COME FASTER NOW -\nBUY EARLY, BUY OFTEN.",
+    "THEIR PILOT CARRIES BOMBS\nNOW, AND HAS EYES ON YOUR\nBANK. A MAN IN ITS DOOR\nHALVES YOUR PURSE.",
+    "NOTHING GROWS HERE BUT\nTHE ENEMY. LOSE THEIR\nPILOT AND ANOTHER IS UP\nBEFORE THE SMOKE CLEARS.",
+    "THE LAST WATER BEFORE\nTHEIR CAPITAL. BOTH ENDS\nARE DUG IN AND THEIR GUNS\nNEVER REST. FINISH IT.",
+];
+
 // ---------------------------------------------------------------- state ---
 // The live values the game reads. They were constants until the campaign
 // came; the names are the constants' with the `_` of a variable.

@@ -38,6 +38,7 @@ const SCREEN_TITLE: u8 = 1;
 const SCREEN_BRIEF: u8 = 2;
 const SCREEN_AFTER: u8 = 3;
 const SCREEN_END:   u8 = 4;               // the campaign, won
+const SCREEN_OVER:  u8 = 5;               // a mission lost: game over, back to the title
 
 // The font, in BG3's tileset after the art (HUD_CHR_SIZE / 16 tiles) and
 // the radar's 32, on a sub-palette of its own: CGRAM 8-11, white with a
@@ -61,9 +62,42 @@ const SCREEN_BOX_ROW:  u16 = 1;
 const SCREEN_BOX_ROWS: u16 = 26;
 const SCREEN_BOX_COL:  u16 = 1;
 const SCREEN_BOX_W:    u16 = 30;
-const SCREEN_LABEL:    u16 = 9;           // a stat line's label ...
-const SCREEN_VALUE:    u16 = 21;          // ... and the last digit of its value
 const SCREEN_PROMPT:   u16 = 22;          // the PRESS START row
+
+// The briefing. The campaign's road under the mission's name: ten stops,
+// three columns apart, filling the inside of the frame - its numbers on
+// the row above, a caret under this mission's stop on the row below.
+// Placeholder art, all of it the font's: a taken stop is '#' and the road
+// behind it '=', in the status rows' gold; this one is '@'; ahead are 'O'
+// and '-'.
+const BRIEF_MAP_ROW:  u16 = 7;
+const BRIEF_MAP_COL:  u16 = 2;
+const BRIEF_MAP_STEP: u16 = 3;
+const BRIEF_MAP_PAL:  u16 = 5;            // hud.r65's gold (STAT_CGRAM)
+// The briefing's text (mission_brief), left-aligned a column in from the
+// frame, and the row's numbers in two columns under it. The area runs to
+// the frame, a column wider than a line: a line that filled it would wrap
+// by itself, and its '\n' would then skip a row.
+const BRIEF_TEXT_ROW: u16 = 11;
+const BRIEF_TEXT_COL: u16 = 3;
+const BRIEF_W:        u16 = 27;
+const BRIEF_ROWS:     u16 = 5;
+const BRIEF_STAT_ROW: u16 = 17;
+const BRIEF_LEFT:     u16 = 4;            // a label, its value's last digit at +9
+const BRIEF_RIGHT:    u16 = 17;           // the same, the second column
+const BRIEF_VALUE:    u16 = 9;
+
+// The debrief (the after-action page): a table of the match's tally
+// (game.r65), the player's column then the enemy's, each value against
+// the last letter of its heading; the purse's three lines under it,
+// against the player's column, since they are the player's.
+const DEBRIEF_HEAD:   u16 = 6;            // the YOU / ENEMY headings
+const DEBRIEF_ROW:    u16 = 8;            // the table's first row
+const DEBRIEF_PURSE:  u16 = 12;           // PURSE, SALVAGE, CARRIED
+const DEBRIEF_LABEL:  u16 = 3;
+const DEBRIEF_YOU:    u16 = 21;
+const DEBRIEF_ENEMY:  u16 = 28;
+const DEBRIEF_CODE:   u16 = 18;
 
 // The title's continue-code field: the four letters, the cursor under the
 // one being typed, and the line that says what the code reads as. They
@@ -204,6 +238,7 @@ static salvage_struct: [u8; 5] = [3, 4, 4, 20, 0];
 #[lowram] static mut after_carry:   u8;   // ... and what the next mission gets
 #[lowram] static mut after_next:    u8;   // the mission Start goes on to
 #[lowram] static mut after_done:    u8;   // ... or 1 if that was the last
+#[lowram] static mut after_lost:    u8;   // 1: the match was lost, game over next
 
 // campaign_salvage - the player's surviving equipment, in funds. Capped
 // at the purse's two digits, which the code's seven bits also assume.
@@ -232,7 +267,9 @@ fn campaign_settle() {
     after_next = mission;
     after_carry = start_funds;            // a retry gets the row's own
     after_done = 0;
+    after_lost = 1;
     if game_state == GAME_WON {
+        after_lost = 0;
         let mut v: u16 = (funds as u16) + (after_salvage as u16);
         if v > (ECON_MAX as u16) { v = ECON_MAX as u16; }
         after_carry = v as u8;
@@ -261,11 +298,20 @@ fn screen_centre(row: u16, s: far *u8) {
     screen_con.println(s);
 }
 
-// screen_value - *v* right-aligned so its last digit lands on SCREEN_VALUE.
-fn screen_value(row: u16, v: u8) {
-    let mut col: u16 = SCREEN_VALUE - SCREEN_TEXT_COL;
+// screen_value - *v* right-aligned so its last digit lands on column *end*.
+fn screen_value(row: u16, end: u16, v: u16) {
+    let mut col: u16 = end - SCREEN_TEXT_COL;
     if v > 9 { col = col - 1; }
-    screen_con.print_at!(col as u8, row as u8, "{u8}", v);
+    if v > 99 { col = col - 1; }
+    if v > 999 { col = col - 1; }
+    if v > 9999 { col = col - 1; }
+    screen_con.print_at!(col as u8, row as u8, "{u16}", v);
+}
+
+// screen_glyph - character *c* at page (row, col) on BG3 sub-palette *pal*:
+// the console's own tile for it, in a colour of the caller's choosing.
+fn screen_glyph(row: u16, col: u16, c: u8, pal: u16) {
+    screen_put(row, col, ((c as u16) - 32 + SCREEN_FONT_TILE) | (pal << 10) | 0x2000);
 }
 
 // screen_mission - "MISSION n", centred as one line.
@@ -274,10 +320,34 @@ fn screen_mission(row: u16, m: u8) {
     screen_con.println!("MISSION {u8}", m + 1);
 }
 
-// screen_stat - a label at SCREEN_LABEL and its value against the column.
-fn screen_stat(row: u16, label: far *u8, v: u8) {
-    screen_at(row, SCREEN_LABEL, label);
-    screen_value(row, v);
+// screen_purse - a line of the debrief's reckoning, its value in the
+// player's column of the table above it.
+fn screen_purse(row: u16, label: far *u8, v: u8) {
+    screen_at(row, DEBRIEF_LABEL, label);
+    screen_value(row, DEBRIEF_YOU, v);
+}
+
+// The debrief's labels, here rather than written inline: R65 puts a string
+// literal in bank 0, wherever the code using it is, and bank 0 is full.
+static DEBRIEF_YOU_S:   [u8; 4]  = "YOU";
+static DEBRIEF_ENEMY_S: [u8; 6]  = "ENEMY";
+static DEBRIEF_UNITS_S: [u8; 16] = "UNITS DESTROYED";
+static DEBRIEF_HELIS_S: [u8; 16] = "CHOPPERS DOWNED";
+static DEBRIEF_TAKEN_S: [u8; 16] = "BUILDINGS TAKEN";
+
+// screen_tally - a row of the debrief's table: the label, then the
+// player's figure and the enemy's under their headings.
+fn screen_tally(row: u16, label: far *u8, you: u16, enemy: u16) {
+    screen_at(row, DEBRIEF_LABEL, label);
+    screen_value(row, DEBRIEF_YOU, you);
+    screen_value(row, DEBRIEF_ENEMY, enemy);
+}
+
+// screen_pair - a label at *col* and its value against col + BRIEF_VALUE:
+// one of the briefing's two columns of stats.
+fn screen_pair(row: u16, col: u16, label: far *u8, v: u8) {
+    screen_at(row, col, label);
+    screen_value(row, col + BRIEF_VALUE, v);
 }
 
 // screen_name - mission *m*'s name, centred. The row's padding is 0, so
@@ -359,52 +429,136 @@ fn screen_title() {
     screen_centre(SCREEN_TITLE_PROMPT, "PRESS START\0");
 }
 
-// The briefing: which mission, its name, and what it is made of - the
-// numbers mission_stats gave the field and the purse, so the page is a
-// reading of the row rather than a second copy of it.
+// screen_map - the campaign's road with mission *m* marked. The campaign
+// is linear, so every stop before this one was taken - by winning it, or
+// earning the code that skipped it - and the map needs nothing but *m*.
+fn screen_map(m: u8) {
+    let here: u16 = m as u16;
+    let last: u16 = (MISSION_COUNT as u16) - 1;
+    let mut col: u16 = BRIEF_MAP_COL;
+    for k in 0..(MISSION_COUNT as u16) {
+        let mut pal: u16 = SCREEN_FONT_PAL;
+        let mut stop: u8 = 'O';
+        if k < here {
+            pal = BRIEF_MAP_PAL;
+            stop = '#';
+        }
+        if k == here {
+            stop = '@';
+            screen_glyph(BRIEF_MAP_ROW + 1, col, '^', SCREEN_FONT_PAL);
+        }
+        screen_glyph(BRIEF_MAP_ROW, col, stop, pal);
+        // Its number above it; the tenth's 1 takes the road's column to its left.
+        if k == last {
+            screen_glyph(BRIEF_MAP_ROW - 1, col - 1, '1', pal);
+            screen_glyph(BRIEF_MAP_ROW - 1, col, '0', pal);
+        } else {
+            screen_glyph(BRIEF_MAP_ROW - 1, col, ('1' + k as u8) as u8, pal);
+            // The road on to the next stop: travelled, or not yet.
+            let mut road: u8 = '-';
+            if k < here { road = '='; }
+            screen_glyph(BRIEF_MAP_ROW, col + 1, road, pal);
+            screen_glyph(BRIEF_MAP_ROW, col + 2, road, pal);
+        }
+        col = col + BRIEF_MAP_STEP;
+    }
+}
+
+// The briefing: which mission and its name, where it stands on the road,
+// what it is about, and what it is made of - the numbers mission_stats
+// gave the field and the purse, so the page is a reading of the row
+// rather than a second copy of it.
 fn screen_brief() {
-    screen_mission(4, mission);
-    screen_name(6, mission);
+    screen_mission(3, mission);
+    screen_name(4, mission);
+    screen_map(mission);
     let i: u16 = mission as u16;
-    screen_stat(11, "TURRETS\0", mission_stats[i].turrets);
-    screen_stat(13, "BUNKERS\0", mission_stats[i].bunkers);
-    screen_stat(15, "FUNDS\0",   start_funds);
-    screen_stat(17, "LIVES\0",   start_lives);
+    // The text in an area of its own, so its '\n's come back to its
+    // margin; then the frame's inside again for the rest.
+    if mission < MISSION_COUNT {
+        screen_con.set_area(BRIEF_TEXT_COL as u8, BRIEF_TEXT_ROW as u8,
+                            BRIEF_W as u8, BRIEF_ROWS as u8);
+        screen_con.print(&mission_brief[i] as far *u8);
+        screen_con.set_area(SCREEN_TEXT_COL as u8, 0, SCREEN_TEXT_W as u8, SCREEN_ROWS as u8);
+    }
+    screen_pair(BRIEF_STAT_ROW,     BRIEF_LEFT,  "TURRETS\0", mission_stats[i].turrets);
+    screen_pair(BRIEF_STAT_ROW,     BRIEF_RIGHT, "BUNKERS\0", mission_stats[i].bunkers);
+    screen_pair(BRIEF_STAT_ROW + 2, BRIEF_LEFT,  "FUNDS\0",   start_funds);
+    screen_pair(BRIEF_STAT_ROW + 2, BRIEF_RIGHT, "LIVES\0",   start_lives);
     screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
-// The after-action page: how the match ended and what is left in the
-// purse. Slice (d) adds the equipment conversion that feeds the next
-// mission's funds; until then this reports, it does not carry anything.
+// The after-action page, the debrief: how the match ended, what each side
+// destroyed and took, and what is left in the purse.
 fn screen_after() {
     if game_state == GAME_WON {
-        screen_centre(6, "VICTORY\0");
+        screen_centre(3, "VICTORY\0");
     } else {
-        screen_centre(6, "DEFEAT\0");
+        screen_centre(3, "DEFEAT\0");
     }
-    screen_name(9, mission);
+    screen_name(4, mission);
+    // The tally, credited to the side that did it: what the player
+    // destroyed is what the enemy lost, and the other way about. An
+    // airframe the player crashed counts as one the enemy downed.
+    screen_at(DEBRIEF_HEAD, DEBRIEF_YOU - 2, &DEBRIEF_YOU_S as far *u8);
+    screen_at(DEBRIEF_HEAD, DEBRIEF_ENEMY - 4, &DEBRIEF_ENEMY_S as far *u8);
+    screen_tally(DEBRIEF_ROW, &DEBRIEF_UNITS_S as far *u8,
+                 tally_units[SIDE_ENEMY as u16], tally_units[SIDE_PLAYER as u16]);
+    screen_tally(DEBRIEF_ROW + 1, &DEBRIEF_HELIS_S as far *u8,
+                 tally_helis[SIDE_ENEMY as u16], tally_helis[SIDE_PLAYER as u16]);
+    screen_tally(DEBRIEF_ROW + 2, &DEBRIEF_TAKEN_S as far *u8,
+                 tally_taken[SIDE_PLAYER as u16], tally_taken[SIDE_ENEMY as u16]);
     // The reckoning: what was in the purse, what the field was worth, and
     // what the next mission opens with. A won mission carries the two
     // added together; a lost one carries its own row's funds, and the
     // salvage line is there to say what was on the field when it went.
     campaign_settle();
-    screen_stat(11, "PURSE\0",   funds);
-    screen_stat(13, "SALVAGE\0", after_salvage);
-    screen_stat(15, "CARRIED\0", after_carry);
+    screen_purse(DEBRIEF_PURSE,     "PURSE\0",   funds);
+    screen_purse(DEBRIEF_PURSE + 1, "SALVAGE\0", after_salvage);
+    screen_purse(DEBRIEF_PURSE + 2, "CARRIED\0", after_carry);
     // The code for the next run, left typed into the title's field, so
     // continuing later is one press.
     code_set(after_next, after_carry);
-    screen_code(18);
+    screen_code(DEBRIEF_CODE);
     screen_centre(SCREEN_PROMPT, "PRESS START\0");
 }
 
-// The campaign, won: the tenth mission taken. Nothing carries on from
-// here - Start goes back to the title, where a code still opens any
-// mission that was reached.
+// The campaign, won: the tenth mission taken, and the game's last page.
+// It is a dead end - no prompt, and screen_tick takes no button on it - so
+// only a reset leaves it. The road with every stop taken (screen_map past
+// the last mission marks none as this one), a closing word in the
+// briefing's text area, and the congratulations tune.
+static END_TEXT: [u8; 128] = "THE LAST GUN IS SILENT.\nTHEIR CAPITAL HAS FALLEN\nAND THE ROAD IS YOURS,\nEVERY MILE OF IT. THE\nROTORS CAN REST NOW.";
+static END_TITLE: [u8; 13] = "CAMPAIGN WON";
+static END_FIN:   [u8; 8]  = "THE END";
+
 fn screen_end() {
-    screen_centre(8,  "VICTORY\0");
-    screen_centre(11, "CAMPAIGN WON\0");
-    screen_centre(SCREEN_PROMPT, "PRESS START\0");
+    screen_centre(3, "VICTORY\0");
+    screen_centre(4, &END_TITLE as far *u8);
+    screen_map(MISSION_COUNT);
+    screen_con.set_area(BRIEF_TEXT_COL as u8, BRIEF_TEXT_ROW as u8,
+                        BRIEF_W as u8, BRIEF_ROWS as u8);
+    screen_con.print(&END_TEXT as far *u8);
+    screen_con.set_area(SCREEN_TEXT_COL as u8, 0, SCREEN_TEXT_W as u8, SCREEN_ROWS as u8);
+    screen_centre(SCREEN_PROMPT, &END_FIN as far *u8);
+}
+
+// Game over: a mission lost - after the debrief, or straight from the field
+// when the last airframe went down (game_fallen). It spells the code for
+// another try, the one a lost debrief spells, and leaves it typed into the
+// title's field, which is where Start goes from here - ENTER CODE, Start,
+// and the mission is fought again with the purse its row deals.
+static OVER_TITLE: [u8; 10] = "GAME OVER";
+static OVER_TEXT:  [u8; 24] = "THE CODE TRIES IT AGAIN";
+static OVER_PRESS: [u8; 12] = "PRESS START";
+
+fn screen_over() {
+    code_set(mission, start_funds);
+    screen_centre(8, &OVER_TITLE as far *u8);
+    screen_name(11, mission);
+    screen_centre(15, &OVER_TEXT as far *u8);
+    screen_code(17);
+    screen_centre(SCREEN_PROMPT, &OVER_PRESS as far *u8);
 }
 
 // ------------------------------------------------------------ the page ---
@@ -449,11 +603,17 @@ far fn screen_show(kind: u8) {
     if kind == SCREEN_BRIEF { screen_brief(); }
     if kind == SCREEN_AFTER { screen_after(); }
     if kind == SCREEN_END   { screen_end(); }
+    if kind == SCREEN_OVER  { screen_over(); }
     screen_blit();
     game_state = GAME_SCREEN;
-    // The title's theme, on into the briefing; a few frames of upload the
-    // first time, nothing when it is already playing (music_start).
+    // A tune per page: the title's theme, the briefing's orders, the end's
+    // congratulations. A few frames of upload as the page goes up, nothing
+    // when it is already playing (music_start) - a retry's briefing after
+    // the debrief, whose page is silent, uploads it again.
     if kind == SCREEN_TITLE { music_start(MUS_OPERATION_HINDSTRIKE); }
+    if kind == SCREEN_BRIEF { music_start(MUS_YOU_HAVE_YOUR_ORDERS); }
+    if kind == SCREEN_END   { music_start(MUS_CONGRATULATIONS); }
+    if kind == SCREEN_OVER  { music_start(MUS_BLOWED_UP_SIR); }
 }
 
 // screen_hide - back to the field: the art's BG3 map over the page, every
@@ -605,13 +765,15 @@ fn screen_title_tick(held: u16, trig: u16) {
 
 // screen_tick - one frame with a page up: the title's menu and code field
 // (screen_title_tick); elsewhere Start is the only control - briefing into
-// the battle, after-action on to the next mission or the end, the end back
-// to the title.
+// the battle, after-action on to the next mission, the end or - lost -
+// game over, and game over back to the title. The end takes nothing: it is
+// the game's last page.
 far fn screen_tick(held: u16, trig: u16) {
     if screen_kind == SCREEN_TITLE {
         screen_title_tick(held, trig);
         return;
     }
+    if screen_kind == SCREEN_END { return; }     // the game's last page: a dead end
     if (trig & JOY_START) == 0 { return; }
     if screen_kind == SCREEN_BRIEF {
         screen_hide();
@@ -620,10 +782,14 @@ far fn screen_tick(held: u16, trig: u16) {
     }
     if screen_kind == SCREEN_AFTER {
         // The campaign strung together: on to the next mission's
-        // briefing with what was carried, or back to the one just lost.
-        // Taking the tenth is the end of it.
+        // briefing with what was carried. Taking the tenth is the end of
+        // it, and losing one is game over.
         // (campaign_settle decided this while the page was composed -
         // game_state has been GAME_SCREEN since it went up.)
+        if after_lost != 0 {
+            screen_show(SCREEN_OVER);
+            return;
+        }
         if after_done != 0 {
             screen_show(SCREEN_END);
             return;
@@ -633,7 +799,9 @@ far fn screen_tick(held: u16, trig: u16) {
         screen_show(SCREEN_BRIEF);
         return;
     }
-    screen_show(SCREEN_TITLE);
+    if screen_kind == SCREEN_OVER {
+        screen_show(SCREEN_TITLE);        // the code is still typed into its field
+    }
 }
 
 // ------------------------------------------------------- the title art ---

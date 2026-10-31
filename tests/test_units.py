@@ -269,6 +269,20 @@ def test_a_round_that_destroys_a_vehicle_is_the_explosion(snes):
     assert v.sfx_want.u8[SFX_CHN_HIT] == SFX_EXPLODE_1
 
 
+def test_a_destroyed_vehicle_is_tallied_for_the_debrief(snes):
+    """The same van going up counts once against its side in tally_units
+    (game.r65), which the after-action page reads as the player's units
+    destroyed; nothing of the player's has been lost."""
+    boot(snes, "MISSION_TEST_QUIET").wait(200)
+    snes.write("units__kind__tag", VAN, 1)
+    snes.write("units__hp", 2, 1)
+    plant_gun_on_slot_0(snes)
+    snes.b(1).wait(10)
+    v = read_snapshot(snes)
+    assert v.tally_units.u16[1] == 1
+    assert v.tally_units.u16[0] == 0
+
+
 def test_a_round_on_a_man_plays_no_hit(snes):
     """The same round on the man himself takes him to 2 hp in silence."""
     boot(snes, "MISSION_TEST_QUIET").wait(200)

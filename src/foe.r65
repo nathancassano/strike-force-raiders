@@ -1146,6 +1146,7 @@ impl Pilot {
         sfx_at(SFX_CHN_LOST, SFX_EXPLODE_2, airframes[FOE].x_px + (HELI_W >> 1));
         fx_burst(FX_BIG, airframes[FOE].x_px + (HELI_W >> 1), airframes[FOE].y >> 8);
         airframes[FOE].lives = airframes[FOE].lives - 1;
+        tally_helis[SIDE_ENEMY] = tally_helis[SIDE_ENEMY] + 1;
         if airframes[FOE].lives == 0 {
             game_over(GAME_WON);              // the field freezes as it stands, the player's way
         } else {
