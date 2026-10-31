@@ -102,8 +102,10 @@ const AL_ENGINEER:  u16 = 28;
 const AL_REARM:     u16 = 29;
 const AL_UNITS_NEEDED: u16 = 30;
 const AL_DEPLOY:    u16 = 31;
+const AL_GREAT:     u16 = 32;
+const AL_CHOPPER_DOWN: u16 = 33;
 
-static alert_lines: [AlertLine; 32] = [
+static alert_lines: [AlertLine; 34] = [
     AlertLine { text: "" },
     AlertLine { text: "ENEMY TOOK OUR" },
     AlertLine { text: "ENEMY TOOK A" },
@@ -136,6 +138,8 @@ static alert_lines: [AlertLine; 32] = [
     AlertLine { text: "PARTIAL REARM" },
     AlertLine { text: "UNITS NEEDED" },
     AlertLine { text: "DEPLOY TO FIELD" },
+    AlertLine { text: "GREAT SHOOTING" },
+    AlertLine { text: "CHOPPER DOWN" },
 ];
 
 // The alerts the rest of the game pushes. Captures and losses are made up
@@ -154,6 +158,7 @@ const ALERT_PARAS:       u16 = (AL_ENEMY << 8) | AL_PARAS;
 const ALERT_RAID:        u16 = (AL_RAID << 8) | AL_OUR_BANK;
 const ALERT_REARM:       u16 = (AL_ENGINEER << 8) | AL_REARM;
 const ALERT_DEPLOY:      u16 = (AL_UNITS_NEEDED << 8) | AL_DEPLOY;
+const ALERT_GUNNED:      u16 = (AL_GREAT << 8) | AL_CHOPPER_DOWN;
 
 // The reinforcements hint (alert_hint): with nothing of the player's on the
 // field, on its way down or ordered, and the purse able to pay for the

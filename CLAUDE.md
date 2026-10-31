@@ -759,7 +759,9 @@ share their halves. The pushes: `struct_set_owner`; both bank robberies (`alert_
 starting to jam the radar (`radar_jammed`, `radar_update`); fuel crossing 25 and 10, hp 5 and the
 last airframe (in `hud_update`'s existing change branches); an order short of funds or over its
 cap (`order_place`); the CPU buying its first convoy (`cpu_buy`, once a battle: `cpu_told`); its paratroopers (`Pilot::maybe_drop`)
-and its bank raid (`Pilot::choose`); an engineer boarding (`para_refit`); and a player hint,
+and its bank raid (`Pilot::choose`); an engineer boarding (`para_refit`); the player's own gun - a round at `GUN_SPEED`, not a
+turret's - downing the enemy airframe, GREAT SHOOTING / CHOPPER DOWN (`Pilot::collide`, after the
+loss, so the last airframe's is dropped with the match over); and a player hint,
 UNITS NEEDED / DEPLOY TO FIELD (`alert_hint`, from `hud_update` on the first
 mission, Cake Walk, only): with nothing of the player's on the field, under a canopy or ordered, and the purse
 paying for the cheapest order, after `HINT_DELAY` (600 frames) and every `HINT_REPEAT` (1800) while

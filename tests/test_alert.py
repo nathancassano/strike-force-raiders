@@ -179,6 +179,21 @@ def test_a_bunker_brought_down_is_announced(snes):
     assert v.alert_cur == ENEMY_LOST_BUNKER
 
 
+def test_gunning_down_the_enemy_airframe_is_praised(snes):
+    """The player's gun landing the last point on the enemy airframe brings
+    GREAT SHOOTING / CHOPPER DOWN: it is planted 64 px ahead of the player's,
+    a hair low, on its last point, and one burst takes it (a life gone)."""
+    boot(snes, "MISSION_TEST_QUIET").wait(20)
+    x, y = snes.raw("airframes__x_px").u16[0], snes.raw("airframes__y").u16[0]
+    snes.write(snes.resolve("airframes__x_px") + 2, x + 64, 2)
+    snes.write(snes.resolve("airframes__y") + 2, y + 4 * 256, 2)
+    snes.write(snes.resolve("airframes__hp") + 1, 1, 1)
+    snes.b(1).wait(12)
+    v = read_snapshot(snes)
+    assert v.airframes__lives.u8[1] == 3
+    assert v.alert_cur == GUNNED
+
+
 def test_a_reset_clears_the_alert(state):
     """An alert up when the match is lost stays up, frozen; Start restarts
     the match with the box and the queue gone. (The lost match has none up
@@ -210,7 +225,8 @@ def test_a_reset_clears_the_alert(state):
 # (HINT_REPEAT) more while that lasts. Cake Walk starts with 32 and nothing
 # out, so it comes at ~frame 612.
 
-DEPLOY = code(30, 31)           # UNITS NEEDED / DEPLOY TO FIELD
+DEPLOY = code(30, 31)
+GUNNED = code(32, 33)          # GREAT SHOOTING / CHOPPER DOWN           # UNITS NEEDED / DEPLOY TO FIELD
 
 
 def showing_or_queued(v):

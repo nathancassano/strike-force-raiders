@@ -289,7 +289,16 @@ impl Pilot {
                             }
                             let mut dmg: u8 = 1;
                             if mk == MUNI_MISSILE { dmg = HELI_DMG_MISSILE; }
+                            // The player's own gun - a round at GUN_SPEED,
+                            // not a turret's - landing the last point gets
+                            // its praise; pushed after the loss, so the
+                            // last airframe's (the match won) is dropped.
+                            let mut gunned: u8 = 0;
+                            if mk == MUNI_BULLET && airframes[FOE].hp <= dmg {
+                                if muni_vx[m] == GUN_SPEED || muni_vx[m] == Q10(0) - GUN_SPEED { gunned = 1; }
+                            }
                             Pilot::hit(dmg);
+                            if gunned != 0 { alert_push(ALERT_GUNNED); }
                             if airframes[FOE].dead > 0 || airframes[FOE].rising != 0 { return; }
                             if mk == MUNI_BULLET { sfx_at(SFX_CHN_HIT, SFX_ENEMY_HIT, fx + (HELI_W >> 1)); }
                         }
