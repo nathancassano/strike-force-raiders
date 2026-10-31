@@ -1,11 +1,11 @@
-# rotor_raiders
+# strike_force_raiders
 
 A new SNES project created with R65.
 
 ## Project Structure
 
 ```
-rotor_raiders/
+strike_force_raiders/
 ├── src/
 │   └── main.r65       # Main program entry point
 ├── Makefile           # Build system for WLA-DX

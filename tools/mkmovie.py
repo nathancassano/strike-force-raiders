@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build a Mesen .mmo movie to drive the ROTOR_RAIDERS ROM.
+Build a Mesen .mmo movie to drive the STRIKE_FORCE_RAIDERS ROM.
 
 Input.txt is one line per frame: '|..|' + 12 button columns, in the order
 A B X Y L R Select Start Up Down Left Right.

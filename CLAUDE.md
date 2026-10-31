@@ -1,4 +1,4 @@
-# Rotor Raiders - AI Assistant Guide
+# Strike Force Raiders - AI Assistant Guide
 
 A helicopter tug-of-war for the SNES, descended from *Rescue Raiders* (Apple II, 1984)
 by way of *Armor Alley* (1991). Built with the R65 compiler. For the full R65 language
@@ -148,7 +148,7 @@ in scanlines via the V-counter, not Mesen's "Cycles:" counter, which is blind to
 ## Project Structure
 
 ```
-rotor_raiders/
+strike_force_raiders/
 ├── src/
 │   ├── main.r65              # Entry, boot_load, NMI handler, game loop, snapshot_point
 │   ├── input.r65             # Joypad: pad_read_ports / pad_poll / pad_poll_trigger
@@ -526,11 +526,12 @@ palette 2, CGRAM 32-47, is BG1's too), and its map entries carry the priority bi
 BG2 tile draws behind all of BG1 in Mode 3; the code cursor is the font's caret, the HUD's box
 pieces being BG3's. `tools/title_art.py` paints the picture from a ComfyUI render
 (`pixelArtDiffusionXL_pixelWorld`, render, prompt and seed in its docstring): scaled to 256x224,
-the ROTOR RAIDERS logo lettered over the sky, a darkened panel under the menu rows (keep it on
+the STRIKE FORCE RAIDERS logo lettered over the sky, a darkened panel under the menu rows (keep it on
 `SCREEN_CODE_ROW`..`SCREEN_TITLE_PROMPT`), one palette with those two entries fixed. The bitmap
-in git was edited by hand after that - no panel, its palette reordered and off the PPU's 5-bit
-steps (bmp2chr cuts each component), so the menu draws in whatever 34 and 35 now are - and
-re-running the tool would lose the edit; the title's tests compare at 5 bits. Its tiles are
+in git is the tool's output as it stands (render `rotor_title_new_00004_`, from the saved
+`pixel_art_sdxl` workflow), so re-running it on that render gives it back; a hand edit to it would
+not survive one. The title's tests compare at 5 bits, since a hand-edited palette need not be on
+the PPU's steps (bmp2chr cuts each component). Its tiles are
 up to 56K, more than a LoROM bank, so the Makefile cuts `title.chr` at 32K into banks 7 and 8
 (`TITLE_CHR_1`/`_2`), as the sound driver is; `title_load` lives in bank 8 beside them, which is
 also what makes the ROM 512K - R65 sizes the ROM from the banks holding code or tables, and

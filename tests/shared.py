@@ -1,4 +1,4 @@
-"""What the rotor_raiders ROM tests share: the helpers and the states.
+"""What the strike_force_raiders ROM tests share: the helpers and the states.
 
 `boot` is the power-on: run to the ROM's main loop, then BOOT_SETTLE frames,
 with the mission picked by writing the ROM's boot_pick at boot_load's entry

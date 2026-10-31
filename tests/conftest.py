@@ -1,4 +1,4 @@
-"""ROM tests for rotor_raiders, on mesen_gdb.rom_driver.
+"""ROM tests for strike_force_raiders, on mesen_gdb.rom_driver.
 
 Build first (`make`); run with `pytest tests`, or `pytest tests -n auto` to
 spread the cases over the cores. They began as the old shell suite's cases,
@@ -47,7 +47,7 @@ PROJECT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture(scope="session")
 def rom():
-    path = PROJECT / "build" / "ROTOR_RAIDERS.smc"
+    path = PROJECT / "build" / "STRIKE_FORCE_RAIDERS.smc"
     if not path.is_file():
         pytest.skip(f"{path.name} not built - run make")
     return Rom(path)

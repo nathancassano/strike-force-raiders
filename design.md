@@ -1,11 +1,11 @@
-# Rotor Raiders — SNES Design & Implementation Plan
+# Strike Force Raiders — SNES Design & Implementation Plan
 
 ## Context
 
-`rotor_raiders/` was created from `r65x init --platform snes` and currently holds only the
+`strike_force_raiders/` was created from `r65x init --platform snes` and currently holds only the
 template: `src/main.r65` is 34 lines (`init_reset` → `snes_init()` → an empty `wait_nmi!()`
 loop) plus stock `lib/` copies of `65816.r65`, `sneslib.r65`, `math.r65`. It builds to a valid
-256 KB LoROM (`build/ROTOR_RAIDERS.smc`, 99.84% free) that boots to a black screen.
+256 KB LoROM (`build/STRIKE_FORCE_RAIDERS.smc`, 99.84% free) that boots to a black screen.
 
 The goal is a SNES game descended from **Rescue Raiders** (Apple II, 1984) by way of
 **Armor Alley** (1991). Scott Schiller's open-source browser remake
@@ -39,7 +39,7 @@ the front line.
 A single horizontal lane, no vertical scroll. Left to right from the player's side:
 **bank → base → landing pad → open field → enemy landing pad → enemy base → enemy bank.**
 
-| Property | Armor Alley | Rotor Raiders | Rationale |
+| Property | Armor Alley | Strike Force Raiders | Rationale |
 |---|---|---|---|
 | World width | 8192 px | **8192 px** (32 screens) | Matches the original exactly. Decided in phase 6, overriding the earlier 4096. Our sprites are smaller, so this is a *larger* field in helicopter-lengths (~256 vs AA's ~164) and a traverse takes ~27 s against AA's ~11 s. Sets the radar scale at 32 world px per HUD px. |
 | World height | 380 px | **200 px play + 24 px HUD** | Fits one 224-line screen. No vertical scroll — this is why the game suits the SNES. |
@@ -52,7 +52,7 @@ A single horizontal lane, no vertical scroll. Left to right from the player's si
 Sized natively for SNES rather than scaled from the originals. AA's 1× dimensions are listed
 only to preserve proportion.
 
-| Entity | AA 1× | Rotor Raiders | Notes |
+| Entity | AA 1× | Strike Force Raiders | Notes |
 |---|---|---|---|
 | Helicopter | 50×16 | **32×16** | 4 flight frames + 3 turn frames, each direction |
 | Tank | 58×19 | **24×16** | 3 frames |

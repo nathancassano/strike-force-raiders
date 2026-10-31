@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""profile.py TRACE.txt [build/ROTOR_RAIDERS.sym] - where the frame goes.
+"""profile.py TRACE.txt [build/STRIKE_FORCE_RAIDERS.sym] - where the frame goes.
 
 Attributes every PC in a Mesen-GDB `trace` log to the function whose label
 precedes it in the .sym, and prints instruction counts per function, most
@@ -21,7 +21,7 @@ import sys
 
 def main():
     trace = sys.argv[1]
-    sym = sys.argv[2] if len(sys.argv) > 2 else "build/ROTOR_RAIDERS.sym"
+    sym = sys.argv[2] if len(sys.argv) > 2 else "build/STRIKE_FORCE_RAIDERS.sym"
     labels = []
     section = None
     for line in open(sym):

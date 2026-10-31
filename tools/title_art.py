@@ -16,9 +16,11 @@ fixed; the picture may use them as well.
 
     python3 tools/title_art.py RENDER.png [--sample box] [--dither] && make
 
-The current title is ComfyUI render ComfyUI_00349_ (pixelArtDiffusionXL_
-pixelWorld, 1024x896 - the screen's 8:7 - 30 steps, cfg 7, seed 1984, the
-third of a batch of four), `--sample box --dither`. Prompt: "pixel art,
+The current title is ComfyUI render rotor_title_new_00004_ (the saved
+pixel_art_sdxl workflow: pixelArtDiffusionXL_pixelWorld, base and refiner,
+25 steps handing over at 20, cfg 8, euler/normal; 1024x896 - the screen's
+8:7 - seed 2026, the fourth of a batch of four), `--sample box --dither`.
+Prompt: "pixel art,
 16-bit snes video game title screen illustration, a military attack
 helicopter gunship in side view flying left to right in the middle of the
 picture, dark olive green, rotor blades, stub wings with rocket pods, nose
@@ -28,9 +30,6 @@ bottom, clear empty sky at the top, bold colours, crisp pixels, retro
 arcade style"; negative: "text, letters, logo, watermark, signature,
 blurry, photo, 3d render, people, multiple helicopters, cropped helicopter,
 frame, border".
-
-The bitmap in git has since been edited by hand (the panel taken out, the
-palette reordered), so running this again replaces that edit.
 
 It reports the picture's unique tiles (flips matched, as bmp2chr -t
 does): BG1's tiles are $0000-$6FFF of VRAM, 896 of them, which is every
@@ -47,7 +46,7 @@ W, H = 256, 224
 
 # The logo: one line across the sky, in a heavy condensed italic, filled
 # with a sunset ramp, outlined and dropped onto a shadow.
-LOGO = 'ROTOR RAIDERS'
+LOGO = 'STRIKE FORCE RAIDERS'
 LOGO_FONT = '/usr/share/fonts/truetype/noto/NotoSans-CondensedBlackItalic.ttf'
 LOGO_TOP = 6
 LOGO_H = 26                      # cap height, px

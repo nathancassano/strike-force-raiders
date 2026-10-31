@@ -1,4 +1,4 @@
-// Rotor Raiders - Main entry point
+// Strike Force Raiders - Main entry point
 // SNES LoROM. A helicopter tug-of-war descended from Rescue Raiders (1984)
 // by way of Armor Alley (1991).
 
@@ -7,7 +7,7 @@
 // 6 master clocks a byte rather than 8 - the stress run's 0.81 ticks a
 // vblank became 0.96. It once hung at boot here; no build of this source or
 // its history with the current compiler reproduces that.
-#[snesrom(name="ROTOR_RAIDERS", fastrom)]
+#[snesrom(name="STRIKE FORCE RAIDERS", fastrom)]
 
 #[stack(0x0100, 0x01FF)]
 

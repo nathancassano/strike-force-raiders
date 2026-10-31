@@ -1,4 +1,4 @@
-// input - Joypad subsystem for Rotor Raiders.
+// input - Joypad subsystem for Strike Force Raiders.
 // Reads controller 0 once per frame, provides held and trigger masks.
 //
 // The word is composed through plain locals: a `let lo @ A = JOY1L;` alias

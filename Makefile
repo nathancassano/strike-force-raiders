@@ -1,7 +1,7 @@
-# rotor_raiders - Makefile for SNES development with WLA-DX
+# strike_force_raiders - Makefile for SNES development with WLA-DX
 
 # Project configuration
-PROJECT   = ROTOR_RAIDERS
+PROJECT   = STRIKE_FORCE_RAIDERS
 MAIN_SRC  = src/main.r65
 BUILD_DIR = build
 ROM_FILE  = $(BUILD_DIR)/$(PROJECT).smc

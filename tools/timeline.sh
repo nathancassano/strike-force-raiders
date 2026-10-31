@@ -10,12 +10,12 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 MESEN="$HERE/../Mesen-GDB/bin/linux-x64/Release/mesen-gdb"
-ROM="$HERE/build/ROTOR_RAIDERS.smc"
+ROM="$HERE/build/STRIKE_FORCE_RAIDERS.smc"
 OUT="$1"; ACTIONS="$2"; shift 2
 mkdir -p "$OUT"
 SHA=$(sha1sum "$ROM" | cut -d' ' -f1 | tr 'a-z' 'A-Z')
 MOVIE="$OUT/timeline.mmo"
-python3 "$HERE/tools/mkmovie.py" "$MOVIE" "ROTOR_RAIDERS.smc" "$SHA" "$ACTIONS" >/dev/null
+python3 "$HERE/tools/mkmovie.py" "$MOVIE" "STRIKE_FORCE_RAIDERS.smc" "$SHA" "$ACTIONS" >/dev/null
 {
     at=0
     for f in "$@"; do

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive ROTOR_RAIDERS through a scripted input sequence and screenshot when
+# Drive STRIKE_FORCE_RAIDERS through a scripted input sequence and screenshot when
 # the ROM reaches its snapshot_point hook (fired by Select). See tools/play.py.
 #
 #   ./play.sh OUT.png [ACTION,...] [--dump REGION FILE]...

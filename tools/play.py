@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """play.py OUT.png [ACTION,...] [--dump REGION FILE]... - one scripted run.
 
-Boots ROTOR_RAIDERS in Mesen-GDB, plays the actions, and screenshots at the
+Boots STRIKE_FORCE_RAIDERS in Mesen-GDB, plays the actions, and screenshots at the
 ROM's snapshot_point hook (fired by Select) - the same boot and the same
 instant the pytest suite reads at (tests/shared.py).
 
@@ -38,7 +38,7 @@ from shared import boot, read_snapshot              # noqa: E402
 from mesen_gdb.rom_driver import NotReached, Rom    # noqa: E402
 from mesen_gdb.rom_driver.backend import BUTTONS    # noqa: E402
 
-ROM = HERE / "build" / "ROTOR_RAIDERS.smc"
+ROM = HERE / "build" / "STRIKE_FORCE_RAIDERS.smc"
 
 
 def split_action(act):
