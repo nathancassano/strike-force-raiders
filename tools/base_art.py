@@ -27,7 +27,9 @@ art's tallest column is, should a new render want it moved.
 
     python3 tools/base_art.py RENDER.png [--key 40] [--extra 2] [--sample nearest] [--fill] && make
 
-The current base is ComfyUI render ComfyUI_00344_ (pixelArtDiffusionXL_
+The base is drawn by tools/base_draw.py now, which imports this file's
+strips; running this again replaces that drawing. The render it last
+stamped was ComfyUI_00344_ (pixelArtDiffusionXL_
 spriteShaper, 1024x512, 30 steps, cfg 7, seed 777, the second of a batch of
 four), stamped `--extra 2 --sample nearest --fill`: the building is about twice
 as wide as it is tall, so --fill stretches it to the 64x64 box (twice as

@@ -241,7 +241,7 @@ Everything runs through `r65x bmp2chr`,
 `src/assets.r65` is generated from whatever those files turned out to be, and the ROM depends on
 the lot - so editing a bitmap and running `make` is the whole pipeline; `make assets` is just a
 name for its art half. Both are build products, `.gitignore`d, and removed by `make clean`.
-`tools/{hud_glyphs,ground_texture,sky_art,struct_art,muni_art,heli_art,fx_art,avatar_art,icon_art,base_art,title_art,status_art}.py` stamp pixels *into the bitmaps*
+`tools/{hud_glyphs,ground_texture,sky_art,struct_art,muni_art,heli_art,fx_art,avatar_art,icon_art,base_art,base_draw,title_art,status_art}.py` stamp pixels *into the bitmaps*
 (sharing `tools/bmp4.py`, which writes the 4-bit BMPs `bmp2chr -b4` insists on and PIL cannot);
 they are authoring helpers run by hand, outside the chain, and phase 12 replaces what they drew.
 `sky_art.py` and `title_art.py` are the exceptions that already are final art (the title's is below). It paints the sky's two sheets from
@@ -386,10 +386,13 @@ and even a per-building compare cost it frames); the bank's gun falls silent aft
 infantryman at the player's bank - or a paratrooper landing in its doorway - halves the purse. Per-unit scans (capture, claim, entry, robbery)
 run on a stagger of one structure per frame in sixteen - a man covers eight pixels in that time.
 `tools/struct_art.py` stamps the building sprites onto rows 6-13 of `obj.bmp` - but the home base,
-which `tools/base_art.py` stamps from a ComfyUI render (a hangar, its control tower and a flagged
-tower; the launcher on the roof between them, `BASE_LAUNCHER_DX`/`_DY`), fitted to the sheet's
-palette with the greens as the owner's colour and two extra entries (12, 13) of its own. **The base
-is 64x64**, the render stretched to fill it (`--fill`), and the sheet has no free 64x64 block: its
+which `tools/base_draw.py` draws pixel by pixel after `assets/reference/basecc.png` (a flat-roofed
+hangar with a window band and a slatted door, a checkered control tower at its east end with a glass
+cab and a flag, a striped mast on the roof; the launcher on the roof between mast and tower,
+`BASE_LAUNCHER_DX`/`_DY`), in the sheet's palette plus two entries of its own, 14 and 15 (the walls'
+teal and its shade), with the greens - the roof's trim, the awning, the flag - as the owner's colour.
+It replaced `tools/base_art.py`'s ComfyUI render, whose strips it stamps into. **The base
+is 64x64**, and the sheet has no free 64x64 block: its
 lower half is the stats' 4x2 grid at `STRUCT_TILE_BASE` (166), drawn like any building, and its upper
 half two 8x2-tile strips in the airframe's old cells - `BASE_TILE_TOP` (4, rows 0-1) and
 `BASE_TILE_MID` (228, rows 14-15), cols 4-11 - that `struct_draw`'s base branch adds above it, 17
