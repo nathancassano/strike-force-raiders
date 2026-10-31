@@ -42,6 +42,11 @@ const UNIT_H:      u16 = 16;
 // Traffic control: a unit stops rather than piling into the one ahead.
 // The plan puts the look-ahead at about a third of a unit width.
 const UNIT_GAP: u16 = 8;
+// The march pitch, x to x, whatever the kinds: unit_spawn's spacing, and
+// where a follower halts behind a halted unit ahead, so a column held up
+// at the front keeps the spacing it marched with. (It halted at its own
+// width + gap once, and a file of men closed from 32 to 15 and stayed so.)
+const UNIT_SPACE: u16 = UNIT_W + UNIT_GAP;
 // Every unit marches at the one speed, half a pixel a frame - a pixel
 // on every odd frame, so there is no sub-pixel accumulator to carry. Men
 // walked at a quarter and vans drove at three quarters once, and any
@@ -284,10 +289,10 @@ far fn unit_spawn(kind: Order, owner: u8, x_px: u16) -> u8 {
         }
     }
     if ahead != UNIT_NONE {
-        if unit_apart(units[ahead as u16].x_px, x_px) < UNIT_W + UNIT_GAP { return 0; }
+        if unit_apart(units[ahead as u16].x_px, x_px) < UNIT_SPACE { return 0; }
     }
     if behind != UNIT_NONE {
-        if unit_apart(units[behind as u16].x_px, x_px) < UNIT_W + UNIT_GAP { return 0; }
+        if unit_apart(units[behind as u16].x_px, x_px) < UNIT_SPACE { return 0; }
     }
     let mut i: u16 = unit_cursor;
     let mut n: u16 = 0;
@@ -364,14 +369,16 @@ far fn unit_count(kind: Order, owner: u8) -> u8 {
 // unit_traffic - should this unit halt this frame?
 //
 // Behind the line it is convoy spacing, and that is one question of the
-// unit ahead in the march: is it halted, and within reach? Both move at
-// the one speed, so while it moves this unit can never close on it. At
+// unit ahead in the march: is it halted, and within the march pitch
+// (UNIT_SPACE)? Both move at the one speed, so while it moves this unit
+// can never close on it. At
 // the line it is the front itself - an advancing column meeting an
 // opposing one halts and fights instead of the two sliding through each
 // other - and only the lead has no unit of its own ahead, so only the
-// lead scans the pool for the nearest of the other side. The reach is
-// the width of whichever body lies between the two positions: this
-// unit's, marching east from its x; the one ahead's, marching west.
+// lead scans the pool for the nearest of the other side. There the reach
+// is the width of whichever body lies between the two positions, plus the
+// gap: this unit's, marching east from its x; the one ahead's, marching
+// west.
 //
 // The lead's scan is the hottest loop left in the game, twice a frame:
 // its shape is what keeps the counter in a register; change it and
@@ -383,9 +390,9 @@ fn unit_traffic(self_i: u16) -> u8 {
         let ax: u16 = units[a as u16].x_px;
         let x: u16 = units[self_i].x_px;
         if units[self_i].owner == SIDE_PLAYER {
-            if ax - x < unit_stats[units[self_i].kind as u16].width + UNIT_GAP { return 1; }
+            if ax - x < UNIT_SPACE { return 1; }
         } else {
-            if x - ax < unit_stats[units[a as u16].kind as u16].width + UNIT_GAP { return 1; }
+            if x - ax < UNIT_SPACE { return 1; }
         }
         return 0;
     }
@@ -423,9 +430,9 @@ fn unit_traffic_tank(self_i: u16) -> u8 {
         let ax: u16 = units[a as u16].x_px;
         let x: u16 = units[self_i].x_px;
         if units[self_i].owner == SIDE_PLAYER {
-            if ax - x < UNIT_W + UNIT_GAP { return 1; }
+            if ax - x < UNIT_SPACE { return 1; }
         } else {
-            if x - ax < unit_stats[units[a as u16].kind as u16].width + UNIT_GAP { return 1; }
+            if x - ax < UNIT_SPACE { return 1; }
         }
         return 0;
     }

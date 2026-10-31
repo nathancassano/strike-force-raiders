@@ -327,7 +327,8 @@ column is a fixed **march order** kept as a list through the `ahead`/`behind` pl
 for a base spawn, wherever a paratrooper lands - refusing a spot within a convoy space of its
 neighbours (that is the base's gate: men leave one at a time), and `unit_free` unlinks.
 **Traffic control is then one question of the unit ahead** (`unit_traffic`: halted, and within
-width + gap?) and only the two leads scan the pool for the nearest of the other side; flags are
+the march pitch, `UNIT_SPACE` - 32 x to x, `unit_spawn`'s spacing, whatever the kinds, so a column
+held up keeps its spacing; it was the follower's own width + gap, and a file of men closed to 15) and only the two leads scan the pool for the nearest of the other side; flags are
 refreshed every frame in march order, lead first. Liveness is the tag plane (`Free` is 0).
 Collision rejects a munition against the whole pool with one scanline-band test - all but a bomb,
 which falls through a unit's box and goes off on the ground, so its blast is what hits the vehicle it

@@ -79,6 +79,34 @@ def test_a_column_packs_up_behind_a_halted_lead(snes):
     assert v.units__x_px.u16[4] == 4946
 
 
+def test_a_file_of_men_halts_at_its_marching_pitch(snes):
+    """A follower halts a march pitch (UNIT_SPACE, 32) behind a halted unit
+    ahead, whatever the two are, so a column held up at the front keeps
+    the spacing it marched with. The quiet row's men march west 32 apart;
+    a player van planted 60 px ahead of their lead at frame 3000 stops it,
+    and 300 frames on the four behind stand 31 apart - not their own width
+    plus the gap (15), which is what bunched a file of men up and kept it
+    so once the front moved on."""
+    boot(snes, "MISSION_TEST_QUIET").wait(3000)
+    lead = snes.raw("unit_head").u8[1]
+    van = next(i for i in range(32) if snes.raw("units__kind__tag").u8[i] == 0)
+    plant = lambda name, value, size=1: snes.write(snes.resolve(name) + van * size, value, size)
+    plant("units__kind__tag", VAN)
+    plant("units__owner", 0)
+    plant("units__hp", 255)
+    plant("units__ahead", 0xFF)
+    plant("units__behind", 0xFF)
+    plant("units__x_px", snes.raw("units__x_px").u16[lead] - 60, 2)
+    snes.write("unit_head", van, 1)                  # the player's only unit
+    snes.write(snes.resolve("unit_tail"), van, 1)
+    snes.wait(300)
+    x, behind = snes.raw("units__x_px").u16, snes.raw("units__behind").u8
+    column = [lead]
+    for _ in range(4):
+        column.append(behind[column[-1]])
+    assert [x[b] - x[a] for a, b in zip(column, column[1:])] == [31, 31, 31, 31]
+
+
 def test_a_man_killed_lies_where_he_fell(snes):
     """A bomb on the quiet row's infantry leaves a man down for two seconds:
     an FX_MAN effect (fx.r65), tile 76 in the enemy palette and mirrored, a
